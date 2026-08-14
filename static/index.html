@@ -1011,7 +1011,7 @@
 
             <div style="display: flex; gap: 0.75rem;">
                 <button class="btn-rebook" style="flex:1;" onclick="window.print()">🖨️ Print / PDF</button>
-                <button class="btn-rebook" style="flex:1; background: var(--surface-active); color: var(--text-cream);" onclick="closeModal()">Done</button>
+                <button id="btnModalClose" class="btn-rebook" style="flex:1; background: var(--surface-active); color: var(--text-cream);" onclick="closeModal()">Done</button>
             </div>
         </div>
     </div>
@@ -1100,7 +1100,6 @@
         }
 
         function updateParty() {
-            const count = document.getElementById('partySizeSelect').value;
             if (activeDisruptionData) {
                 renderPackages(activeDisruptionData.rescue_packages);
             }

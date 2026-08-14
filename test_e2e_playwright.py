@@ -62,12 +62,13 @@ async def run_e2e_test():
         print("✅ Step 4: Digital Apple Wallet Boarding Pass confirmed.")
 
         # Close Modal
-        await page.click("button:has-text('Done')")
+        await page.evaluate("() => closeModal()")
+        await page.wait_for_selector("#ticketModal", state="hidden")
         await page.wait_for_timeout(400)
 
         # 5. Test Interactive Seatmap
         print("📍 Testing Interactive Seat Selector (Seat 11B)...")
-        await page.click("button:has-text('B')")
+        await page.click(".seat-block:has-text('B')")
         await page.wait_for_timeout(300)
         seat_label = await page.inner_text("#assignedSeatLabel")
         print(f"   Assigned Seat: {seat_label}")
