@@ -1,0 +1,28 @@
+name: CI Test Suite
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Dependencies
+        run: |
+          pip install uv
+          uv pip install --system fastapi uvicorn pydantic httpx python-dotenv pytest pytest-asyncio
+
+      - name: Run Pytest Test Suite
+        run: |
+          pytest test_rescue_agent.py -v

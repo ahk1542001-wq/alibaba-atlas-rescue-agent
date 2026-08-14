@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TravelCare AI — Autonomous Flight Disruption Recovery SaaS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Exact Palette: #22223B (Base Dark), #4A4E69 (Slate Indigo), #F2E9E4 (Alabaster Cream) */
+            --bg-base: #22223B;
+            --bg-sidebar: #181829;
+            --bg-subtle: #1C1C30;
+            --surface: rgba(74, 78, 105, 0.28);
+            --surface-hover: rgba(74, 78, 105, 0.45);
+            --surface-card: rgba(34, 34, 59, 0.85);
+            --surface-active: #4A4E69;
+            
+            --border-hairline: rgba(74, 78, 105, 0.45);
+            --border-hover: rgba(242, 233, 228, 0.35);
+            --border-light: rgba(242, 233, 228, 0.15);
+            
+            --text-cream: #F2E9E4;
+            --text-cream-dim: rgba(242, 233, 228, 0.7);
+            --text-cream-muted: rgba(242, 233, 228, 0.45);
+            
+            --status-success: #90BE6D;
+            --status-warning: #F9C74F;
+            --status-danger: #F94144;
+            
+            --radius-xl: 18px;
+            --radius-lg: 14px;
+            --radius-md: 10px;
+            --radius-sm: 6px;
+            --ease: cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-cream);
+            min-height: 100vh;
+            display: flex;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* SaaS Left Sidebar */
+        aside.sidebar {
+            width: 270px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-hairline);
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem 1.15rem;
+            flex-shrink: 0;
+            min-height: 100vh;
+        }
+
+        .brand-logo-cluster {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            padding: 0 0.4rem;
+        }
+
+        .brand-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--surface-active);
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .brand-text h2 {
+            font-size: 1.05rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            color: var(--text-cream);
+        }
+
+        .brand-text p {
+            font-size: 0.7rem;
+            color: var(--text-cream-dim);
+        }
+
+        /* Passenger Profile Card in Sidebar */
+        .sidebar-profile {
+            background: rgba(74, 78, 105, 0.2);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-md);
+            padding: 0.85rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+        }
+
+        .avatar-circle {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--surface-active);
+            color: var(--text-cream);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.8rem;
+            border: 1px solid var(--border-light);
+        }
+
+        .profile-info h4 {
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .profile-info p {
+            font-size: 0.68rem;
+            color: var(--status-warning);
+            font-weight: 600;
+        }
+
+        /* Sidebar Navigation Menu */
+        .nav-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            list-style: none;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.7rem 0.85rem;
+            border-radius: var(--radius-md);
+            color: var(--text-cream-dim);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s var(--ease);
+            border: 1px solid transparent;
+        }
+
+        .nav-link:hover {
+            background: var(--surface);
+            color: var(--text-cream);
+            border-color: var(--border-hairline);
+        }
+
+        .nav-link.active {
+            background: var(--surface-active);
+            color: var(--text-cream);
+            border-color: var(--border-light);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+        }
+
+        .nav-item-left {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .nav-pill {
+            font-size: 0.65rem;
+            font-weight: 800;
+            padding: 0.15rem 0.45rem;
+            border-radius: 9999px;
+            background: rgba(144, 190, 109, 0.2);
+            color: var(--status-success);
+        }
+
+        .sidebar-bottom {
+            margin-top: auto;
+            border-top: 1px solid var(--border-hairline);
+            padding-top: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .gds-health-pill {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.72rem;
+            color: var(--status-success);
+            font-weight: 700;
+        }
+
+        .dot-green {
+            width: 7px;
+            height: 7px;
+            background: var(--status-success);
+            border-radius: 50%;
+        }
+
+        /* Main SaaS App Container */
+        .app-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-y: auto;
+        }
+
+        /* Top Simulation & Workspace Header */
+        .app-topbar {
+            background: rgba(34, 34, 59, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-hairline);
+            padding: 0.75rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 40;
+        }
+
+        .sim-triggers-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-sim-trigger {
+            background: rgba(242, 233, 228, 0.08);
+            border: 1px solid var(--border-hairline);
+            color: var(--text-cream);
+            padding: 0.25rem 0.65rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.72rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-sim-trigger:hover {
+            background: var(--text-cream);
+            color: var(--bg-base);
+        }
+
+        .currency-control {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.78rem;
+        }
+
+        .currency-select {
+            background: var(--bg-subtle);
+            border: 1px solid var(--border-hairline);
+            color: var(--text-cream);
+            font-size: 0.78rem;
+            font-weight: 700;
+            padding: 0.25rem 0.65rem;
+            border-radius: var(--radius-sm);
+            outline: none;
+        }
+
+        /* Page Content Workspace */
+        .workspace-content {
+            padding: 2rem 2.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.75rem;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* Card Surface Styles */
+        .saas-card {
+            background: var(--surface);
+            backdrop-filter: blur(24px);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-xl);
+            padding: 1.6rem;
+            box-shadow: 0 16px 36px rgba(0,0,0,0.25);
+            position: relative;
+        }
+
+        .saas-card.crisis {
+            border-color: var(--status-danger);
+            background: linear-gradient(135deg, rgba(249, 65, 68, 0.15), var(--surface));
+        }
+
+        /* Flight Route Graphic */
+        .flight-route-hero {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--surface-card);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem 2rem;
+            margin: 1.15rem 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .route-airport h3 {
+            font-size: 2.25rem;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            line-height: 1;
+        }
+
+        .route-airport p {
+            font-size: 0.82rem;
+            color: var(--text-cream-dim);
+        }
+
+        .route-mid {
+            flex: 1;
+            max-width: 320px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0 1rem;
+        }
+
+        .route-line {
+            width: 100%;
+            height: 2px;
+            background: repeating-linear-gradient(90deg, var(--border-light), var(--border-light) 6px, transparent 6px, transparent 12px);
+        }
+
+        /* Disruption Banner */
+        .crisis-alert-banner {
+            display: none;
+            background: rgba(249, 65, 68, 0.2);
+            border: 1px solid var(--status-danger);
+            border-radius: var(--radius-md);
+            padding: 1.15rem 1.4rem;
+            margin-top: 1.15rem;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .crisis-alert-banner.show {
+            display: flex;
+            animation: slideDown 0.3s var(--ease);
+        }
+
+        /* Split-Screen Rescue Hub */
+        .rescue-split-grid {
+            display: none;
+            grid-template-columns: 42% 58%;
+            gap: 1.5rem;
+            align-items: start;
+        }
+
+        .rescue-split-grid.show {
+            display: grid;
+            animation: fadeIn 0.4s var(--ease);
+        }
+
+        @media (max-width: 1000px) {
+            .rescue-split-grid { grid-template-columns: 1fr; }
+        }
+
+        /* Stepper Progress Box */
+        .stepper-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            background: var(--bg-subtle);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-md);
+            padding: 1.15rem;
+        }
+
+        .step-row {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            font-size: 0.82rem;
+            color: var(--text-cream-dim);
+        }
+
+        .step-row.done {
+            color: var(--text-cream);
+            font-weight: 600;
+        }
+
+        .step-chk {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(144, 190, 109, 0.2);
+            color: var(--status-success);
+            border: 1px solid var(--status-success);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.72rem;
+            font-weight: 800;
+        }
+
+        /* Package Cards */
+        .package-item {
+            background: var(--surface);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-xl);
+            padding: 1.35rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            position: relative;
+            transition: all 0.2s var(--ease);
+        }
+
+        .package-item:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-3px);
+            box-shadow: 0 14px 30px rgba(0,0,0,0.35);
+        }
+
+        .pkg-badge {
+            position: absolute;
+            top: -11px;
+            right: 1.25rem;
+            font-weight: 800;
+            font-size: 0.7rem;
+            padding: 0.2rem 0.75rem;
+            border-radius: 9999px;
+            letter-spacing: 0.03em;
+        }
+
+        .pkg-badge.fastest { background: var(--status-warning); color: #422006; }
+        .pkg-badge.budget { background: var(--status-success); color: #052e16; }
+        .pkg-badge.comfort { background: var(--text-cream); color: var(--bg-base); }
+
+        .btn-rebook {
+            background: var(--text-cream);
+            color: var(--bg-base);
+            border: none;
+            padding: 0.75rem 1.4rem;
+            border-radius: var(--radius-md);
+            font-weight: 800;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: all 0.2s var(--ease);
+        }
+
+        .btn-rebook:hover {
+            transform: scale(1.04);
+            box-shadow: 0 4px 20px rgba(242, 233, 228, 0.4);
+        }
+
+        /* Post Rebook Grid */
+        .suite-grid {
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+            margin-top: 1.25rem;
+        }
+
+        .suite-grid.show {
+            display: grid;
+            animation: fadeIn 0.35s var(--ease);
+        }
+
+        /* Seatmap Grid */
+        .seatmap-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            background: var(--bg-subtle);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-lg);
+            padding: 1rem;
+            align-items: center;
+        }
+
+        .seat-row {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .seat-block {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-hairline);
+            background: var(--surface-card);
+            color: var(--text-cream);
+            font-size: 0.72rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .seat-block.selected {
+            background: var(--text-cream);
+            color: var(--bg-base);
+            font-weight: 800;
+        }
+
+        .seat-block.occupied {
+            background: rgba(74, 78, 105, 0.15);
+            color: var(--text-cream-muted);
+            cursor: not-allowed;
+        }
+
+        /* Dedicated Views */
+        .view-section {
+            display: none;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .view-section.show {
+            display: flex;
+            animation: fadeIn 0.3s var(--ease);
+        }
+
+        /* AI Concierge Chat Desk */
+        .chat-desk-box {
+            background: var(--surface);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-xl);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            min-height: 520px;
+        }
+
+        .chat-logs-stream {
+            flex: 1;
+            background: var(--bg-subtle);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-lg);
+            padding: 1.25rem;
+            overflow-y: auto;
+            max-height: 380px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+        }
+
+        .chat-bubble {
+            max-width: 80%;
+            padding: 0.85rem 1.15rem;
+            border-radius: 14px;
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
+
+        .chat-bubble.agent {
+            background: var(--surface-active);
+            color: var(--text-cream);
+            align-self: flex-start;
+        }
+
+        .chat-bubble.user {
+            background: var(--text-cream);
+            color: var(--bg-base);
+            align-self: flex-end;
+            font-weight: 600;
+        }
+
+        .chat-input-bar {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .chat-input-field {
+            flex: 1;
+            background: var(--bg-subtle);
+            border: 1px solid var(--border-hairline);
+            border-radius: var(--radius-sm);
+            padding: 0.75rem 1rem;
+            color: var(--text-cream);
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .btn-chat-action {
+            background: var(--surface-active);
+            color: var(--text-cream);
+            border: 1px solid var(--border-light);
+            padding: 0 1.35rem;
+            border-radius: var(--radius-sm);
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .btn-chat-action.mic.listening {
+            background: var(--status-danger);
+            animation: pulse 1s infinite;
+        }
+
+        /* Boarding Pass Modal */
+        .modal-screen {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(18, 18, 32, 0.88);
+            backdrop-filter: blur(16px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+
+        .modal-screen.show {
+            display: flex;
+            animation: fadeIn 0.25s var(--ease);
+        }
+
+        .pass-card {
+            background: linear-gradient(145deg, #22223B, #2e2e4f);
+            border: 1px solid var(--border-hover);
+            border-radius: 24px;
+            max-width: 480px;
+            width: 100%;
+            padding: 2rem;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.8);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.98); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.08); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Left SaaS Sidebar -->
+    <aside class="sidebar">
+        <div class="brand-logo-cluster">
+            <div class="brand-icon">✈️</div>
+            <div class="brand-text">
+                <h2>TravelCare AI</h2>
+                <p>Atlas x Qoder Agent Suite</p>
+            </div>
+        </div>
+
+        <!-- Passenger Info -->
+        <div class="sidebar-profile">
+            <div class="avatar-circle">AH</div>
+            <div class="profile-info">
+                <h4>Aung Hein Kyaw</h4>
+                <p>★ Star Alliance Gold</p>
+            </div>
+        </div>
+
+        <!-- SaaS Navigation -->
+        <ul class="nav-menu">
+            <li>
+                <a id="navJourney" class="nav-link active" onclick="showSaaSView('journey')">
+                    <div class="nav-item-left">🛫 Active Journey</div>
+                    <span class="nav-pill">Protected</span>
+                </a>
+            </li>
+            <li>
+                <a id="navSearch" class="nav-link" onclick="showSaaSView('search')">
+                    <div class="nav-item-left">🌐 GDS Flight Search</div>
+                </a>
+            </li>
+            <li>
+                <a id="navConcierge" class="nav-link" onclick="showSaaSView('concierge')">
+                    <div class="nav-item-left">🎙️ AI Voice Concierge</div>
+                </a>
+            </li>
+            <li>
+                <a id="navClaims" class="nav-link" onclick="showSaaSView('claims')">
+                    <div class="nav-item-left">💵 Claims & Payouts</div>
+                    <span class="nav-pill">$250 Ready</span>
+                </a>
+            </li>
+            <li>
+                <a id="navAPI" class="nav-link" onclick="showSaaSView('api')">
+                    <div class="nav-item-left">🔌 Qoder & API Inspector</div>
+                </a>
+            </li>
+        </ul>
+
+        <!-- Bottom Health Status -->
+        <div class="sidebar-bottom">
+            <div class="gds-health-pill">
+                <span class="dot-green"></span>
+                <span>Atlas Sandbox Live (18ms)</span>
+            </div>
+            <div style="font-size: 0.7rem; color: var(--text-cream-muted);">
+                Qwen-2.5-72B via Qoder • 140+ Airlines
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main SaaS Content Container -->
+    <div class="app-main">
+        <!-- Top Simulation & Control Bar -->
+        <div class="app-topbar">
+            <div class="sim-triggers-group">
+                <span style="font-size: 0.75rem; color: var(--text-cream-dim); font-weight: 700;">📡 Disruption Radar (Judge Simulation):</span>
+                <button class="btn-sim-trigger" onclick="triggerDisruption('TG303', 'Thai Airways', 'BKK → RGN')">🚨 TG 303 Cancelled</button>
+                <button class="btn-sim-trigger" onclick="triggerDisruption('PG920', 'Bangkok Airways', 'BKK → RGN')">⏳ PG 920 4H Delayed</button>
+                <button class="btn-sim-trigger" onclick="triggerDisruption('SQ970', 'Singapore Airlines', 'SIN → BKK')">⚠️ SQ 970 Ground Stop</button>
+            </div>
+
+            <div class="currency-control">
+                <span>Currency:</span>
+                <select id="currencySelect" class="currency-select" onchange="updateCurrency()">
+                    <option value="USD">USD ($)</option>
+                    <option value="THB">THB (฿)</option>
+                    <option value="SGD">SGD (S$)</option>
+                    <option value="MMK">MMK (Ks)</option>
+                    <option value="EUR">EUR (€)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="workspace-content">
+            <!-- VIEW 1: MY ACTIVE JOURNEY & RESCUE SUITE -->
+            <div id="viewJourney" class="view-section show">
+                <!-- Active Flight Card -->
+                <div id="flightCard" class="saas-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 0.72rem; color: var(--text-cream-muted); font-weight: 700; text-transform: uppercase;">TODAY'S PROTECTED JOURNEY</span>
+                            <h3 style="font-size: 1.35rem; font-weight: 800;">Thai Airways • Flight TG 303</h3>
+                        </div>
+                        <span id="flightStatusPill" style="font-size: 0.75rem; font-weight: 800; padding: 0.3rem 0.85rem; border-radius: 9999px; background: rgba(144, 190, 109, 0.2); color: var(--status-success); border: 1px solid var(--status-success);">
+                            ON SCHEDULE • DEPARTS 09:15 AM
+                        </span>
+                    </div>
+
+                    <!-- Flight Route Visualizer -->
+                    <div class="flight-route-hero">
+                        <div class="route-airport">
+                            <h3>BKK</h3>
+                            <p>Bangkok Suvarnabhumi</p>
+                            <span style="font-size: 0.75rem; color: var(--text-cream-dim);">Terminal 1 • Gate C4</span>
+                        </div>
+                        <div class="route-mid">
+                            <div style="font-size: 1.5rem; margin-bottom: 0.2rem;">✈️</div>
+                            <div class="route-line"></div>
+                            <span style="font-size: 0.72rem; color: var(--text-cream-dim); margin-top: 0.35rem;">80 mins Non-stop • Boeing 777-300ER</span>
+                        </div>
+                        <div class="route-airport" style="text-align: right;">
+                            <h3>RGN</h3>
+                            <p>Yangon International</p>
+                            <span style="font-size: 0.75rem; color: var(--text-cream-dim);">Weather: 28°C Scattered Clouds</span>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; background: var(--bg-subtle); border: 1px solid var(--border-hairline); border-radius: var(--radius-md); padding: 0.85rem 1.15rem; font-size: 0.8rem;">
+                        <div><span style="color: var(--text-cream-muted); font-size: 0.7rem; font-weight:700;">PASSENGER</span><div style="font-weight:700;">Aung Hein Kyaw</div></div>
+                        <div><span style="color: var(--text-cream-muted); font-size: 0.7rem; font-weight:700;">TICKET NO.</span><div style="font-weight:700;">TG-ORIG-TG303</div></div>
+                        <div><span style="color: var(--text-cream-muted); font-size: 0.7rem; font-weight:700;">CHECKED BAG</span><div style="font-weight:700;">Tag #BKK-8921 (24.5kg)</div></div>
+                        <div><span style="color: var(--text-cream-muted); font-size: 0.7rem; font-weight:700;">SEAT</span><div style="font-weight:700;">14A (Window)</div></div>
+                    </div>
+
+                    <!-- Crisis Announcement Alert -->
+                    <div id="crisisAlert" class="crisis-alert-banner">
+                        <div>
+                            <h4 id="crisisTitle" style="font-size: 1rem; font-weight: 800; color: var(--text-cream);"></h4>
+                            <p id="crisisDesc" style="font-size: 0.8rem; color: var(--text-cream-dim);"></p>
+                        </div>
+                        <span style="background: var(--status-danger); color: #fff; font-weight: 800; font-size: 0.72rem; padding: 0.35rem 0.75rem; border-radius: var(--radius-sm);">RESCUE ACTIVATED</span>
+                    </div>
+                </div>
+
+                <!-- Split-Screen Rescue Workspace -->
+                <div id="rescueSplit" class="rescue-split-grid">
+                    <!-- Left: Agent Orchestration & Claims -->
+                    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                        <div class="saas-card">
+                            <div style="font-size: 0.85rem; font-weight: 800; text-transform: uppercase; margin-bottom: 0.85rem; color: var(--text-cream);">🤖 Autonomous Agent Pipeline</div>
+                            <div class="stepper-container">
+                                <div class="step-row done"><div class="step-chk">✓</div><span>Disruption Ingested from Thai Airways Webhook</span></div>
+                                <div class="step-row done"><div class="step-chk">✓</div><span>Traveler Profile Analyzed (Gold Tier • 1 Bag)</span></div>
+                                <div class="step-row done"><div class="step-chk">✓</div><span>Atlas GDS Queried across 140+ Partner Airlines</span></div>
+                                <div class="step-row done"><div class="step-chk">✓</div><span>3 Guaranteed Rebooking Packages Curated</span></div>
+                            </div>
+                        </div>
+
+                        <div class="saas-card">
+                            <div style="font-size: 0.85rem; font-weight: 800; text-transform: uppercase; margin-bottom: 0.85rem; color: var(--text-cream);">💵 Pre-Approved Compensation</div>
+                            <div style="background: var(--bg-subtle); border: 1px solid var(--border-hairline); border-radius: var(--radius-md); padding: 1rem; font-size: 0.82rem;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.35rem;">
+                                    <span>Claim: <strong style="color: var(--text-cream);">#CLM-2026-8941</strong></span>
+                                    <span style="color: var(--status-success); font-weight: 800;">$250.00 Payout</span>
+                                </div>
+                                <p style="color: var(--text-cream-dim); font-size: 0.75rem;">Aviation Consumer Protection deposit pre-filled and approved for instant deposit.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Curated Packages & Post-Rebook Suite -->
+                    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                        <div class="saas-card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <div style="font-size: 0.85rem; font-weight: 800; text-transform: uppercase; color: var(--text-cream);">📦 Curated Rescue Packages (Atlas GDS)</div>
+                                <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-cream-dim);">
+                                    <span>Party Size:</span>
+                                    <select id="partySizeSelect" class="currency-select" onchange="updateParty()">
+                                        <option value="1">1 Passenger (Solo)</option>
+                                        <option value="2">2 Passengers (Adjacent Seats)</option>
+                                        <option value="3">3 Passengers (Family Pod)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="packagesContainer" style="display: flex; flex-direction: column; gap: 1.15rem;"></div>
+                        </div>
+
+                        <!-- Post-Rebook Management -->
+                        <div id="postRebookSuite" class="suite-grid">
+                            <!-- Seatmap -->
+                            <div class="saas-card" style="padding: 1.15rem;">
+                                <div style="font-size: 0.8rem; font-weight: 800; margin-bottom: 0.6rem;">💺 Cabin Seat Selector</div>
+                                <div class="seatmap-grid">
+                                    <div class="seat-row">
+                                        <button class="seat-block occupied">A</button>
+                                        <button class="seat-block" onclick="selectSeat('11B')">B</button>
+                                        <button class="seat-block occupied">C</button>
+                                        <div style="width: 14px;"></div>
+                                        <button class="seat-block" onclick="selectSeat('11D')">D</button>
+                                        <button class="seat-block" onclick="selectSeat('11E')">E</button>
+                                        <button class="seat-block occupied">F</button>
+                                    </div>
+                                    <div class="seat-row">
+                                        <button id="seat-12A" class="seat-block selected" onclick="selectSeat('12A')">A</button>
+                                        <button id="seat-12B" class="seat-block" onclick="selectSeat('12B')">B</button>
+                                        <button class="seat-block occupied">C</button>
+                                        <div style="width: 14px;"></div>
+                                        <button class="seat-block" onclick="selectSeat('12D')">D</button>
+                                        <button class="seat-block" onclick="selectSeat('12E')">E</button>
+                                        <button class="seat-block" onclick="selectSeat('12F')">F</button>
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.72rem; text-align: center; color: var(--text-cream-dim); margin-top: 0.4rem;">
+                                    Locked: <strong id="assignedSeatLabel" style="color: var(--text-cream);">12A (Window)</strong>
+                                </div>
+                            </div>
+
+                            <!-- Baggage Tracking -->
+                            <div class="saas-card" style="padding: 1.15rem;">
+                                <div style="font-size: 0.8rem; font-weight: 800; margin-bottom: 0.6rem;">🧳 Baggage Telemetry</div>
+                                <div style="font-size: 0.75rem; color: var(--text-cream-dim); display: flex; flex-direction: column; gap: 0.5rem;">
+                                    <div>✓ Unloaded from TG 303 (BHS Hub)</div>
+                                    <div>✓ Security Rescreened (Concourse D)</div>
+                                    <div style="color: var(--status-success); font-weight: 700;">✓ Loaded onto 8M 336 (Bay 2)</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW 2: GLOBAL FLIGHT SEARCH -->
+            <div id="viewSearch" class="view-section">
+                <div class="saas-card">
+                    <div style="font-size: 1.1rem; font-weight: 800; margin-bottom: 1.25rem;">🌐 Search Global Flight Inventory (140+ Airlines)</div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+                        <div>
+                            <label style="font-size: 0.72rem; color: var(--text-cream-dim); font-weight:700;">ORIGIN</label>
+                            <input id="searchOrigin" type="text" class="chat-input-field" value="SIN" style="width: 100%; margin-top: 0.25rem;">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.72rem; color: var(--text-cream-dim); font-weight:700;">DESTINATION</label>
+                            <input id="searchDest" type="text" class="chat-input-field" value="BKK" style="width: 100%; margin-top: 0.25rem;">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.72rem; color: var(--text-cream-dim); font-weight:700;">DATE</label>
+                            <input id="searchDate" type="date" class="chat-input-field" value="2026-08-20" style="width: 100%; margin-top: 0.25rem;">
+                        </div>
+                        <button class="btn-rebook" style="margin-top: auto; padding: 0.85rem;" onclick="runCustomSearch()">Search Flights ➔</button>
+                    </div>
+                    <div id="searchResults" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem;"></div>
+                </div>
+            </div>
+
+            <!-- VIEW 3: AI CONCIERGE DESK (WITH VOICE SUPPORT) -->
+            <div id="viewConcierge" class="view-section">
+                <div class="chat-desk-box">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 style="font-size: 1.1rem; font-weight: 800;">🎙️ 24/7 AI Voice & Travel Concierge Desk</h3>
+                        <span style="font-size: 0.75rem; color: var(--status-success); font-weight: 700;">● Voice & Text Stream Ready</span>
+                    </div>
+                    <div id="fullChatStream" class="chat-logs-stream">
+                        <div class="chat-bubble agent">
+                            Hello Aung Hein Kyaw! I'm your dedicated Travel Concierge. I have full context on your flight TG 303, luggage #BKK-8921, and Star Alliance Gold benefits. You can type or click the 🎙️ microphone to talk with me!
+                        </div>
+                    </div>
+                    <div class="chat-input-bar">
+                        <input id="deskChatInput" type="text" class="chat-input-field" placeholder="Type or click 🎙️ to speak (e.g. 'Can I request a vegetarian meal?')..." onkeypress="handleDeskKey(event)">
+                        <button id="btnVoiceMic" class="btn-chat-action mic" onclick="toggleVoiceInput()">🎙️ Voice</button>
+                        <button class="btn-chat-action" onclick="sendDeskChat()">Send</button>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button class="btn-sim-trigger" onclick="askDeskPrompt('Can I request a vegetarian meal?')">🥗 Vegetarian Meal</button>
+                        <button class="btn-sim-trigger" onclick="askDeskPrompt('Where is the Miracle Lounge in BKK?')">☕ Miracle Lounge Location</button>
+                        <button class="btn-sim-trigger" onclick="askDeskPrompt('Where is my checked baggage?')">🧳 Track Luggage</button>
+                        <button class="btn-sim-trigger" onclick="askDeskPrompt('What is my disruption compensation entitlement?')">💵 Compensation Policy</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW 4: CLAIMS & COMPENSATION -->
+            <div id="viewClaims" class="view-section">
+                <div class="saas-card">
+                    <h3 style="font-size: 1.15rem; font-weight: 800; margin-bottom: 0.5rem;">💵 Passenger Compensation & Disruption Claims Ledger</h3>
+                    <p style="font-size: 0.82rem; color: var(--text-cream-dim); margin-bottom: 1.25rem;">Automated regulatory claim filing under Aviation Passenger Rights.</p>
+                    
+                    <div style="background: var(--bg-subtle); border: 1px solid var(--border-hairline); border-radius: var(--radius-lg); padding: 1.5rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--border-hairline); padding-bottom: 1rem; margin-bottom: 1rem;">
+                            <div>
+                                <span style="font-size: 0.72rem; color: var(--text-cream-muted); font-weight:700;">OFFICIAL CLAIM ID</span>
+                                <h4 style="font-size: 1.25rem; font-weight: 800;">#CLM-2026-8941</h4>
+                            </div>
+                            <span style="background: rgba(144, 190, 109, 0.2); color: var(--status-success); border: 1px solid var(--status-success); font-size: 0.75rem; font-weight: 800; padding: 0.3rem 0.75rem; border-radius: 9999px;">PRE-APPROVED</span>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; font-size: 0.85rem; margin-bottom: 1.25rem;">
+                            <div><span style="color: var(--text-cream-muted); font-size: 0.72rem; font-weight:700;">PASSENGER</span><div>Aung Hein Kyaw</div></div>
+                            <div><span style="color: var(--text-cream-muted); font-size: 0.72rem; font-weight:700;">DISRUPTED FLIGHT</span><div>TG 303 (Thai Airways)</div></div>
+                            <div><span style="color: var(--text-cream-muted); font-size: 0.72rem; font-weight:700;">REASON</span><div>Engine Maintenance Delay</div></div>
+                            <div><span style="color: var(--text-cream-muted); font-size: 0.72rem; font-weight:700;">PAYOUT AMOUNT</span><div style="font-size: 1.15rem; font-weight: 800; color: var(--status-success);">$250.00 USD</div></div>
+                        </div>
+
+                        <button class="btn-rebook" onclick="alert('Claim #CLM-2026-8941 deposited $250.00 to your Atlas Wallet!')">Deposit to Atlas Wallet ➔</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW 5: QODER & AGENT TELEMETRY INSPECTOR -->
+            <div id="viewAPI" class="view-section">
+                <div class="saas-card">
+                    <h3 style="font-size: 1.15rem; font-weight: 800; margin-bottom: 1.25rem;">🧠 Alibaba Cloud Qoder & Qwen-2.5 Agent Telemetry Inspector</h3>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                        <div style="background: var(--bg-subtle); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-hairline);">
+                            <span style="font-size: 0.72rem; color: var(--text-cream-muted);">INFERENCE LATENCY</span>
+                            <div style="font-size: 1.5rem; font-weight: 800; color: var(--status-success);">14.8 ms</div>
+                        </div>
+                        <div style="background: var(--bg-subtle); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-hairline);">
+                            <span style="font-size: 0.72rem; color: var(--text-cream-muted);">REASONING MODEL</span>
+                            <div style="font-size: 1.1rem; font-weight: 800; color: var(--text-cream);">Qwen-2.5-72B</div>
+                        </div>
+                        <div style="background: var(--bg-subtle); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-hairline);">
+                            <span style="font-size: 0.72rem; color: var(--text-cream-muted);">PARETO OPTIMIZER</span>
+                            <div style="font-size: 1.1rem; font-weight: 800; color: var(--status-warning);">3-Objective Active</div>
+                        </div>
+                    </div>
+
+                    <div style="background: var(--bg-subtle); border: 1px solid var(--border-hairline); border-radius: var(--radius-md); padding: 1.25rem;">
+                        <div style="font-size: 0.8rem; font-weight: 800; margin-bottom: 0.5rem; color: var(--text-cream);">📜 Agentic Reasoning System Prompt (Qoder Runtime):</div>
+                        <pre style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text-cream-dim); background: rgba(0,0,0,0.3); padding: 1rem; border-radius: var(--radius-sm); white-space: pre-wrap; line-height: 1.4;">You are the Autonomous Flight Rescue Agent. When an airline disruption webhook triggers, extract the traveler profile, query Atlas GDS for multi-carrier alternatives, compute Pareto-optimal rankings (Fastest Arrival: 45%, Lowest Cost: 25%, Star Alliance Comfort: 30%), lock the selected fare in under 300ms, and generate regulatory compensation claims.</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Digital Boarding Pass Modal -->
+    <div id="ticketModal" class="modal-screen">
+        <div class="pass-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed var(--border-hairline); padding-bottom: 1.15rem; margin-bottom: 1.15rem;">
+                <div>
+                    <h3 style="font-size: 1.25rem; font-weight: 800; color: var(--text-cream);">DIGITAL BOARDING PASS</h3>
+                    <p style="font-size: 0.75rem; color: var(--text-cream-dim);">Atlas Autonomous Rescue Service</p>
+                </div>
+                <span style="background: rgba(144, 190, 109, 0.2); color: var(--status-success); font-size: 0.75rem; font-weight: 800; padding: 0.3rem 0.75rem; border-radius: 9999px; border: 1px solid var(--status-success);">CONFIRMED</span>
+            </div>
+
+            <div id="ticketContent"></div>
+
+            <div style="background: var(--text-cream); padding: 1rem; border-radius: var(--radius-md); text-align: center; margin: 1.35rem 0;">
+                <div style="height: 48px; background: repeating-linear-gradient(90deg, #22223B, #22223B 2px, #F2E9E4 2px, #F2E9E4 5px, #22223B 5px, #22223B 9px, #F2E9E4 9px, #F2E9E4 11px);"></div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: #22223B; margin-top: 0.35rem; font-weight: 700;">*ATLAS-45BAE5-2026-8M336-12A*</div>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem;">
+                <button class="btn-rebook" style="flex:1;" onclick="window.print()">🖨️ Print / PDF</button>
+                <button class="btn-rebook" style="flex:1; background: var(--surface-active); color: var(--text-cream);" onclick="closeModal()">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentCurrency = "USD";
+        let selectedSeat = "12A";
+        let activeDisruptionData = null;
+        let isListening = false;
+        let recognition = null;
+
+        // Initialize Web Speech Recognition
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRec();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = function(event) {
+                const speechText = event.results[0][0].transcript;
+                document.getElementById('deskChatInput').value = speechText;
+                toggleVoiceInput();
+                sendDeskChat();
+            };
+
+            recognition.onerror = function() {
+                toggleVoiceInput();
+            };
+        }
+
+        function toggleVoiceInput() {
+            const btn = document.getElementById('btnVoiceMic');
+            if (!recognition) {
+                alert("Speech recognition is not supported in this browser.");
+                return;
+            }
+            if (isListening) {
+                recognition.stop();
+                isListening = false;
+                btn.classList.remove('listening');
+                btn.innerText = "🎙️ Voice";
+            } else {
+                recognition.start();
+                isListening = true;
+                btn.classList.add('listening');
+                btn.innerText = "🔴 Listening...";
+            }
+        }
+
+        function speakAgentResponse(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text.replace(/[^\w\s.,?!]/gi, ''));
+                utterance.rate = 1.05;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function showSaaSView(viewKey) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('show'));
+            document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+
+            if (viewKey === 'journey') {
+                document.getElementById('viewJourney').classList.add('show');
+                document.getElementById('navJourney').classList.add('active');
+            } else if (viewKey === 'search') {
+                document.getElementById('viewSearch').classList.add('show');
+                document.getElementById('navSearch').classList.add('active');
+            } else if (viewKey === 'concierge') {
+                document.getElementById('viewConcierge').classList.add('show');
+                document.getElementById('navConcierge').classList.add('active');
+            } else if (viewKey === 'claims') {
+                document.getElementById('viewClaims').classList.add('show');
+                document.getElementById('navClaims').classList.add('active');
+            } else if (viewKey === 'api') {
+                document.getElementById('viewAPI').classList.add('show');
+                document.getElementById('navAPI').classList.add('active');
+            }
+        }
+
+        function updateCurrency() {
+            currentCurrency = document.getElementById('currencySelect').value;
+            if (activeDisruptionData) {
+                renderPackages(activeDisruptionData.rescue_packages);
+            }
+        }
+
+        function updateParty() {
+            const count = document.getElementById('partySizeSelect').value;
+            if (activeDisruptionData) {
+                renderPackages(activeDisruptionData.rescue_packages);
+            }
+        }
+
+        async function triggerDisruption(flightNum, carrier, route) {
+            showSaaSView('journey');
+            const card = document.getElementById('flightCard');
+            const pill = document.getElementById('flightStatusPill');
+            const alertBox = document.getElementById('crisisAlert');
+            const split = document.getElementById('rescueSplit');
+
+            card.classList.add('crisis');
+            pill.style.background = 'var(--status-danger)';
+            pill.style.color = '#fff';
+            pill.style.borderColor = 'var(--status-danger)';
+            pill.innerText = `CANCELLED BY ${carrier.toUpperCase()}`;
+
+            alertBox.classList.add('show');
+            document.getElementById('crisisTitle').innerText = `🚨 ${flightNum} (${carrier}) Cancellation Alert`;
+            document.getElementById('crisisDesc').innerText = `Technical maintenance on ${route}. 184 passengers affected. Rescue Agent scanning 140+ airlines.`;
+
+            split.classList.add('show');
+
+            try {
+                const res = await fetch('/api/disruption/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ flight_number: flightNum, passenger_name: "Aung Hein Kyaw", currency: currentCurrency })
+                });
+                const data = await res.json();
+                activeDisruptionData = data;
+                renderPackages(data.rescue_packages);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function renderPackages(packages) {
+            const container = document.getElementById('packagesContainer');
+            const partyCount = parseInt(document.getElementById('partySizeSelect')?.value || "1");
+            container.innerHTML = '';
+
+            packages.forEach(pkg => {
+                const badgeClass = pkg.package_type === 'FASTEST_RECOVERY' ? 'fastest' : (pkg.package_type === 'BEST_VALUE' ? 'budget' : 'comfort');
+                const symbol = pkg.currency_symbol || '$';
+                const basePrice = pkg.price_converted || pkg.price_usd;
+                const totalPrice = (basePrice * partyCount).toFixed(2);
+
+                const item = document.createElement('div');
+                item.className = 'package-item';
+                item.innerHTML = `
+                    <div class="pkg-badge ${badgeClass}">${pkg.badge}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                        <h4 style="font-size: 1.15rem; font-weight: 800; color: var(--text-cream);">${pkg.airline}</h4>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-cream-dim);">${pkg.flight_number} • ${pkg.cabin_class} • Gate ${pkg.gate || 'D4'}</span>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: var(--surface-card); border: 1px solid var(--border-hairline); border-radius: var(--radius-lg); padding: 1rem;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.3rem; font-weight: 800; font-family: 'JetBrains Mono';">${pkg.departure_time.split(' ')[1]}</div>
+                            <div style="font-size: 0.72rem; color: var(--text-cream-muted); font-weight: 700;">${pkg.origin}</div>
+                        </div>
+                        <div style="text-align: center; font-size: 0.72rem; color: var(--text-cream-dim); border-top: 1px dashed var(--border-hairline); padding-top: 0.35rem;">
+                            ✈️ ${pkg.duration_minutes} mins • Direct Non-stop
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.3rem; font-weight: 800; font-family: 'JetBrains Mono';">${pkg.arrival_time.split(' ')[1]}</div>
+                            <div style="font-size: 0.72rem; color: var(--text-cream-muted); font-weight: 700;">${pkg.destination}</div>
+                        </div>
+                    </div>
+
+                    <div style="background: rgba(74, 78, 105, 0.3); border-left: 3px solid var(--text-cream); padding: 0.75rem 0.95rem; border-radius: var(--radius-sm); font-size: 0.8rem; color: var(--text-cream); line-height: 1.4;">
+                        💡 <strong>Agent Insight:</strong> ${pkg.agent_recommendation_reason} ${partyCount > 1 ? `(Auto-allocating ${partyCount} adjacent seats on row 12)` : ''}
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-hairline); padding-top: 1rem;">
+                        <div>
+                            <div style="font-size: 1.4rem; font-weight: 800; font-family: 'JetBrains Mono';">${symbol}${totalPrice}</div>
+                            <div style="font-size: 0.7rem; color: var(--text-cream-muted);">100% Covered by Airline Refund (${partyCount} pax)</div>
+                        </div>
+                        <button class="btn-rebook" onclick="bookRescuePackage('${pkg.offer_id}', '${pkg.airline}', '${pkg.flight_number}', ${pkg.price_usd})">
+                            1-Click Rebook ➔
+                        </button>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        async function bookRescuePackage(offerId, airline, flightNo, price) {
+            try {
+                const res = await fetch('/api/rescue/book', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        offer_id: offerId,
+                        passenger_name: "Aung Hein Kyaw",
+                        passport_number: "MB984123",
+                        price_usd: price,
+                        seat_selected: selectedSeat,
+                        baggage_addon: "30kg Priority Included"
+                    })
+                });
+                const data = await res.json();
+                const ticket = data.ticket;
+
+                // Render Apple Wallet Pass
+                const ticketModal = document.getElementById('ticketModal');
+                const ticketContent = document.getElementById('ticketContent');
+                ticketContent.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                        <div>
+                            <span style="font-size: 0.72rem; color: var(--text-cream-dim); font-weight:700;">PASSENGER</span>
+                            <div style="font-weight: 800; font-size: 1.15rem; color: var(--text-cream);">${ticket.passenger_name}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <span style="font-size: 0.72rem; color: var(--text-cream-dim); font-weight:700;">RESCUE FLIGHT</span>
+                            <div style="font-weight: 800; font-size: 1.15rem; color: var(--text-cream);">${flightNo}</div>
+                        </div>
+                    </div>
+
+                    <div style="background: rgba(34, 34, 59, 0.85); border-radius: 14px; padding: 1.15rem; margin-bottom: 1rem; border: 1px solid var(--border-hairline);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.55rem;">
+                            <div><span style="font-size: 0.72rem; color: var(--text-cream-dim); font-weight:700;">GATE</span><div style="font-weight: 800; font-size: 1.25rem; color: var(--status-success);">${ticket.gate || 'D4'}</div></div>
+                            <div><span style="font-size: 0.72rem; color: var(--text-cream-dim); font-weight:700;">BOARDING</span><div style="font-weight: 800; font-size: 1.25rem; color: var(--text-cream);">${ticket.boarding_time || '11:05 AM'}</div></div>
+                            <div><span style="font-size: 0.72rem; color: var(--text-cream-dim); font-weight:700;">SEAT</span><div style="font-weight: 800; font-size: 1.25rem; color: var(--status-warning);">${ticket.seat_assigned}</div></div>
+                        </div>
+                        <div style="font-size: 0.75rem; color: var(--text-cream-dim); border-top: 1px solid var(--border-hairline); padding-top: 0.55rem; display: flex; justify-content: space-between;">
+                            <span>PNR: <strong style="color: var(--text-cream);">${ticket.pnr}</strong></span>
+                            <span>E-TKT: <strong>${ticket.ticket_number}</strong></span>
+                        </div>
+                    </div>
+
+                    <div style="font-size: 0.8rem; color: var(--text-cream); background: rgba(74, 78, 105, 0.35); border-radius: 10px; padding: 0.75rem 0.95rem;">
+                        ☕ Miracle Lounge Pass #LV-8921 Activated • Luggage Tag #BKK-8921 Loaded on Bay 2
+                    </div>
+                `;
+
+                ticketModal.classList.add('show');
+                document.getElementById('postRebookSuite').classList.add('show');
+            } catch (err) {
+                alert('Booking failed: ' + err.message);
+            }
+        }
+
+        async function runCustomSearch() {
+            const origin = document.getElementById('searchOrigin').value;
+            const dest = document.getElementById('searchDest').value;
+            const date = document.getElementById('searchDate').value;
+
+            try {
+                const res = await fetch('/api/flights/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ origin, destination: dest, date, currency: currentCurrency })
+                });
+                const data = await res.json();
+                const container = document.getElementById('searchResults');
+                container.innerHTML = `<h4 style="font-size: 0.9rem; color: var(--text-cream-dim);">Found ${data.count} direct flights on Atlas GDS Network:</h4>`;
+
+                data.offers.forEach(o => {
+                    const el = document.createElement('div');
+                    el.className = 'package-item';
+                    el.innerHTML = `
+                        <div style="display: flex; justify-content: space-between;">
+                            <strong>${o.airline} (${o.flight_number})</strong>
+                            <span style="font-family:'JetBrains Mono'; font-weight:800;">${o.currency_symbol || '$'}${o.price_converted || o.price_usd}</span>
+                        </div>
+                        <div style="font-size:0.8rem; color:var(--text-cream-dim);">
+                            ${o.departure_time} (${o.origin}) ➔ ${o.arrival_time} (${o.destination}) • ${o.duration_minutes} mins
+                        </div>
+                    `;
+                    container.appendChild(el);
+                });
+            } catch (err) {
+                alert('Search failed: ' + err.message);
+            }
+        }
+
+        function selectSeat(seatCode) {
+            selectedSeat = seatCode;
+            document.querySelectorAll('.seat-block').forEach(btn => btn.classList.remove('selected'));
+            const clickedBtn = document.getElementById(`seat-${seatCode}`);
+            if (clickedBtn) clickedBtn.classList.add('selected');
+            document.getElementById('assignedSeatLabel').innerText = `${seatCode} (Locked)`;
+        }
+
+        async function sendDeskChat() {
+            const input = document.getElementById('deskChatInput');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            appendChatBubble(msg, 'user');
+            input.value = '';
+
+            try {
+                const res = await fetch('/api/chat/concierge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: msg })
+                });
+                const data = await res.json();
+                appendChatBubble(data.reply, 'agent');
+                speakAgentResponse(data.reply);
+            } catch (err) {
+                appendChatBubble("Sorry, I could not connect to the Concierge service.", 'agent');
+            }
+        }
+
+        function askDeskPrompt(promptText) {
+            document.getElementById('deskChatInput').value = promptText;
+            sendDeskChat();
+        }
+
+        function appendChatBubble(text, sender) {
+            const stream = document.getElementById('fullChatStream');
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble ${sender}`;
+            bubble.innerText = text;
+            stream.appendChild(bubble);
+            stream.scrollTop = stream.scrollHeight;
+        }
+
+        function handleDeskKey(e) {
+            if (e.key === 'Enter') sendDeskChat();
+        }
+
+        function closeModal() {
+            document.getElementById('ticketModal').classList.remove('show');
+        }
+    </script>
+</body>
+</html>
