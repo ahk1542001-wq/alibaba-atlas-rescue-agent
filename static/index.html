@@ -273,7 +273,7 @@
         .src-price { font-size: 18px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--text-dark); }
         .src-seats { font-size: 11px; color: var(--text-muted); }
         /* CONCIERGE VIEW */
-        #view-concierge { flex-direction: column; height: calc(100vh - 56px - 40px); }
+        #view-concierge { display: none; flex-direction: column; height: calc(100vh - 56px - 40px); }
         #view-concierge.active { display: flex; }
         .chat-messages { flex: 1; overflow-y: auto; padding: 16px 0; display: flex; flex-direction: column; gap: 10px; }
         .msg-bubble { max-width: 70%; padding: 10px 14px; border-radius: var(--radius); font-size: 14px; line-height: 1.5; }
@@ -600,7 +600,7 @@
                     '<div class="package-badge">' + (isFastest ? 'FASTEST' : 'BEST VALUE') + '</div>' +
                     '<div class="package-body">' +
                         '<div class="package-airline">' + pkg.airline + '</div>' +
-                        '<div class="package-flight">' + pkg.airline_code + ' ' + pkg.flight_number + '</div>' +
+                        '<div class="package-flight">' + pkg.flight_number + '</div>' +
                         '<div class="package-route">' +
                             '<span class="codes">' + pkg.origin + '</span>' +
                             '<span class="arrow">--></span>' +
@@ -665,7 +665,7 @@
             document.getElementById('bp-origin-name').textContent = pkg.origin_airport || pkg.origin;
             document.getElementById('bp-dest').textContent = pkg.destination;
             document.getElementById('bp-dest-name').textContent = pkg.destination_airport || pkg.destination;
-            document.getElementById('bp-flight').textContent = pkg.airline_code + ' ' + pkg.flight_number;
+            document.getElementById('bp-flight').textContent = pkg.flight_number;
             document.getElementById('bp-gate').textContent = ticket.gate || pkg.gate || 'D4';
             document.getElementById('bp-seat').textContent = ticket.seat_assigned || '12A';
             document.getElementById('bp-boarding').textContent = ticket.boarding_time || '11:05 AM';
@@ -752,7 +752,7 @@
                 card.innerHTML =
                     '<div class="src-left">' +
                         '<div class="src-airline">' + o.airline + '</div>' +
-                        '<div class="src-flight">' + o.airline_code + ' ' + o.flight_number + '</div>' +
+                        '<div class="src-flight">' + o.flight_number + '</div>' +
                         '<div class="src-route">' + o.origin + ' --> ' + o.destination + ' - ' + depTime + ' to ' + arrTime + '</div>' +
                     '</div>' +
                     '<div class="src-right">' +
