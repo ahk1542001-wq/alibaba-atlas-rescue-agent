@@ -175,6 +175,8 @@
         #rescue-packages { display: flex; gap: 16px; margin-bottom: 16px; }
         .package-card {
             flex: 1;
+            display: flex;
+            flex-direction: column;
             background: var(--bg-card);
             border: 1px solid var(--border-amber);
             border-radius: var(--radius);
@@ -190,7 +192,7 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        .package-body { padding: 14px 16px; }
+        .package-body { padding: 14px 16px; flex: 1; display: flex; flex-direction: column; }
         .package-airline { font-size: 14px; font-weight: 600; color: var(--text-dark); }
         .package-flight { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-muted); margin-top: 2px; }
         .package-route { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
@@ -216,7 +218,7 @@
             border-radius: var(--radius-sm);
             font-size: 14px; font-weight: 600;
             cursor: pointer;
-            margin-top: 12px;
+            margin-top: auto;
             transition: background 0.2s var(--ease);
             font-family: inherit;
         }
