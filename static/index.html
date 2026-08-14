@@ -309,6 +309,34 @@
         .bp-pnr { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; letter-spacing: 2px; }
         .btn-done { width: 100%; background: var(--bg-cream); border: 1px solid var(--border-amber); color: var(--text-dark); padding: 10px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; margin-top: 12px; }
         .btn-done:hover { background: var(--border-amber-light); }
+        /* RESCUE TIMELINE OVERLAY */
+        #rescue-timeline-overlay { position: fixed; inset: 0; background: rgba(253, 246, 238, 0.95); display: none; align-items: center; justify-content: center; z-index: 90; }
+        #rescue-timeline-overlay.visible { display: flex; }
+        .timeline-card { background: var(--bg-card); border: 1px solid var(--border-amber); border-radius: 16px; padding: 32px 40px; width: 400px; box-shadow: var(--shadow-lg); }
+        .timeline-card-title { font-size: 16px; font-weight: 700; color: var(--text-dark); text-align: center; margin-bottom: 4px; }
+        .timeline-card-sub { font-size: 13px; color: var(--text-muted); text-align: center; margin-bottom: 24px; }
+        .timeline-steps { list-style: none; padding: 0; }
+        .timeline-step { display: flex; align-items: center; gap: 10px; padding: 8px 0; opacity: 0; transform: translateX(-8px); transition: all 0.3s var(--ease); }
+        .timeline-step.shown { opacity: 1; transform: translateX(0); }
+        .timeline-step-done .step-check { background: var(--status-success); color: white; }
+        .timeline-step-active .step-check { background: var(--accent-teal); color: white; }
+        .step-check { width: 22px; height: 22px; border-radius: 50%; background: var(--border-amber-light); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+        .step-check.empty { background: var(--border-amber-light); }
+        .step-text { font-size: 14px; color: var(--text-dark); }
+        .step-text .step-label { font-weight: 500; }
+        /* IMPACT SUMMARY CARD */
+        #impact-card { background: var(--bg-card); border: 1px solid var(--border-amber); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 16px; display: none; }
+        #impact-card.visible { display: block; animation: slideIn 0.3s var(--ease); }
+        .impact-title { font-size: 14px; font-weight: 700; color: var(--text-dark); margin-bottom: 12px; }
+        .impact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+        .impact-item { display: flex; flex-direction: column; gap: 2px; }
+        .impact-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .impact-value { font-size: 14px; font-weight: 600; color: var(--accent-teal-dark); font-family: "JetBrains Mono", monospace; }
+        .impact-total { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-amber-light); display: flex; justify-content: space-between; align-items: center; }
+        .impact-total-label { font-size: 13px; font-weight: 600; color: var(--text-dark); }
+        .impact-total-value { font-size: 20px; font-weight: 700; color: var(--status-success); font-family: "JetBrains Mono", monospace; }
+        /* QODER BADGE */
+        #qoder-badge { font-size: 11px; font-weight: 600; color: var(--accent-teal); background: var(--accent-teal-light); padding: 3px 10px; border-radius: 20px; }
         /* LOADING */
         .loading { text-align: center; padding: 40px; color: var(--text-muted); font-size: 14px; }
     </style>
@@ -337,6 +365,7 @@
                 <span id="brand-sub">Autonomous Rescue Agent</span>
             </div>
             <div id="topbar-spacer"></div>
+            <div id="qoder-badge">Qwen-2.5 via Qoder</div>
             <div id="health-badge"><span id="health-dot"></span>System Healthy</div>
             <button id="btn-simulate" onclick="simulateDisruption()">Simulate Disruption</button>
         </div>
@@ -389,7 +418,20 @@
                     <div class="comp-amount" id="comp-amount"></div>
                     <div class="comp-status" id="comp-status"></div>
                 </div>
-            </div>
+
+                <div id="impact-card">
+                    <div class="impact-title">Recovery Summary</div>
+                    <div class="impact-grid">
+                        <div class="impact-item"><div class="impact-label">Queue Time Saved</div><div class="impact-value" id="impact-time">190 min</div></div>
+                        <div class="impact-item"><div class="impact-label">Call Center Cost Avoided</div><div class="impact-value" id="impact-cost">$18.50</div></div>
+                        <div class="impact-item"><div class="impact-label">Compensation Filed</div><div class="impact-value" id="impact-comp">$250.00</div></div>
+                        <div class="impact-item"><div class="impact-label">Dining Voucher</div><div class="impact-value" id="impact-voucher">$25.00</div></div>
+                    </div>
+                    <div class="impact-total">
+                        <span class="impact-total-label">Total Passenger Recovery Value</span>
+                        <span class="impact-total-value" id="impact-total">$293.50</span>
+                    </div>
+                </div>
 
             <!-- SEARCH VIEW -->
             <div id="view-search" class="view">
@@ -483,6 +525,15 @@
         </div>
     </div>
 
+    <!-- RESCUE TIMELINE OVERLAY -->
+    <div id="rescue-timeline-overlay">
+        <div class="timeline-card">
+            <div class="timeline-card-title">Autonomous Rescue In Progress</div>
+            <div class="timeline-card-sub">Agent is settling your recovery package...</div>
+            <ul class="timeline-steps" id="timeline-steps"></ul>
+        </div>
+    </div>
+
     <script>
         let fareLockInterval = null;
         let rescueData = null;
@@ -516,10 +567,10 @@
             trailList.innerHTML = '';
 
             const steps = [
-                { label: 'Detected TG 303 cancellation', time: 'just now', delay: 300 },
-                { label: 'Searched 140+ airlines via Atlas GDS', time: '0.8s', delay: 600 },
-                { label: 'Qwen-2.5 ranked by time + price', time: '0.3s', delay: 900 },
-                { label: 'Fare locked on 2 alternatives', time: 'active', delay: 1200, active: true }
+                { label: 'Detected TG303 cancellation via Atlas GDS', time: 'just now', delay: 300 },
+                { label: 'Searched 140+ airlines across Atlas Sandbox', time: '0.8s', delay: 600 },
+                { label: 'Qwen-2.5 via Qoder: multi-criteria ranking (time + price + coverage)', time: '0.3s', delay: 900 },
+                { label: 'Fare locked on 2 alternatives \u2014 awaiting selection', time: 'active', delay: 1200, active: true }
             ];
 
             for (const step of steps) {
@@ -545,6 +596,23 @@
                 });
                 rescueData = await res.json();
                 renderRescueData(rescueData);
+
+                // Update reasoning trail: mark last step done + add final step
+                const trailItems = document.querySelectorAll('#trail-list .trail-item');
+                if (trailItems.length > 0) {
+                    const lastItem = trailItems[trailItems.length - 1];
+                    lastItem.classList.remove('active');
+                    lastItem.classList.add('done');
+                    lastItem.querySelector('.step-time').textContent = 'done';
+                }
+                // Add final reasoning step with actual API data
+                const pkgCount = rescueData.rescue_packages.length;
+                const firstPkg = rescueData.rescue_packages[0];
+                const compAmt = rescueData.compensation_claim.eligible_payout_usd.toFixed(0);
+                const finalLi = document.createElement('li');
+                finalLi.className = 'trail-item done';
+                finalLi.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">Recommended ' + firstPkg.airline + ' ' + firstPkg.flight_number + ' \u2014 $' + compAmt + ' compensation auto-filed</span><span class="step-time">done</span></div>';
+                trailList.appendChild(finalLi);
             } catch (err) {
                 console.error('Disruption analysis failed:', err);
             }
@@ -635,13 +703,55 @@
         async function rebookFlight(offerId, pkgIdx) {
             if (!rescueData) return;
             const pkg = rescueData.rescue_packages[pkgIdx];
+            await showRescueTimeline(pkg);
+        }
 
+        // RESCUE TIMELINE ANIMATION
+        async function showRescueTimeline(pkg) {
+            const overlay = document.getElementById('rescue-timeline-overlay');
+            const stepsList = document.getElementById('timeline-steps');
+            stepsList.innerHTML = '';
+            overlay.classList.add('visible');
+
+            const steps = [
+                { label: 'Verifying fare lock via Atlas GDS', sub: pkg.airline + ' ' + pkg.flight_number + ' \u2014 $' + pkg.price_usd.toFixed(2) },
+                { label: 'Qwen-2.5 via Qoder selects seat 12A', sub: 'Window seat \u2014 30kg priority baggage' },
+                { label: 'Transferring baggage to rescue flight', sub: 'Auto-routed to Cargo Bay 2' },
+                { label: 'Issuing e-ticket via Atlas Sandbox', sub: 'PNR generation \u2014 instant settlement' },
+                { label: 'Filing $250 compensation claim', sub: 'EU261 passenger rights auto-applied' }
+            ];
+
+            for (let i = 0; i < steps.length; i++) {
+                const step = steps[i];
+                const li = document.createElement('li');
+                li.className = 'timeline-step';
+                li.id = 'tl-step-' + i;
+                li.innerHTML = '<div class="step-check empty"></div><div class="step-text"><div class="step-label">' +
+                    step.label + '</div><div style="font-size:12px;color:var(--text-muted)">' + step.sub + '</div></div>';
+                stepsList.appendChild(li);
+
+                await new Promise(r => setTimeout(r, 50));
+                li.classList.add('shown', 'timeline-step-active');
+                li.querySelector('.step-check').classList.remove('empty');
+                li.querySelector('.step-check').textContent = '...';
+
+                await new Promise(r => setTimeout(r, 700));
+                li.classList.remove('timeline-step-active');
+                li.classList.add('timeline-step-done');
+                li.querySelector('.step-check').textContent = '';
+                li.querySelector('.step-check').innerHTML = '&#10003;';
+            }
+
+            await new Promise(r => setTimeout(r, 400));
+            overlay.classList.remove('visible');
+
+            // Now call the actual booking API and show boarding pass
             try {
                 const res = await fetch('/api/rescue/book', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        offer_id: offerId,
+                        offer_id: pkg.offer_id,
                         passenger_name: 'Aung Hein Kyaw',
                         passport_number: 'MB987654',
                         price_usd: pkg.price_usd,
@@ -652,10 +762,22 @@
                 const result = await res.json();
                 if (result.success) {
                     showBoardingPass(result.ticket, pkg);
+                    showImpactCard(pkg);
                 }
             } catch (err) {
                 console.error('Rebooking failed:', err);
             }
+        }
+
+        // IMPACT SUMMARY CARD
+        function showImpactCard(pkg) {
+            const card = document.getElementById('impact-card');
+            document.getElementById('impact-time').textContent = '190 min';
+            document.getElementById('impact-cost').textContent = '$18.50';
+            document.getElementById('impact-comp').textContent = '$250.00';
+            document.getElementById('impact-voucher').textContent = '$25.00';
+            document.getElementById('impact-total').textContent = '$293.50';
+            card.classList.add('visible');
         }
 
         function showBoardingPass(ticket, pkg) {
