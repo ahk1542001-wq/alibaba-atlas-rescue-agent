@@ -21,3 +21,13 @@ async def analyze_disruption(req: DisruptionEvent):
         return JSONResponse(content=result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/self-heal")
+async def trigger_self_healing_recovery(flight_number: str = "TG303", passenger: str = "Aung Hein Kyaw"):
+    """Trigger Graph & Loop Engineering Fault Injection & Auto Self-Healing Recovery."""
+    try:
+        result = await rescue_engine.execute_self_healing_recovery(flight_number, passenger)
+        return JSONResponse(content=result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

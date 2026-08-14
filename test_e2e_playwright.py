@@ -36,7 +36,7 @@ async def run_e2e_test():
         await page.click("#navTelemetry")
         await page.wait_for_timeout(300)
         assert await page.is_visible("#viewTelemetry")
-        assert await page.is_visible("#dagNodeList")
+        assert await page.is_visible("#dagFlowGrid")
 
         await page.click("#navJourney")
         await page.wait_for_timeout(300)
@@ -88,8 +88,20 @@ async def run_e2e_test():
         await page.screenshot(path="e2e_screenshots/04_concierge_chat.png", full_page=True)
         print("✅ Step 6: AI Concierge responded with special meal voucher details.")
 
+        # 7. Test Self-Healing Loop Fault Injection
+        print("📍 Testing Self-Healing Loop Fault Injection in Browser...")
+        await page.click("#navJourney")
+        await page.click("#btnSelfHealLoop")
+        await page.wait_for_timeout(800)
+        assert await page.is_visible("#ticketModal")
+        diff_flight = await page.inner_text("#diffRescueFlight")
+        assert "TG 307" in diff_flight or "Self-Healed" in diff_flight
+        await page.screenshot(path="e2e_screenshots/05_self_healing_modal.png")
+        await page.evaluate("() => closeModal()")
+        print("✅ Step 7: Self-Healing Loop Fault Injection successfully tested and verified.")
+
         await browser.close()
-        print("🎉 ALL PLAYWRIGHT E2E BROWSER TESTS PASSED (100% SMOOTH)!")
+        print("🎉 ALL PLAYWRIGHT E2E BROWSER TESTS PASSED (100% ZERO DEFECTS)!")
 
 if __name__ == "__main__":
     asyncio.run(run_e2e_test())

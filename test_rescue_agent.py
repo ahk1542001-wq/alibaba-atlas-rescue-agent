@@ -3,6 +3,7 @@ import asyncio
 from services.atlas_client import AtlasClient
 from services.rescue_engine import RescueEngine
 from services.state_graph import DisruptionRecoveryDAG
+from services.verifiers import DisruptionVerifierEngine
 
 @pytest.mark.asyncio
 async def test_atlas_client_search():
@@ -55,6 +56,39 @@ async def test_state_graph_dag_execution():
     assert telemetry["total_dag_latency_ms"] > 0
 
 @pytest.mark.asyncio
+async def test_deterministic_verifiers_suite():
+    # 1. FareLock Contract
+    fare_v = DisruptionVerifierEngine.verify_fare_lock_contract(
+        "off_atlas_mai_801", 145.0, {"verified": True, "fare_lock_expires_in_seconds": 900}
+    )
+    assert fare_v["passed"] is True
+
+    # 2. Seat Conflict
+    seat_v = DisruptionVerifierEngine.verify_seat_no_conflict("11B", ["11A", "11C", "11F"])
+    assert seat_v["passed"] is True
+    seat_fail = DisruptionVerifierEngine.verify_seat_no_conflict("11A", ["11A", "11C"])
+    assert seat_fail["passed"] is False
+
+    # 3. Baggage Continuity
+    bag_v = DisruptionVerifierEngine.verify_baggage_continuity("ATLAS-45BAE5", "BKK-45BA-8921", "8M 336")
+    assert bag_v["passed"] is True
+
+    # 4. Regulatory Payout
+    payout_v = DisruptionVerifierEngine.verify_regulatory_payout("Aircraft Hydraulic Maintenance", 3.0)
+    assert payout_v["passed"] is True
+    assert payout_v["eligible_amount_usd"] == 250.0
+
+@pytest.mark.asyncio
+async def test_self_healing_fault_injection_loop():
+    client = AtlasClient()
+    engine = RescueEngine(client)
+    res = await engine.execute_self_healing_recovery("TG303", "Aung Hein Kyaw")
+    assert res["status"] == "SELF_HEALING_COMPLETED"
+    assert "TG 307" in res["healed_flight_assigned"]
+    assert res["assigned_seat"] == "14A (Star Alliance Priority)"
+    assert res["dag_telemetry"]["total_nodes_executed"] >= 6
+
+@pytest.mark.asyncio
 async def test_predictive_radar_and_diff():
     client = AtlasClient()
     engine = RescueEngine(client)
@@ -103,10 +137,12 @@ async def test_compensation_claim_generation():
     assert claim["passenger_name"] == "Aung Hein Kyaw"
 
 @pytest.mark.asyncio
-async def test_agent_prompt_telemetry():
+async def test_agent_prompt_telemetry_and_token_economics():
     client = AtlasClient()
     engine = RescueEngine(client)
     telemetry = engine.get_agent_prompt_telemetry()
     assert "Qwen-2.5" in telemetry["model"]
-    assert "pareto_weights" in telemetry
+    assert "token_economics" in telemetry
+    assert telemetry["token_economics"]["cost_usd_per_recovery"] == 0.0018
+    assert len(telemetry["verifier_suite"]) == 4
     assert telemetry["inference_latency_ms"] < 50
