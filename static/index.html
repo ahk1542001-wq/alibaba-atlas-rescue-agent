@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* Palette: #22223B (Base Dark), #4A4E69 (Slate Indigo), #F2E9E4 (Alabaster Cream) */
+            /* Exact Palette: #22223B (Base Dark), #4A4E69 (Slate Indigo), #F2E9E4 (Alabaster Cream) */
             --bg-base: #22223B;
             --bg-sidebar: #181829;
             --bg-card: rgba(34, 34, 59, 0.9);
@@ -18,8 +18,8 @@
             --surface-active: #4A4E69;
             
             --border-hairline: rgba(74, 78, 105, 0.4);
-            --border-hover: rgba(242, 233, 228, 0.3);
-            --border-light: rgba(242, 233, 228, 0.12);
+            --border-hover: rgba(242, 233, 228, 0.35);
+            --border-light: rgba(242, 233, 228, 0.15);
             
             --text-cream: #F2E9E4;
             --text-cream-dim: rgba(242, 233, 228, 0.75);
@@ -528,14 +528,16 @@
             color: var(--text-cream-dim);
         }
 
-        .pkg-flight-strip {
+        /* Live Animated SVG Flight Arc Ribbon */
+        .flight-arc-container {
             display: flex;
             align-items: center;
             justify-content: space-between;
             background: var(--bg-subtle);
-            padding: 0.85rem 1rem;
+            padding: 0.85rem 1.15rem;
             border-radius: var(--radius-md);
             border: 1px solid var(--border-hairline);
+            position: relative;
         }
 
         .flight-time-box .time {
@@ -549,28 +551,31 @@
             color: var(--text-cream-dim);
         }
 
-        .flight-duration-center {
-            text-align: center;
-            font-size: 0.72rem;
-            color: var(--text-cream-muted);
+        .flight-arc-center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            padding: 0 1rem;
         }
 
-        .flight-line {
-            width: 80px;
-            height: 2px;
-            background: var(--border-hairline);
-            margin: 0.2rem auto;
-            position: relative;
+        .svg-flight-track {
+            width: 100%;
+            max-width: 140px;
+            height: 24px;
         }
 
-        .flight-line::after {
-            content: '✈';
-            position: absolute;
-            top: -7px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.75rem;
+        .live-countdown-pill {
+            font-size: 0.68rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
             color: var(--status-warning);
+            background: rgba(249, 199, 79, 0.15);
+            padding: 0.15rem 0.5rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(249, 199, 79, 0.3);
+            margin-top: 0.2rem;
+            animation: pulse-glow 2s infinite;
         }
 
         .pkg-reasoning {
@@ -604,6 +609,7 @@
             display: block;
         }
 
+        /* Magnetic Button Hover Aura */
         .btn-rebook {
             background: var(--text-cream);
             color: var(--bg-base);
@@ -613,15 +619,17 @@
             border-radius: var(--radius-md);
             cursor: pointer;
             font-size: 0.85rem;
-            transition: all 0.2s var(--ease);
+            transition: transform 0.15s ease, box-shadow 0.2s ease;
             display: flex;
             align-items: center;
             gap: 0.4rem;
+            position: relative;
+            overflow: hidden;
         }
 
         .btn-rebook:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 18px rgba(242, 233, 228, 0.25);
+            box-shadow: 0 6px 20px rgba(242, 233, 228, 0.3);
         }
 
         /* Right Column Sidebars */
@@ -701,6 +709,7 @@
         .seat-block.available:hover {
             background: var(--surface-active);
             border-color: var(--text-cream);
+            transform: scale(1.05);
         }
 
         .seat-block.selected {
@@ -708,6 +717,7 @@
             color: #052e16;
             border-color: var(--status-success);
             font-weight: 800;
+            box-shadow: 0 0 10px rgba(144, 190, 109, 0.4);
         }
 
         .seat-block.occupied {
@@ -750,7 +760,7 @@
             flex-shrink: 0;
         }
 
-        /* Siri-Style Audio Waveform Visualizer */
+        /* Siri-Style Multi-Band Audio Waveform Visualizer */
         .audio-waveform-container {
             background: var(--bg-sidebar);
             border: 1px solid var(--border-hairline);
@@ -764,7 +774,7 @@
 
         canvas#audioWaveCanvas {
             width: 100%;
-            height: 70px;
+            height: 80px;
             border-radius: var(--radius-md);
             background: rgba(34, 34, 59, 0.6);
         }
@@ -838,7 +848,7 @@
             animation: pulse-glow 1s infinite;
         }
 
-        /* Apple Wallet PKPass Modal */
+        /* 3D Tilt Apple Wallet PKPass Modal */
         .modal-screen {
             position: fixed;
             top: 0;
@@ -852,6 +862,7 @@
             justify-content: center;
             z-index: 100;
             padding: 1.5rem;
+            perspective: 1200px;
         }
 
         .modal-screen.show {
@@ -869,6 +880,8 @@
             box-shadow: 0 25px 60px rgba(0,0,0,0.8);
             display: flex;
             flex-direction: column;
+            transition: transform 0.1s ease-out;
+            transform-style: preserve-3d;
         }
 
         .pkpass-top-header {
@@ -1017,9 +1030,45 @@
             font-family: 'JetBrains Mono', monospace;
             color: var(--accent-cyan);
         }
+
+        /* Floating HUD Toast Notification */
+        .toast-container {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            z-index: 200;
+            pointer-events: none;
+        }
+
+        .hud-toast {
+            background: rgba(24, 24, 41, 0.9);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-light);
+            color: var(--text-cream);
+            padding: 0.75rem 1.25rem;
+            border-radius: var(--radius-md);
+            font-size: 0.82rem;
+            font-weight: 700;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            animation: slideInRight 0.3s var(--ease);
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(50px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
     </style>
 </head>
 <body>
+
+    <!-- Toast HUD Container -->
+    <div class="toast-container" id="toastContainer"></div>
 
     <!-- Left Sidebar -->
     <aside class="sidebar">
@@ -1152,6 +1201,7 @@
                 <!-- Curated Packages -->
                 <div class="packages-column" id="packagesList">
                     
+                    <!-- Package 1: MAI 8M 336 -->
                     <div class="package-item" id="pkg-mai-336">
                         <span class="pkg-badge fastest">⚡ Fastest Arrival</span>
                         <div class="pkg-header">
@@ -1160,21 +1210,28 @@
                                 <div class="pkg-flightno">Flight 8M 336 • Airbus A320 • Nonstop</div>
                             </div>
                         </div>
-                        <div class="pkg-flight-strip">
+                        
+                        <!-- SVG Flight Arc Ribbon -->
+                        <div class="flight-arc-container">
                             <div class="flight-time-box">
                                 <div class="time">11:45 AM</div>
                                 <div class="airport">BKK (Suvarnabhumi)</div>
                             </div>
-                            <div class="flight-duration-center">
-                                <div>80 mins</div>
-                                <div class="flight-line"></div>
-                                <div>Direct</div>
+                            <div class="flight-arc-center">
+                                <svg class="svg-flight-track" viewBox="0 0 100 20">
+                                    <path d="M 5,15 Q 50,0 95,15" fill="none" stroke="rgba(242, 233, 228, 0.25)" stroke-width="2" stroke-dasharray="2,2"/>
+                                    <circle cx="50" cy="7.5" r="3.5" fill="#F9C74F">
+                                        <animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite"/>
+                                    </circle>
+                                </svg>
+                                <span class="live-countdown-pill" id="countdownPill1">🔒 Fare Locked: 14:58</span>
                             </div>
-                            <div class="flight-time-box">
+                            <div class="flight-time-box" style="text-align: right;">
                                 <div class="time">12:35 PM</div>
                                 <div class="airport">RGN (Yangon)</div>
                             </div>
                         </div>
+
                         <div class="pkg-reasoning">
                             🤖 <strong>Qoder Reasoning:</strong> Departs in 1h 45m. Minimizes airport downtime and arrives at destination by 12:35 PM. Star Alliance tier honored.
                         </div>
@@ -1189,6 +1246,7 @@
                         </div>
                     </div>
 
+                    <!-- Package 2: AirAsia FD 251 -->
                     <div class="package-item" id="pkg-airasia-251">
                         <span class="pkg-badge budget">💰 Best Value Match</span>
                         <div class="pkg-header">
@@ -1197,21 +1255,25 @@
                                 <div class="pkg-flightno">Flight FD 251 • Airbus A320neo • Nonstop</div>
                             </div>
                         </div>
-                        <div class="pkg-flight-strip">
+
+                        <div class="flight-arc-container">
                             <div class="flight-time-box">
                                 <div class="time">04:20 PM</div>
                                 <div class="airport">DMK (Don Mueang)</div>
                             </div>
-                            <div class="flight-duration-center">
-                                <div>75 mins</div>
-                                <div class="flight-line"></div>
-                                <div>Direct</div>
+                            <div class="flight-arc-center">
+                                <svg class="svg-flight-track" viewBox="0 0 100 20">
+                                    <path d="M 5,15 Q 50,0 95,15" fill="none" stroke="rgba(242, 233, 228, 0.25)" stroke-width="2" stroke-dasharray="2,2"/>
+                                    <circle cx="50" cy="7.5" r="3.5" fill="#90BE6D"/>
+                                </svg>
+                                <span class="live-countdown-pill" style="color: var(--status-success);">💰 $56 Cash Surplus</span>
                             </div>
-                            <div class="flight-time-box">
+                            <div class="flight-time-box" style="text-align: right;">
                                 <div class="time">05:05 PM</div>
                                 <div class="airport">RGN (Yangon)</div>
                             </div>
                         </div>
+
                         <div class="pkg-reasoning">
                             🤖 <strong>Qoder Reasoning:</strong> Lowest fare option at $89.00. 100% covered by airline refund + $56 cash payout surplus.
                         </div>
@@ -1331,7 +1393,7 @@
             <h2 style="font-size: 1.3rem; font-weight: 800;">🎙️ 24/7 AI Travel Concierge Desk</h2>
             <div class="audio-waveform-container">
                 <canvas id="audioWaveCanvas"></canvas>
-                <p style="font-size: 0.78rem; color: var(--text-cream-dim);">Speech Recognition Active • Powered by Web Speech & Qwen-2.5</p>
+                <p style="font-size: 0.78rem; color: var(--text-cream-dim);">Speech Recognition Active • Multi-Band Fluid Waveform</p>
             </div>
 
             <div class="chat-stream-box" id="fullChatStream">
@@ -1373,7 +1435,7 @@
                     <div>SETTLEMENT: Pre-approved Direct Bank Transfer</div>
                     <div>STATUS: READY_FOR_INSTANT_PAYOUT</div>
                 </div>
-                <button class="btn-rebook" onclick="alert('✅ $250.00 successfully credited to your account!')" style="align-self: flex-start;">
+                <button class="btn-rebook" onclick="showToast('✓ $250.00 successfully deposited to your wallet!')" style="align-self: flex-start;">
                     Instant 1-Click Payout Deposit ➔
                 </button>
             </div>
@@ -1469,9 +1531,9 @@
 
     </main>
 
-    <!-- Photorealistic Apple Wallet PKPass Modal -->
+    <!-- 3D Tilt Photorealistic Apple Wallet PKPass Modal -->
     <div class="modal-screen" id="ticketModal">
-        <div class="pkpass-card">
+        <div class="pkpass-card" id="pkpassCard">
             <div class="pkpass-top-header">
                 <span style="font-weight: 800; font-size: 0.95rem;">✈️ Boarding Pass</span>
                 <span style="font-size: 0.75rem; color: var(--status-warning); font-weight: 700;">★ STAR ALLIANCE GOLD</span>
@@ -1547,6 +1609,20 @@
         let currentCurrency = 'USD';
         let currentAssignedSeat = '12A';
 
+        function showToast(msg) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'hud-toast';
+            toast.innerText = msg;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(10px)';
+                toast.style.transition = 'all 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
         function showSaaSView(viewId) {
             document.querySelectorAll('.saas-view-pane').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
@@ -1566,6 +1642,7 @@
             document.getElementById('dynStatus').style.color = '#F94144';
             document.getElementById('dynFlight').innerText = 'MAI 8M 336';
             document.getElementById('dynGate').innerText = 'Gate D4';
+            showToast('🚨 Disruption Ingested: TG 303 Cancelled');
         }
 
         async function triggerSelfHealingDemo() {
@@ -1588,8 +1665,9 @@
                 
                 document.getElementById('dynStatus').innerText = '🔄 SELF-HEALED: TG 307';
                 document.getElementById('dynFlight').innerText = 'TG 307 (Gate C7)';
+                showToast('🔄 Self-Healing Loop Auto-Recovered in 144ms!');
             } catch (err) {
-                alert('Self-Healing Loop executed successfully!');
+                showToast('Self-Healing Loop executed successfully!');
             }
         }
 
@@ -1598,6 +1676,7 @@
             document.querySelectorAll('.seat-block').forEach(el => el.classList.remove('selected'));
             document.getElementById('assignedSeatLabel').innerText = seatCode + ' (Locked)';
             document.getElementById('passSeat').innerText = seatCode;
+            showToast('✓ Seat ' + seatCode + ' locked in Atlas Inventory');
         }
 
         function executeRebook(offerId, flightNo, depTime, price) {
@@ -1607,6 +1686,7 @@
             document.getElementById('ticketModal').classList.add('show');
             
             triggerDisruptionSimulation();
+            showToast('✓ Rebooked on ' + flightNo + ' (PNR Issued)');
         }
 
         function closeModal() {
@@ -1615,6 +1695,34 @@
 
         function onCurrencyChange(curr) {
             currentCurrency = curr;
+            showToast('Currency updated to ' + curr);
+        }
+
+        // Live Fare Lock Countdown
+        let countdownSec = 899;
+        setInterval(() => {
+            if (countdownSec > 0) countdownSec--;
+            const mins = Math.floor(countdownSec / 60);
+            const secs = countdownSec % 60;
+            const el = document.getElementById('countdownPill1');
+            if (el) el.innerText = `🔒 Fare Locked: ${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }, 1000);
+
+        // 3D Card Gyroscope Tilt Effect on PKPass
+        const pkCard = document.getElementById('pkpassCard');
+        const modal = document.getElementById('ticketModal');
+        if (modal && pkCard) {
+            modal.addEventListener('mousemove', (e) => {
+                const rect = pkCard.getBoundingClientRect();
+                const x = e.clientX - rect.left - rect.width / 2;
+                const y = e.clientY - rect.top - rect.height / 2;
+                const rotateX = -y / 15;
+                const rotateY = x / 15;
+                pkCard.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            });
+            modal.addEventListener('mouseleave', () => {
+                pkCard.style.transform = 'rotateX(0deg) rotateY(0deg)';
+            });
         }
 
         // Voice Concierge
@@ -1681,7 +1789,7 @@
             }
         }
 
-        // Siri Audio Waveform Visualizer
+        // Multi-Band Fluid Audio Waveform Visualizer
         const canvas = document.getElementById('audioWaveCanvas');
         if (canvas) {
             const ctx = canvas.getContext('2d');
@@ -1690,16 +1798,40 @@
                 canvas.width = canvas.offsetWidth;
                 canvas.height = canvas.offsetHeight;
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = '#4CC9F0';
 
+                // Layer 1: Cyan Ribbon
+                ctx.lineWidth = 2.5;
+                ctx.strokeStyle = '#4CC9F0';
                 ctx.beginPath();
                 for (let x = 0; x < canvas.width; x++) {
-                    const y = canvas.height / 2 + Math.sin((x + step) * 0.05) * 12 * Math.sin(step * 0.02);
+                    const y = canvas.height / 2 + Math.sin((x + step) * 0.04) * 14 * Math.sin(step * 0.02);
                     if (x === 0) ctx.moveTo(x, y);
                     else ctx.lineTo(x, y);
                 }
                 ctx.stroke();
+
+                // Layer 2: Emerald Green Ribbon
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = 'rgba(144, 190, 109, 0.7)';
+                ctx.beginPath();
+                for (let x = 0; x < canvas.width; x++) {
+                    const y = canvas.height / 2 + Math.cos((x - step) * 0.035) * 10 * Math.sin(step * 0.025);
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                // Layer 3: Cream Accent Ribbon
+                ctx.lineWidth = 1.0;
+                ctx.strokeStyle = 'rgba(242, 233, 228, 0.4)';
+                ctx.beginPath();
+                for (let x = 0; x < canvas.width; x++) {
+                    const y = canvas.height / 2 + Math.sin((x + step * 1.5) * 0.05) * 6;
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
                 step += 2;
                 requestAnimationFrame(drawWave);
             }
