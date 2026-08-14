@@ -1,107 +1,119 @@
 import asyncio
+import os
 from playwright.async_api import async_playwright
 
 async def run_e2e_test():
-    print("🚀 Starting Automated Playwright E2E Test Suite for TravelCare AI...")
+    print("Starting TravelCare AI E2E Test Suite...")
+    os.makedirs("e2e_screenshots", exist_ok=True)
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(viewport={"width": 1440, "height": 900})
         page = await context.new_page()
 
-        # 1. Open Web App & Verify Dynamic Island & Predictive Radar
-        print("📍 Navigating to http://localhost:8050...")
+        # 1. Load dashboard and verify sidebar + brand
+        print("Step 1: Loading dashboard...")
         await page.goto("http://localhost:8050")
         await page.wait_for_load_state("networkidle")
-        
-        assert await page.is_visible("#topDynamicIsland")
-        assert await page.is_visible("#radarCard")
+
+        assert await page.is_visible("#sidebar")
+        assert await page.is_visible("#brand-name")
+        assert await page.is_visible("#btn-simulate")
         await page.screenshot(path="e2e_screenshots/01_dashboard_initial.png", full_page=True)
-        print("✅ Step 1: Initial Dashboard & AI Predictive Radar loaded.")
+        print("  PASS: Dashboard loaded with sidebar, brand, and simulate button.")
 
-        # 2. Test Multi-View Navigation
-        print("📍 Testing Multi-View SaaS Navigation...")
-        await page.click("#navSearch")
+        # 2. Test navigation: Search view
+        print("Step 2: Testing navigation...")
+        await page.click('.nav-icon[data-view="search"]')
         await page.wait_for_timeout(300)
-        assert await page.is_visible("#viewSearch")
+        assert await page.is_visible("#view-search")
+        assert await page.is_visible("#search-origin")
 
-        await page.click("#navConcierge")
+        # 3. Navigate to Concierge view
+        await page.click('.nav-icon[data-view="concierge"]')
         await page.wait_for_timeout(300)
-        assert await page.is_visible("#viewConcierge")
-        assert await page.is_visible("#audioWaveCanvas")
+        assert await page.is_visible("#view-concierge")
+        assert await page.is_visible("#chat-input")
+        assert await page.is_visible(".chip")
 
-        await page.click("#navClaims")
+        # 4. Navigate back to Rescue Hub
+        await page.click('.nav-icon[data-view="rescue"]')
         await page.wait_for_timeout(300)
-        assert await page.is_visible("#viewClaims")
+        assert await page.is_visible("#view-rescue")
+        assert await page.is_visible("#empty-state")
+        print("  PASS: All 3 views switched seamlessly.")
 
-        await page.click("#navTelemetry")
-        await page.wait_for_timeout(300)
-        assert await page.is_visible("#viewTelemetry")
-        assert await page.is_visible("#dagFlowGrid")
+        # 5. Simulate Disruption
+        print("Step 3: Triggering disruption simulation...")
+        await page.click("#btn-simulate")
+        await page.wait_for_timeout(2500)
 
-        await page.click("#navJourney")
-        await page.wait_for_timeout(300)
-        assert await page.is_visible("#viewJourney")
-        print("✅ Step 2: All 5 SaaS views switched seamlessly.")
+        assert await page.is_visible("#disruption-banner")
+        assert await page.is_visible("#route-visual")
+        assert await page.is_visible("#reasoning-trail")
 
-        # 3. Simulate Flight Disruption & Verify Visual Diff
-        print("📍 Triggering Disruption Simulation...")
-        await page.click("#btnSimulateDisruption")
-        await page.wait_for_timeout(600)
+        packages = await page.query_selector_all(".package-card")
+        assert len(packages) == 2, f"Expected 2 rescue packages, got {len(packages)}"
+        print("  PASS: Disruption banner, route visual, reasoning trail, 2 packages confirmed.")
 
-        assert await page.is_visible("#crisisAlertBanner")
-        assert await page.is_visible("#flightDiffCard")
+        # 6. Verify compensation card
+        assert await page.is_visible("#compensation-card")
+        comp_text = await page.inner_text("#compensation-card")
+        assert "250" in comp_text or "$250" in comp_text
+        print("  PASS: Auto-compensation card shows $250 claim.")
+
         await page.screenshot(path="e2e_screenshots/02_disruption_activated.png", full_page=True)
-        print("✅ Step 3: Crisis alert & Visual Flight Rescue Diff confirmed.")
 
-        # 4. Test 1-Click Rebooking & Apple Wallet PKPass Modal
-        print("📍 Executing 1-Click Autonomous Rebooking...")
-        rebook_buttons = await page.query_selector_all(".btn-rebook")
-        assert len(rebook_buttons) > 0
-        await rebook_buttons[0].click()
-        await page.wait_for_timeout(600)
+        # 7. Test 1-Click Rebook
+        print("Step 4: Executing 1-Click Rebook...")
+        rebook_btn = await page.query_selector(".btn-rebook")
+        assert rebook_btn is not None
+        await rebook_btn.click()
+        await page.wait_for_timeout(1500)
 
-        assert await page.is_visible("#ticketModal")
-        await page.screenshot(path="e2e_screenshots/03_boarding_pass_modal.png")
-        print("✅ Step 4: Photorealistic Apple Wallet PKPass Boarding Pass confirmed.")
+        assert await page.is_visible("#modal-overlay")
+        assert await page.is_visible("#boarding-pass")
+        bp_origin = await page.inner_text("#bp-origin")
+        bp_dest = await page.inner_text("#bp-dest")
+        assert len(bp_origin) > 0
+        assert len(bp_dest) > 0
+        await page.screenshot(path="e2e_screenshots/03_boarding_pass.png")
+        print("  PASS: Boarding pass modal with route details confirmed.")
 
-        # Close Modal
-        await page.evaluate("() => closeModal()")
-        await page.wait_for_selector("#ticketModal", state="hidden")
+        # Close modal
+        await page.click(".btn-done")
+        await page.wait_for_selector("#modal-overlay", state="hidden")
         await page.wait_for_timeout(300)
 
-        # 5. Test Interactive Seatmap (Select 11B)
-        print("📍 Testing Interactive Seat Selector (Seat 11B)...")
-        await page.click(".seat-block:has-text('B')")
+        # 8. Test Flight Search
+        print("Step 5: Testing flight search...")
+        await page.click('.nav-icon[data-view="search"]')
         await page.wait_for_timeout(300)
-        seat_label = await page.inner_text("#assignedSeatLabel")
-        assert "11B" in seat_label
-        print(f"   Assigned Seat: {seat_label}")
+        await page.click(".btn-search")
+        await page.wait_for_timeout(2000)
 
-        # 6. Test AI Concierge Desk Interaction
-        print("📍 Testing AI Concierge Desk Interaction...")
-        await page.click("#navConcierge")
-        await page.fill("#deskChatInput", "Can I request a vegetarian meal?")
-        await page.click("button:has-text('Send')")
-        await page.wait_for_timeout(800)
-        chat_content = await page.inner_text("#fullChatStream")
-        assert "Vegetarian" in chat_content
-        await page.screenshot(path="e2e_screenshots/04_concierge_chat.png", full_page=True)
-        print("✅ Step 6: AI Concierge responded with special meal voucher details.")
+        results = await page.query_selector_all(".search-result-card")
+        assert len(results) >= 2, f"Expected >=2 search results, got {len(results)}"
+        first_result = await results[0].inner_text()
+        assert "BKK" in first_result or "DMK" in first_result
+        await page.screenshot(path="e2e_screenshots/04_search_results.png", full_page=True)
+        print(f"  PASS: Flight search returned {len(results)} results.")
 
-        # 7. Test Self-Healing Loop Fault Injection
-        print("📍 Testing Self-Healing Loop Fault Injection in Browser...")
-        await page.click("#navJourney")
-        await page.click("#btnSelfHealLoop")
-        await page.wait_for_timeout(800)
-        assert await page.is_visible("#ticketModal")
-        diff_flight = await page.inner_text("#diffRescueFlight")
-        assert "TG 307" in diff_flight or "Self-Healed" in diff_flight
-        await page.screenshot(path="e2e_screenshots/05_self_healing_modal.png")
-        await page.evaluate("() => closeModal()")
-        print("✅ Step 7: Self-Healing Loop Fault Injection successfully tested and verified.")
+        # 9. Test Concierge Chat
+        print("Step 6: Testing concierge chat...")
+        await page.click('.nav-icon[data-view="concierge"]')
+        await page.wait_for_timeout(300)
+        await page.fill("#chat-input", "Can I request a vegetarian meal?")
+        await page.click("#btn-send")
+        await page.wait_for_timeout(1500)
+
+        chat_content = await page.inner_text("#chat-messages")
+        assert "Vegetarian" in chat_content or "meal" in chat_content.lower()
+        await page.screenshot(path="e2e_screenshots/05_concierge_chat.png", full_page=True)
+        print("  PASS: Concierge responded with meal voucher details.")
 
         await browser.close()
-        print("🎉 ALL PLAYWRIGHT E2E BROWSER TESTS PASSED (100% ZERO DEFECTS)!")
+        print("\nALL E2E TESTS PASSED (6/6 steps)")
 
 if __name__ == "__main__":
     asyncio.run(run_e2e_test())

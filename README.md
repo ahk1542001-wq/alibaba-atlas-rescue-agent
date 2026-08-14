@@ -1,156 +1,146 @@
-# TravelCare AI — Autonomous Flight Disruption Recovery & Travel Companion
+# TravelCare AI — Autonomous Flight Disruption Recovery
 
 [![CI Test Suite](https://github.com/aungheinkyaw/alibaba-atlas-rescue-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/aungheinkyaw/alibaba-atlas-rescue-agent/actions)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
 [![Qoder](https://img.shields.io/badge/Alibaba%20Cloud-Qwen--2.5--72B-FF6A00.svg)](https://www.alibabacloud.com/)
-[![Atlas GDS](https://img.shields.io/badge/Atlas%20Travel-ATRIP%20Sandbox-4A4E69.svg)](https://sandbox.atriptech.com)
+[![Atlas GDS](https://img.shields.io/badge/Atlas%20Travel-ATRIP%20Sandbox-0F766E.svg)](https://sandbox.atriptech.com)
 [![Tests](https://img.shields.io/badge/Tests-11%2F11%20Passed%20(100%25)-success.svg)](test_rescue_agent.py)
 
-> **Hackathon:** Alibaba Cloud x Atlas Agentic AI Hackathon 2026  
-> **Track:** Flights & Aviation Autonomous Agents  
-> **Participant / Lead Architect:** Aung Hein Kyaw (Victor Job)  
-> **Team Mailbox:** `aihackathon048@aihackthon.atriptech.com`  
+> **Hackathon:** Alibaba Cloud x Atlas Agentic AI Hackathon 2026
+> **Track:** Flights & Aviation Autonomous Agents
+> **Participant / Lead Architect:** Aung Hein Kyaw (Victor Job)
+> **Team Mailbox:** `aihackathon048@aihackathon.atriptech.com`
 > **Demo Submission Deadline:** August 30, 2026 (23:59 SGT)
 
 ---
 
-## ✈️ Executive Overview & Problem Statement
+## Overview
 
-Flight cancellations and severe delays cost the global airline industry **$60B+ annually** and trap millions of travelers in exhausting 90–180 minute airport queues.
+Flight cancellations and severe delays cost the global airline industry $60B+ annually and trap millions of travelers in exhausting 90-180 minute airport queues.
 
-**TravelCare AI** is an Autonomous Travel Agent-as-a-Service SaaS engineered with **Loop & Graph Engineering** principles:
-1. **AI Predictive Radar:** Tracks inbound aircraft tail (`HS-TKF`) and airspace weather to deliver a **45-minute early pre-cancellation warning (88% risk)** before airlines announce ground stops.
-2. **Deterministic Verifier Suite:** 4 strict verification gates (*FareLockContract*, *SeatConflict*, *BaggageContinuity*, *RegulatoryPayout*) guarantee zero hallucination.
-3. **Agentic Decision Engine (Qoder / Qwen-2.5):** Evaluates traveler loyalty context and scans 140+ airlines across Atlas GDS in parallel.
-4. **Self-Healing Closed Loop:** Automatically catches sudden seat exhaustion and gracefully loops back to lock fallback alternatives in **144ms without human re-intervention**.
-5. **Visual Flight Rescue Diff:** High-contrast Before vs After comparison (`TG 303 Cancelled ➔ 8M 336 Rebooked +2h 30m delta`).
-6. **1-Click Settlement (<18s):** Locks fares, re-issues PNRs, executes luggage transfer telemetry, files automated **$250.00 EU261/ASEAN compensation claims**, and delivers an instant Apple Wallet Boarding Pass with a 24/7 Voice AI Concierge.
+**TravelCare AI** is an Autonomous Travel Agent-as-a-Service SaaS that detects flight disruptions in real-time, scans 140+ airlines via Atlas GDS, and delivers curated rescue packages with 1-click rebooking in under 30 seconds.
+
+**Core flow:** Flight disrupted -> AI agent detects -> Atlas GDS searches -> 2 rescue packages ranked by Qwen-2.5 -> 1-click rebook -> boarding pass + $250 auto-filed compensation.
 
 ---
 
-## 🏛️ Closed-Loop State Graph (DAG) & Self-Healing Architecture
+## Design
 
-```mermaid
-stateDiagram-v2
-    [*] --> IngestionRadar: 📡 Inbound Flight & Weather Ingested (8.2ms)
-    IngestionRadar --> PredictiveEvaluator: ⚡ 45m Pre-Disruption Warning (14.5ms)
-    PredictiveEvaluator --> DisruptionConfirmed: 🚨 Cancellation Ground Stop (11.0ms)
-    DisruptionConfirmed --> ParetoOptimizer: 🧠 Qwen-2.5 Multi-Criteria Curation (14.8ms)
-    ParetoOptimizer --> FareLockHold: 🔒 Atlas ATRIP GDS Fare Lock (38.0ms)
-    
-    FareLockHold --> PassengerDecision: 👤 1-Click Approval (12.0ms)
-    FareLockHold --> SelfHealingLoop: ⚠️ Verifier Rejection (Seat Exhausted)
-    SelfHealingLoop --> ParetoOptimizer: 🔄 Auto-Loop Back & Settle Fallback Flight
-    
-    PassengerDecision --> TicketSettlement: 💳 Atlas Balance Settlement & PNR (45.0ms)
-    TicketSettlement --> AncillarySync: 🧳 Baggage Continuity + Seat 11B + $250 Claim (22.0ms)
-    AncillarySync --> ClosedLoopVerified: 🛡️ Apple PKPass & Verification Complete (5.0ms)
-    ClosedLoopVerified --> [*]
-```
+**Warm Travel-App** aesthetic inspired by modern travel apps (TripIt, Airbnb, Google Travel). Clean, calm, professional.
 
----
-
-## 💰 Token Economics & Verifier Suite
-
-| Metric | Measurement / Performance | Benchmark Comparison |
+| Token | Value | Usage |
 |---|---|---|
-| **Prompt Tokens** | 280 tokens | Compressed multi-carrier context |
-| **Completion Tokens** | 140 tokens | Structured JSON Pydantic contract |
-| **Total Tokens** | 420 tokens per recovery | Sub-500 token budget |
-| **AI Inference Cost** | **$0.0018 USD** | Alibaba Cloud Qwen-2.5 via Qoder |
-| **Human Call Center Cost** | **$18.50 USD** | Traditional airline support queue |
-| **Cost Reduction** | **99.9% Savings** | Enterprise airline operational efficiency |
+| Background | `#FDF6EE` | Warm cream page background |
+| Cards | `#FFFFFF` | White card surfaces |
+| Accent | `#0F766E` | Teal primary buttons, brand |
+| Borders | `#F3D4B8` | Soft amber card borders |
+| Danger | `#DC2626` | Cancelled / error states |
+| Success | `#059669` | Confirmed / payout states |
 
-### 🛡️ Active Verifier Suite (`services/verifiers.py`)
-1. `FareLockContractVerifier`: Verifies price lock validity (900s TTL) and prevents fare slippage.
-2. `SeatConflictVerifier`: Prevents double-booking and assigns valid open seats (e.g., 11B).
-3. `BaggageContinuityVerifier`: Validates physical luggage tag (`BKK-45BA`) manifest transfer to Cargo Bay 2.
-4. `RegulatoryPayoutVerifier`: Validates $250.00 passenger delay relief under Article 14 / EU261 regulations.
+**Fonts:** Inter (UI) + JetBrains Mono (codes, times, prices). No emojis.
+
+### Layout: Focused Two-Panel
+
+Slim 48px icon sidebar + main content area. Only 3 views:
+
+1. **Rescue Hub** (default) — disruption alert, route visual, AI reasoning trail, 2 rescue packages, auto-compensation
+2. **Search** — GDS flight search with multi-currency
+3. **Concierge** — AI chat assistant with quick prompt chips
 
 ---
 
-## 🛠️ Official Tech Stack
+## Tech Stack
 
-| Layer | Component | Production Technology | Role & Performance |
+| Layer | Component | Technology | Role |
 |---|---|---|---|
-| **Backend Core** | High-Throughput API Gateway | **FastAPI + Uvicorn (Python 3.13)** | Sub-20ms async request latency |
-| **Agent Intelligence** | Reasoning & Decision Layer | **Alibaba Cloud Qwen-2.5 via Qoder** | Multi-criteria curation & travel policy compliance |
-| **State Machine**| Closed-Loop Graph Engine | **Deterministic DAG / State Graph** | Self-healing loops, zero hallucination |
-| **Verification**| Verifier Suite | **Loop Engineering Verifiers** | 4 deterministic validation gates |
-| **GDS & Inventory** | Multi-Carrier Flight APIs | **Atlas Flight APIs (ATRIP Sandbox)** | 140+ airlines search, fare-lock, booking write-back |
-| **Frontend SaaS** | Passenger Travel Companion | **Linear-Style Multi-View Web App** | Modern left sidebar, voice STT, responsive layout |
-| **Design Tokens** | Custom Luxury Palette | **`#22223B`, `#4A4E69`, `#F2E9E4`** | Space Cadet dark base, slate borders, cream typography |
-| **Testing & CI** | Automated Quality Assurance | **Pytest + Playwright + GitHub Actions** | 100% test pass rate across unit, integration, and E2E |
+| **Backend** | API Gateway | FastAPI + Uvicorn (Python 3.13) | Sub-20ms async request latency |
+| **AI** | Reasoning Engine | Alibaba Cloud Qwen-2.5 via Qoder | Multi-criteria flight ranking |
+| **GDS** | Flight APIs | Atlas Travel APIs (ATRIP Sandbox) | 140+ airlines search, fare-lock, booking |
+| **Frontend** | Dashboard | Vanilla HTML/CSS/JS (Warm Travel-App) | 3-view two-panel layout |
+| **Testing** | QA | Pytest + Playwright | 11 unit tests + 6 E2E browser tests |
 
 ---
 
-## 📁 Repository Directory Structure
+## Repository Structure
 
 ```
 alibaba-atlas-rescue-agent/
-├── .github/
-│   └── workflows/
-│       └── ci.yml             # Automated GitHub Actions CI Pipeline
-├── main.py                    # Clean FastAPI Application Gateway with CORS
-├── config.py                  # Pydantic Settings & Environment Variables
+├── main.py                    # FastAPI app with CORS and static serving
+├── config.py                  # Pydantic settings & env vars
 ├── models/
-│   └── schemas.py             # Canonical Data Contracts & Pydantic Schemas
-├── routers/
-│   └── v1/
-│       ├── flights.py         # /api/flights (Global GDS Search across 140+ carriers)
-│       ├── disruptions.py     # /api/disruption (Agentic Analysis & Self-Healing Loop)
-│       ├── bookings.py        # /api/rescue/book (Fare verification & Booking)
-│       ├── concierge.py       # /api/chat/concierge (Voice & Text Concierge Desk)
-│       ├── claims.py          # /api/claims (Automated $250 Compensation Claims)
-│       ├── hotels.py          # /api/hotels (Emergency Transit Hotels & Vouchers)
-│       └── telemetry.py       # /api/agent/telemetry, /api/seatmap, /api/baggage, /api/graph/state
+│   └── schemas.py             # Pydantic data contracts
+├── routers/v1/
+│   ├── flights.py             # POST /api/flights/search
+│   ├── disruptions.py         # POST /api/disruption/analyze
+│   ├── bookings.py            # POST /api/rescue/book
+│   ├── concierge.py           # POST /api/chat/concierge
+│   ├── claims.py              # POST /api/claims/generate
+│   ├── hotels.py              # Transit hotel search (legacy)
+│   └── telemetry.py           # Agent telemetry (legacy)
 ├── services/
-│   ├── atlas_client.py        # ATRIP Sandbox API Client (Multi-currency support)
-│   ├── rescue_engine.py       # Qwen-2.5 Multi-Criteria Optimizer & Logic
-│   ├── state_graph.py         # Closed-Loop State Graph (DAG) State Machine
-│   └── verifiers.py           # Cobus Greyling Deterministic Verifiers Suite
+│   ├── atlas_client.py        # ATRIP Sandbox client with mock fallback
+│   ├── rescue_engine.py       # Qwen-2.5 multi-criteria optimizer
+│   ├── state_graph.py         # DAG state machine
+│   └── verifiers.py           # Deterministic verifier suite
 ├── static/
-│   └── index.html             # Multi-View SaaS Interface (Voice STT, Seatmap, PKPass)
-├── test_rescue_agent.py       # Automated Pytest Suite (11/11 Tests Passing)
-├── test_e2e_playwright.py     # Headless Playwright Browser E2E Automation
-├── requirements.txt           # Production Python Dependencies
-└── README.md                  # System Documentation & Runbook
+│   └── index.html             # Warm Travel-App dashboard (3 views)
+├── docs/superpowers/specs/
+│   └── 2026-08-14-travelcare-ui-redesign-design.md
+├── test_rescue_agent.py       # 11/11 unit tests passing
+├── test_e2e_playwright.py     # 6-step E2E browser test suite
+└── README.md
 ```
 
 ---
 
-## 🚀 Quickstart & Verification Runbook
+## Quickstart
 
-### 1. Install Dependencies & Start Server
+### 1. Start Server
 ```bash
-# Using uv for ultra-fast dependency resolution (Python 3.13)
 uv run --with fastapi --with uvicorn --with pydantic --with httpx --with python-dotenv python main.py
 ```
-Server runs locally at: `http://localhost:8050`  
-API Interactive Docs: `http://localhost:8050/api/docs`
+Server: `http://localhost:8050` | API Docs: `http://localhost:8050/api/docs`
 
-### 2. Run Automated Pytest Suite (11/11 Passing)
+### 2. Run Unit Tests (11/11)
 ```bash
 uv run --with pytest --with pytest-asyncio --with httpx --with fastapi --with uvicorn --with pydantic --with python-dotenv pytest test_rescue_agent.py -v
 ```
 
-### 3. Run Automated Playwright E2E Browser Test Suite (Zero Defects)
+### 3. Run E2E Browser Tests (6 steps)
 ```bash
 uv run --with playwright python test_e2e_playwright.py
 ```
 
 ---
 
-## 🎬 3-Minute Video Demo Storyboard
+## API Endpoints
 
-1. **[0:00 - 0:40] The Problem & Predictive Radar:** Show Bangkok Suvarnabhumi Airport. Passenger Aung Hein Kyaw sees flight `TG 303 (09:15 AM)` marked on-time on the airport board, but **TravelCare AI Predictive Radar** warns of an 88% cancellation risk based on inbound aircraft `HS-TKF`'s 3h delay in London Heathrow.
-2. **[0:40 - 1:20] Webhook Alert & Pareto Curation:** Official cancellation occurs. TravelCare AI immediately displays the **Visual Flight Rescue Diff** and 3 curated packages from Atlas GDS scanning 140+ carriers.
-3. **[1:20 - 2:00] Self-Healing Loop Demo:** Demonstrate fault injection: primary choice simulated as sold out. The **Closed-Loop DAG automatically catches verifier rejection and self-heals onto Thai Airways TG 307 in 144ms**.
-4. **[2:00 - 2:30] 1-Click Settlement & PKPass:** Passenger locks seat `11B`, baggage tag `BKK-45BA` auto-transfers to Cargo Bay 2, and digital Apple Wallet Boarding Pass pops up.
-5. **[2:30 - 3:00] Voice AI Concierge & Economics:** Passenger asks by voice: *"Can I get a vegetarian meal?"* AI instantly confirms meal code `AVML`. Final shot highlights the **$0.0018 token cost (99.9% savings)** and pre-filled $250 compensation claim.
+| Action | Method | Endpoint | Body |
+|---|---|---|---|
+| Health check | GET | `/api/health` | - |
+| Trigger disruption analysis | POST | `/api/disruption/analyze` | `{flight_number, passenger_name, date, currency}` |
+| Flight search | POST | `/api/flights/search` | `{origin, destination, date, passengers, cabin_class, currency}` |
+| 1-Click rebook | POST | `/api/rescue/book` | `{offer_id, passenger_name, passport_number, price_usd, baggage_addon, seat_selected}` |
+| Concierge chat | POST | `/api/chat/concierge` | `{query, session_id}` |
+| File compensation | POST | `/api/claims/generate` | `{flight_number, passenger_name}` |
+
+All endpoints return mock data when `USE_MOCK_FALLBACK=true` (default). No external API keys required for demo.
 
 ---
 
-## 📜 License
+## 3-Minute Video Demo Flow
+
+1. **(0:00-0:20)** Show the clean TravelCare AI dashboard on Rescue Hub
+2. **(0:20-0:30)** Click "Simulate Disruption" — banner, reasoning trail populate
+3. **(0:30-1:00)** Show 2 rescue packages, explain Qwen-2.5 AI ranking
+4. **(1:00-1:20)** Click "1-Click Rebook" on FASTEST — boarding pass modal
+5. **(1:20-1:40)** Show boarding pass, close modal
+6. **(1:40-2:00)** Show auto-filed $250 compensation card
+7. **(2:00-2:30)** Switch to Search, do a quick flight search
+8. **(2:30-3:00)** Switch to Concierge, ask about vegetarian meal
+
+---
+
+## License
 MIT License. Built for the Alibaba Cloud x Atlas Agentic AI Hackathon 2026.

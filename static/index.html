@@ -3,1840 +3,822 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TravelCare AI — Autonomous Flight Disruption Recovery & Travel Companion</title>
+    <title>TravelCare AI — Autonomous Flight Rescue</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* Exact Palette: #22223B (Base Dark), #4A4E69 (Slate Indigo), #F2E9E4 (Alabaster Cream) */
-            --bg-base: #22223B;
-            --bg-sidebar: #181829;
-            --bg-card: rgba(34, 34, 59, 0.9);
-            --surface: rgba(74, 78, 105, 0.25);
-            --surface-hover: rgba(74, 78, 105, 0.45);
-            --surface-active: #4A4E69;
-            
-            --border-hairline: rgba(74, 78, 105, 0.4);
-            --border-hover: rgba(242, 233, 228, 0.35);
-            --border-light: rgba(242, 233, 228, 0.15);
-            
-            --text-cream: #F2E9E4;
-            --text-cream-dim: rgba(242, 233, 228, 0.75);
-            --text-cream-muted: rgba(242, 233, 228, 0.45);
-            
-            --status-success: #90BE6D;
-            --status-warning: #F9C74F;
-            --status-danger: #F94144;
-            --accent-cyan: #4CC9F0;
-            
-            --radius-xl: 18px;
-            --radius-lg: 14px;
-            --radius-md: 10px;
-            --radius-sm: 6px;
+            --bg-cream: #FDF6EE;
+            --bg-card: #FFFFFF;
+            --accent-teal: #0F766E;
+            --accent-teal-light: #CCFBF1;
+            --accent-teal-dark: #115E57;
+            --border-amber: #F3D4B8;
+            --border-amber-light: #FAE6D5;
+            --text-dark: #1C1917;
+            --text-muted: #78716C;
+            --text-light: #A8A29E;
+            --status-danger: #DC2626;
+            --status-danger-bg: #FEF2F2;
+            --status-warning: #F59E0B;
+            --status-success: #059669;
+            --status-success-bg: #ECFDF5;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
             --ease: cubic-bezier(0.16, 1, 0.3, 1);
         }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg-base);
-            color: var(--text-cream);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-cream);
+            color: var(--text-dark);
             min-height: 100vh;
             display: flex;
-            line-height: 1.5;
-            -webkit-font-smoothing: antialiased;
-            overflow-x: hidden;
         }
-
-        /* SaaS Left Sidebar */
-        aside.sidebar {
-            width: 270px;
-            background: var(--bg-sidebar);
-            border-right: 1px solid var(--border-hairline);
+        /* SIDEBAR */
+        #sidebar {
+            width: 48px;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border-amber);
             display: flex;
             flex-direction: column;
-            padding: 1.5rem 1.15rem;
+            align-items: center;
+            padding: 12px 0;
+            gap: 8px;
             flex-shrink: 0;
-            min-height: 100vh;
+            position: relative;
+            z-index: 10;
         }
-
-        .brand-logo-cluster {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 1.5rem;
-            padding: 0 0.4rem;
+        .nav-icon {
+            width: 32px; height: 32px;
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: all 0.2s var(--ease);
+            position: relative;
         }
-
-        .brand-icon {
-            width: 38px;
-            height: 38px;
-            background: var(--surface-active);
-            border: 1px solid var(--border-light);
-            border-radius: var(--radius-md);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.25rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        .nav-icon:hover { background: var(--accent-teal-light); color: var(--accent-teal); }
+        .nav-icon.active { background: var(--accent-teal); color: white; }
+        .nav-icon svg { width: 18px; height: 18px; }
+        .nav-icon::after {
+            content: attr(data-label);
+            position: absolute;
+            left: 100%; margin-left: 8px;
+            background: var(--text-dark); color: white;
+            padding: 4px 8px; border-radius: 4px;
+            font-size: 12px; white-space: nowrap;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.2s;
         }
-
-        .brand-text h2 {
-            font-size: 1.05rem;
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            color: var(--text-cream);
+        .nav-icon:hover::after { opacity: 1; }
+        /* MAIN */
+        #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        /* TOP BAR */
+        #topbar {
+            height: 56px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-amber);
+            display: flex; align-items: center;
+            padding: 0 20px;
+            gap: 12px;
+            flex-shrink: 0;
         }
-
-        .brand-text p {
-            font-size: 0.7rem;
-            color: var(--text-cream-dim);
+        #brand { display: flex; align-items: center; gap: 8px; }
+        #brand-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-teal); }
+        #brand-name { font-weight: 700; font-size: 15px; color: var(--text-dark); }
+        #brand-sub { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+        #topbar-spacer { flex: 1; }
+        #health-badge {
+            font-size: 11px; font-weight: 600;
+            color: var(--status-success);
+            background: var(--status-success-bg);
+            padding: 3px 10px; border-radius: 20px;
+            display: flex; align-items: center; gap: 4px;
         }
-
-        .sidebar-profile {
-            background: rgba(74, 78, 105, 0.2);
-            border: 1px solid var(--border-hairline);
-            border-radius: var(--radius-md);
-            padding: 0.85rem;
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.65rem;
-        }
-
-        .avatar-circle {
-            width: 34px;
-            height: 34px;
-            border-radius: 50%;
-            background: var(--surface-active);
-            color: var(--text-cream);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 800;
-            font-size: 0.82rem;
-            border: 1px solid var(--border-light);
-        }
-
-        .profile-info h4 {
-            font-size: 0.84rem;
-            font-weight: 700;
-        }
-
-        .profile-info p {
-            font-size: 0.68rem;
-            color: var(--status-warning);
-            font-weight: 600;
-        }
-
-        .nav-menu {
-            display: flex;
-            flex-direction: column;
-            gap: 0.35rem;
-            list-style: none;
-        }
-
-        .nav-link {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0.7rem 0.85rem;
-            border-radius: var(--radius-md);
-            color: var(--text-cream-dim);
-            text-decoration: none;
-            font-size: 0.85rem;
-            font-weight: 600;
+        #health-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-success); }
+        #btn-simulate {
+            background: transparent;
+            border: 1.5px solid var(--accent-teal);
+            color: var(--accent-teal);
+            padding: 6px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 13px; font-weight: 600;
             cursor: pointer;
             transition: all 0.2s var(--ease);
-            border: 1px solid transparent;
+            font-family: inherit;
         }
-
-        .nav-link:hover {
-            background: var(--surface);
-            color: var(--text-cream);
-            border-color: var(--border-hairline);
+        #btn-simulate:hover { background: var(--accent-teal); color: white; }
+        /* CONTENT AREA */
+        #content { flex: 1; overflow-y: auto; padding: 20px 24px; }
+        .view { display: none; }
+        .view.active { display: block; }
+        /* DISRUPTION BANNER */
+        #disruption-banner {
+            background: var(--status-danger-bg);
+            border: 1px solid #FECACA;
+            border-left: 4px solid var(--status-danger);
+            border-radius: var(--radius);
+            padding: 14px 18px;
+            margin-bottom: 16px;
+            display: none;
         }
-
-        .nav-link.active {
-            background: var(--surface-active);
-            color: var(--text-cream);
-            border-color: var(--border-light);
-            box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+        #disruption-banner.visible { display: block; animation: slideIn 0.3s var(--ease); }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        .banner-title { font-size: 15px; font-weight: 700; color: var(--status-danger); }
+        .banner-sub { font-size: 13px; color: #B91C1C; margin-top: 2px; }
+        /* ROUTE VISUAL */
+        #route-visual {
+            background: var(--bg-card);
+            border: 1px solid var(--border-amber);
+            border-radius: var(--radius);
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            display: none;
         }
-
-        .nav-item-left {
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
+        #route-visual.visible { display: flex; gap: 32px; }
+        .route-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+        .route-label { width: 70px; font-weight: 600; color: var(--text-muted); font-size: 12px; text-transform: uppercase; }
+        .route-codes { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .route-cancelled .route-codes { color: var(--status-danger); text-decoration: line-through; }
+        .route-rescue .route-codes { color: var(--accent-teal); }
+        .route-line { flex: 1; height: 2px; position: relative; min-width: 40px; }
+        .route-cancelled .route-line { background: var(--status-danger); }
+        .route-cancelled .route-line::after { content: 'X'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; background: var(--status-danger); font-size: 10px; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+        .route-rescue .route-line { background: var(--accent-teal); }
+        .route-rescue .route-line::after { content: '\2708'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; background: var(--accent-teal); font-size: 10px; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        /* REASONING TRAIL */
+        #reasoning-trail {
+            background: var(--bg-card);
+            border: 1px solid var(--border-amber);
+            border-radius: var(--radius);
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            display: none;
         }
-
-        .nav-pill {
-            font-size: 0.65rem;
-            font-weight: 800;
-            padding: 0.15rem 0.45rem;
-            border-radius: 9999px;
-            background: rgba(144, 190, 109, 0.2);
-            color: var(--status-success);
-        }
-
-        .sidebar-bottom {
-            margin-top: auto;
-            border-top: 1px solid var(--border-hairline);
-            padding-top: 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .gds-health-pill {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: rgba(34, 34, 59, 0.5);
-            padding: 0.5rem 0.75rem;
-            border-radius: var(--radius-sm);
-            font-size: 0.72rem;
-            font-family: 'JetBrains Mono', monospace;
-            border: 1px solid var(--border-hairline);
-        }
-
-        .pulse-indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--status-success);
-            box-shadow: 0 0 10px var(--status-success);
-            animation: pulse-glow 2s infinite;
-        }
-
-        @keyframes pulse-glow {
-            0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.3); opacity: 0.6; }
-        }
-
-        /* Main Viewport */
-        main.main-viewport {
+        #reasoning-trail.visible { display: block; }
+        .trail-title { font-size: 13px; font-weight: 600; color: var(--text-dark); margin-bottom: 12px; }
+        .trail-list { list-style: none; padding-left: 0; }
+        .trail-item { display: flex; align-items: flex-start; gap: 10px; padding: 4px 0; position: relative; }
+        .trail-item:not(:last-child)::before { content: ''; position: absolute; left: 5px; top: 20px; bottom: -4px; width: 2px; background: var(--border-amber); }
+        .trail-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--border-amber); flex-shrink: 0; margin-top: 2px; position: relative; z-index: 1; }
+        .trail-item.done .trail-dot { background: var(--accent-teal); }
+        .trail-item.active .trail-dot { background: var(--accent-teal); box-shadow: 0 0 0 4px var(--accent-teal-light); }
+        .trail-text { font-size: 13px; color: var(--text-dark); }
+        .trail-text .step-label { font-weight: 600; }
+        .trail-text .step-time { font-size: 12px; color: var(--text-muted); margin-left: 6px; font-family: 'JetBrains Mono', monospace; }
+        /* RESCUE PACKAGES */
+        #rescue-packages { display: flex; gap: 16px; margin-bottom: 16px; }
+        .package-card {
             flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-            overflow-y: auto;
-            background: radial-gradient(circle at 85% 15%, rgba(74, 78, 105, 0.18) 0%, transparent 60%);
+            background: var(--bg-card);
+            border: 1px solid var(--border-amber);
+            border-radius: var(--radius);
+            overflow: hidden;
+            transition: box-shadow 0.2s var(--ease);
         }
-
-        /* Top Bar with Dynamic Island */
-        header.top-header {
-            height: 70px;
-            padding: 0 2rem;
-            border-bottom: 1px solid var(--border-hairline);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: rgba(24, 24, 41, 0.75);
-            backdrop-filter: blur(16px);
-            position: sticky;
-            top: 0;
-            z-index: 50;
+        .package-card:hover { box-shadow: var(--shadow-md); }
+        .package-badge {
+            background: var(--accent-teal-light);
+            color: var(--accent-teal-dark);
+            font-size: 11px; font-weight: 700;
+            padding: 6px 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-
-        .dynamic-island {
-            display: flex;
-            align-items: center;
-            gap: 0.65rem;
-            background: #11111E;
-            border: 1px solid rgba(242, 233, 228, 0.2);
-            padding: 0.4rem 1.15rem;
-            border-radius: 9999px;
-            font-size: 0.78rem;
-            font-weight: 600;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-            transition: all 0.3s var(--ease);
+        .package-body { padding: 14px 16px; }
+        .package-airline { font-size: 14px; font-weight: 600; color: var(--text-dark); }
+        .package-flight { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+        .package-route { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+        .package-route .codes { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 14px; }
+        .package-route .arrow { color: var(--text-muted); }
+        .package-time { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        .package-reason { font-size: 12px; color: var(--text-muted); margin-top: 10px; font-style: italic; line-height: 1.4; }
+        .package-farelock {
+            display: flex; align-items: center; gap: 6px;
+            margin-top: 10px;
+            font-size: 12px; color: var(--accent-teal-dark);
         }
-
-        .dynamic-island .live-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--status-success);
-            animation: pulse-glow 1.5s infinite;
-        }
-
-        .top-actions {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .currency-select {
-            background: var(--surface);
-            border: 1px solid var(--border-hairline);
-            color: var(--text-cream);
-            font-size: 0.8rem;
-            font-weight: 700;
-            padding: 0.4rem 0.75rem;
-            border-radius: var(--radius-sm);
-            outline: none;
-            cursor: pointer;
-        }
-
-        .btn-trigger-crisis {
-            background: var(--status-danger);
+        .package-farelock-timer { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .package-price { font-size: 24px; font-weight: 700; color: var(--text-dark); margin-top: 10px; font-family: 'JetBrains Mono', monospace; }
+        .package-price-label { font-size: 12px; color: var(--text-muted); }
+        .package-coverage { font-size: 12px; color: var(--status-success); margin-top: 4px; font-weight: 500; }
+        .btn-rebook {
+            width: 100%;
+            background: var(--accent-teal);
             color: white;
             border: none;
-            padding: 0.45rem 0.9rem;
+            padding: 10px;
             border-radius: var(--radius-sm);
-            font-size: 0.78rem;
-            font-weight: 700;
+            font-size: 14px; font-weight: 600;
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-            transition: all 0.2s;
+            margin-top: 12px;
+            transition: background 0.2s var(--ease);
+            font-family: inherit;
         }
-
-        .btn-trigger-crisis:hover {
-            opacity: 0.9;
-            transform: scale(1.02);
-        }
-
-        .btn-self-heal {
-            background: var(--accent-cyan);
-            color: #04293A;
-            border: none;
-            padding: 0.45rem 0.9rem;
-            border-radius: var(--radius-sm);
-            font-size: 0.78rem;
-            font-weight: 800;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-            transition: all 0.2s;
-        }
-
-        .btn-self-heal:hover {
-            transform: scale(1.02);
-            box-shadow: 0 0 12px rgba(76, 201, 240, 0.4);
-        }
-
-        /* View Container Tabs */
-        .saas-view-pane {
-            display: none;
-            padding: 2rem;
-            max-width: 1240px;
-            width: 100%;
-            margin: 0 auto;
-            flex-direction: column;
-            gap: 1.75rem;
-        }
-
-        .saas-view-pane.active {
-            display: flex;
-            animation: fadeIn 0.25s var(--ease);
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Predictive Radar Banner */
-        .predictive-radar-card {
-            background: linear-gradient(135deg, rgba(76, 201, 240, 0.12) 0%, rgba(74, 78, 105, 0.25) 100%);
-            border: 1px solid rgba(76, 201, 240, 0.4);
-            border-radius: var(--radius-lg);
-            padding: 1.15rem 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1.5rem;
-        }
-
-        .radar-info h3 {
-            font-size: 0.95rem;
-            font-weight: 800;
-            color: var(--accent-cyan);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.25rem;
-        }
-
-        .radar-info p {
-            font-size: 0.8rem;
-            color: var(--text-cream-dim);
-        }
-
-        .radar-badge {
-            background: rgba(76, 201, 240, 0.2);
-            color: var(--accent-cyan);
-            border: 1px solid var(--accent-cyan);
-            padding: 0.4rem 0.85rem;
-            border-radius: var(--radius-sm);
-            font-size: 0.8rem;
-            font-weight: 800;
-            font-family: 'JetBrains Mono', monospace;
-            white-space: nowrap;
-        }
-
-        /* Crisis Alert Card */
-        .crisis-alert-banner {
-            background: linear-gradient(135deg, rgba(249, 65, 68, 0.2) 0%, rgba(74, 78, 105, 0.3) 100%);
-            border: 1px solid var(--status-danger);
-            border-radius: var(--radius-xl);
-            padding: 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1.5rem;
-        }
-
-        .crisis-text h2 {
-            font-size: 1.25rem;
-            font-weight: 800;
-            color: #FF8082;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.35rem;
-        }
-
-        .crisis-text p {
-            font-size: 0.85rem;
-            color: var(--text-cream);
-        }
-
-        /* Visual Flight Rescue Diff */
-        .flight-diff-card {
+        .btn-rebook:hover { background: var(--accent-teal-dark); }
+        /* COMPENSATION CARD */
+        #compensation-card {
             background: var(--bg-card);
-            border: 1px solid var(--border-hairline);
-            border-radius: var(--radius-xl);
-            padding: 1.5rem;
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            gap: 1.5rem;
-            align-items: center;
+            border: 1px solid var(--border-amber);
+            border-radius: var(--radius);
+            padding: 14px 18px;
+            margin-bottom: 16px;
+            display: none;
         }
-
-        .diff-side {
-            background: var(--surface);
-            border-radius: var(--radius-lg);
-            padding: 1.15rem;
-            border: 1px solid var(--border-hairline);
-        }
-
-        .diff-side.disrupted {
-            border-color: rgba(249, 65, 68, 0.5);
-            background: rgba(249, 65, 68, 0.08);
-        }
-
-        .diff-side.rescue {
-            border-color: rgba(144, 190, 109, 0.5);
-            background: rgba(144, 190, 109, 0.08);
-        }
-
-        .diff-side h4 {
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 0.5rem;
-        }
-
-        .diff-arrow {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            font-size: 1.5rem;
-            color: var(--status-success);
-            font-weight: 800;
-        }
-
-        .diff-arrow span {
-            font-size: 0.72rem;
-            font-family: 'JetBrains Mono', monospace;
-            background: rgba(144, 190, 109, 0.2);
-            padding: 0.2rem 0.5rem;
-            border-radius: 9999px;
-            margin-top: 0.25rem;
-        }
-
-        /* 3-Tier Split Grid Layout */
-        .grid-split-rescue {
-            display: grid;
-            grid-template-columns: 1.45fr 1fr;
-            gap: 1.75rem;
-        }
-
-        .packages-column {
-            display: flex;
-            flex-direction: column;
-            gap: 1.15rem;
-        }
-
-        .package-item {
-            background: var(--surface);
-            border: 1px solid var(--border-hairline);
-            border-radius: var(--radius-xl);
-            padding: 1.35rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            position: relative;
+        #compensation-card.visible { display: block; }
+        .comp-header { display: flex; align-items: center; justify-content: space-between; }
+        .comp-title { font-size: 14px; font-weight: 600; color: var(--text-dark); }
+        .comp-claim-id { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-muted); }
+        .comp-amount { font-size: 18px; font-weight: 700; color: var(--status-success); font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
+        .comp-status { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+        .btn-payout {
+            background: transparent;
+            border: 1.5px solid var(--accent-teal);
+            color: var(--accent-teal);
+            padding: 6px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 13px; font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
             transition: all 0.2s var(--ease);
         }
-
-        .package-item:hover {
-            border-color: var(--border-hover);
-            transform: translateY(-3px);
-            box-shadow: 0 14px 30px rgba(0,0,0,0.35);
-        }
-
-        .pkg-badge {
-            position: absolute;
-            top: -11px;
-            right: 1.25rem;
-            font-weight: 800;
-            font-size: 0.7rem;
-            padding: 0.2rem 0.75rem;
-            border-radius: 9999px;
-        }
-
-        .pkg-badge.fastest { background: var(--status-warning); color: #422006; }
-        .pkg-badge.budget { background: var(--status-success); color: #052e16; }
-        .pkg-badge.comfort { background: var(--surface-active); color: var(--text-cream); border: 1px solid var(--border-light); }
-
-        .pkg-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .pkg-airline {
-            font-size: 1.05rem;
-            font-weight: 800;
-        }
-
-        .pkg-flightno {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            color: var(--text-cream-dim);
-        }
-
-        /* Live Animated SVG Flight Arc Ribbon */
-        .flight-arc-container {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: var(--bg-subtle);
-            padding: 0.85rem 1.15rem;
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border-hairline);
-            position: relative;
-        }
-
-        .flight-time-box .time {
-            font-size: 1.25rem;
-            font-weight: 800;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .flight-time-box .airport {
-            font-size: 0.75rem;
-            color: var(--text-cream-dim);
-        }
-
-        .flight-arc-center {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            flex: 1;
-            padding: 0 1rem;
-        }
-
-        .svg-flight-track {
-            width: 100%;
-            max-width: 140px;
-            height: 24px;
-        }
-
-        .live-countdown-pill {
-            font-size: 0.68rem;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            color: var(--status-warning);
-            background: rgba(249, 199, 79, 0.15);
-            padding: 0.15rem 0.5rem;
-            border-radius: 9999px;
-            border: 1px solid rgba(249, 199, 79, 0.3);
-            margin-top: 0.2rem;
-            animation: pulse-glow 2s infinite;
-        }
-
-        .pkg-reasoning {
-            font-size: 0.82rem;
-            color: var(--text-cream-dim);
-            line-height: 1.4;
-            background: rgba(74, 78, 105, 0.15);
-            padding: 0.65rem 0.85rem;
-            border-radius: var(--radius-sm);
-            border-left: 3px solid var(--status-warning);
-        }
-
-        .pkg-bottom-cta {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-top: 1px solid var(--border-hairline);
-            padding-top: 0.85rem;
-        }
-
-        .pkg-price {
-            font-size: 1.35rem;
-            font-weight: 800;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .pkg-price small {
-            font-size: 0.72rem;
-            color: var(--status-success);
-            font-weight: 600;
-            display: block;
-        }
-
-        /* Magnetic Button Hover Aura */
-        .btn-rebook {
-            background: var(--text-cream);
-            color: var(--bg-base);
-            font-weight: 800;
-            border: none;
-            padding: 0.65rem 1.35rem;
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            font-size: 0.85rem;
-            transition: transform 0.15s ease, box-shadow 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .btn-rebook:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(242, 233, 228, 0.3);
-        }
-
-        /* Right Column Sidebars */
-        .ancillaries-column {
-            display: flex;
-            flex-direction: column;
-            gap: 1.15rem;
-        }
-
-        .ancillary-card {
-            background: var(--surface);
-            border: 1px solid var(--border-hairline);
-            border-radius: var(--radius-xl);
-            padding: 1.25rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.85rem;
-        }
-
-        .ancillary-card h3 {
-            font-size: 0.95rem;
-            font-weight: 800;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        /* Interactive Seatmap */
-        .seatmap-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 0.45rem;
-            background: var(--bg-subtle);
-            padding: 0.85rem;
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border-hairline);
-        }
-
-        .seat-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.35rem;
-        }
-
-        .seat-row-label {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.72rem;
-            color: var(--text-cream-muted);
-            width: 24px;
-        }
-
-        .seat-cluster {
-            display: flex;
-            gap: 0.3rem;
-        }
-
-        .seat-block {
-            width: 34px;
-            height: 34px;
-            border-radius: var(--radius-sm);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.75rem;
-            font-weight: 700;
-            cursor: pointer;
-            border: 1px solid var(--border-hairline);
-            transition: all 0.2s;
-        }
-
-        .seat-block.available {
-            background: rgba(74, 78, 105, 0.4);
-            color: var(--text-cream);
-        }
-
-        .seat-block.available:hover {
-            background: var(--surface-active);
-            border-color: var(--text-cream);
-            transform: scale(1.05);
-        }
-
-        .seat-block.selected {
-            background: var(--status-success);
-            color: #052e16;
-            border-color: var(--status-success);
-            font-weight: 800;
-            box-shadow: 0 0 10px rgba(144, 190, 109, 0.4);
-        }
-
-        .seat-block.occupied {
-            background: rgba(34, 34, 59, 0.6);
-            color: var(--text-cream-muted);
-            cursor: not-allowed;
-            border-color: transparent;
-        }
-
-        .seat-aisle {
-            width: 14px;
-        }
-
-        /* Baggage IoT Pulse Steps */
-        .baggage-pulse-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.65rem;
-        }
-
-        .baggage-step {
-            display: flex;
-            align-items: center;
-            gap: 0.65rem;
-            font-size: 0.8rem;
-            color: var(--text-cream-dim);
-        }
-
-        .baggage-step.active {
-            color: var(--text-cream);
-            font-weight: 700;
-        }
-
-        .bag-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: var(--status-success);
-            box-shadow: 0 0 8px var(--status-success);
-            flex-shrink: 0;
-        }
-
-        /* Siri-Style Multi-Band Audio Waveform Visualizer */
-        .audio-waveform-container {
-            background: var(--bg-sidebar);
-            border: 1px solid var(--border-hairline);
-            border-radius: var(--radius-xl);
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        canvas#audioWaveCanvas {
-            width: 100%;
-            height: 80px;
-            border-radius: var(--radius-md);
-            background: rgba(34, 34, 59, 0.6);
-        }
-
-        /* Chat Stream */
-        .chat-stream-box {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-            max-height: 400px;
-            overflow-y: auto;
-            padding-right: 0.5rem;
-        }
-
-        .chat-bubble {
-            padding: 0.85rem 1.15rem;
-            border-radius: var(--radius-lg);
-            font-size: 0.85rem;
-            line-height: 1.45;
-            max-width: 85%;
-        }
-
-        .chat-bubble.user {
-            align-self: flex-end;
-            background: var(--surface-active);
-            border: 1px solid var(--border-light);
-            color: var(--text-cream);
-        }
-
-        .chat-bubble.agent {
-            align-self: flex-start;
-            background: var(--surface);
-            border: 1px solid var(--border-hairline);
-            color: var(--text-cream);
-        }
-
-        .chat-input-row {
-            display: flex;
-            gap: 0.65rem;
-            margin-top: 1rem;
-        }
-
-        .chat-input-row input {
-            flex: 1;
-            background: var(--surface);
-            border: 1px solid var(--border-hairline);
-            padding: 0.75rem 1rem;
-            border-radius: var(--radius-md);
-            color: var(--text-cream);
-            font-size: 0.85rem;
-            outline: none;
-        }
-
-        .btn-mic {
-            background: var(--surface-active);
-            border: 1px solid var(--border-light);
-            color: var(--text-cream);
-            width: 44px;
-            height: 44px;
-            border-radius: var(--radius-md);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.1rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-mic.recording {
-            background: var(--status-danger);
-            animation: pulse-glow 1s infinite;
-        }
-
-        /* 3D Tilt Apple Wallet PKPass Modal */
-        .modal-screen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(10, 10, 20, 0.85);
-            backdrop-filter: blur(24px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-            padding: 1.5rem;
-            perspective: 1200px;
-        }
-
-        .modal-screen.show {
-            display: flex;
-            animation: fadeIn 0.2s var(--ease);
-        }
-
-        .pkpass-card {
-            width: 100%;
-            max-width: 420px;
-            background: #19192B;
-            border: 1px solid rgba(242, 233, 228, 0.25);
-            border-radius: 24px;
-            overflow: hidden;
-            box-shadow: 0 25px 60px rgba(0,0,0,0.8);
-            display: flex;
-            flex-direction: column;
-            transition: transform 0.1s ease-out;
-            transform-style: preserve-3d;
-        }
-
-        .pkpass-top-header {
-            background: #25253E;
-            padding: 1.25rem 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px dashed rgba(242, 233, 228, 0.2);
-        }
-
-        .pkpass-body {
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1.25rem;
-        }
-
-        .pkpass-flight-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .pkpass-flight-code {
-            font-size: 2.2rem;
-            font-weight: 800;
-            font-family: 'JetBrains Mono', monospace;
-            letter-spacing: -0.04em;
-        }
-
-        .pkpass-info-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 0.75rem;
-            background: rgba(74, 78, 105, 0.2);
-            padding: 1rem;
-            border-radius: var(--radius-md);
-        }
-
-        .pkpass-info-item label {
-            font-size: 0.65rem;
-            color: var(--text-cream-muted);
-            text-transform: uppercase;
-            display: block;
-        }
-
-        .pkpass-info-item span {
-            font-size: 0.95rem;
-            font-weight: 800;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .pkpass-barcode-box {
-            background: white;
-            padding: 1rem;
-            border-radius: var(--radius-md);
-            text-align: center;
-            margin-top: 0.5rem;
-        }
-
-        .pkpass-barcode-box svg {
-            width: 100%;
-            height: 50px;
-        }
-
-        .pkpass-footer-btn {
-            background: var(--text-cream);
-            color: var(--bg-base);
-            font-weight: 800;
-            border: none;
-            padding: 0.85rem;
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            margin: 0 1.5rem 1.5rem 1.5rem;
-            font-size: 0.9rem;
-        }
-
-        /* DAG State Machine Visualizer */
-        .dag-flow-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1rem;
-            margin-top: 1rem;
-        }
-
-        .dag-node-box {
-            background: var(--surface);
-            border: 1px solid var(--border-hairline);
-            border-radius: var(--radius-md);
-            padding: 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.4rem;
-            position: relative;
-            transition: all 0.3s;
-        }
-
-        .dag-node-box.active-node {
-            border-color: var(--status-success);
-            box-shadow: 0 0 16px rgba(144, 190, 109, 0.3);
-            background: rgba(144, 190, 109, 0.1);
-        }
-
-        .dag-node-box .node-title {
-            font-size: 0.8rem;
-            font-weight: 800;
-            font-family: 'JetBrains Mono', monospace;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .dag-node-box .node-latency {
-            font-size: 0.72rem;
-            color: var(--status-success);
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .token-economics-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1rem;
-            margin-top: 1rem;
-        }
-
-        .econ-card {
-            background: var(--bg-subtle);
-            border: 1px solid var(--border-hairline);
-            border-radius: var(--radius-md);
-            padding: 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
-        }
-
-        .econ-card label {
-            font-size: 0.68rem;
-            color: var(--text-cream-muted);
-            text-transform: uppercase;
-        }
-
-        .econ-card .val {
-            font-size: 1.25rem;
-            font-weight: 800;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--accent-cyan);
-        }
-
-        /* Floating HUD Toast Notification */
-        .toast-container {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.65rem;
-            z-index: 200;
-            pointer-events: none;
-        }
-
-        .hud-toast {
-            background: rgba(24, 24, 41, 0.9);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--border-light);
-            color: var(--text-cream);
-            padding: 0.75rem 1.25rem;
-            border-radius: var(--radius-md);
-            font-size: 0.82rem;
-            font-weight: 700;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            animation: slideInRight 0.3s var(--ease);
-        }
-
-        @keyframes slideInRight {
-            from { transform: translateX(50px); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
+        .btn-payout:hover { background: var(--accent-teal); color: white; }
+        /* EMPTY STATE */
+        #empty-state { text-align: center; padding: 60px 20px; }
+        #empty-state h2 { font-size: 18px; color: var(--text-dark); margin-bottom: 8px; }
+        #empty-state p { font-size: 14px; color: var(--text-muted); max-width: 400px; margin: 0 auto; line-height: 1.6; }
+        #empty-state .hint { margin-top: 20px; font-size: 13px; color: var(--accent-teal); font-weight: 500; }
+        /* SEARCH VIEW */
+        #view-search .search-form { background: var(--bg-card); border: 1px solid var(--border-amber); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+        .form-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+        .form-group { flex: 1; min-width: 140px; }
+        .form-group label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; display: block; }
+        .form-group input, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid var(--border-amber); border-radius: var(--radius-sm); font-size: 14px; font-family: inherit; background: var(--bg-cream); color: var(--text-dark); }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--accent-teal); }
+        .btn-search { background: var(--accent-teal); color: white; border: none; padding: 9px 20px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background 0.2s var(--ease); height: 38px; }
+        .btn-search:hover { background: var(--accent-teal-dark); }
+        #currency-select { width: 80px; }
+        .search-results { display: flex; flex-direction: column; gap: 10px; }
+        .search-result-card { background: var(--bg-card); border: 1px solid var(--border-amber); border-radius: var(--radius); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; }
+        .src-left { display: flex; flex-direction: column; gap: 2px; }
+        .src-airline { font-size: 14px; font-weight: 600; }
+        .src-flight { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-muted); }
+        .src-route { font-size: 13px; color: var(--text-dark); margin-top: 2px; }
+        .src-right { text-align: right; }
+        .src-price { font-size: 18px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--text-dark); }
+        .src-seats { font-size: 11px; color: var(--text-muted); }
+        /* CONCIERGE VIEW */
+        #view-concierge { flex-direction: column; height: calc(100vh - 56px - 40px); }
+        #view-concierge.active { display: flex; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 16px 0; display: flex; flex-direction: column; gap: 10px; }
+        .msg-bubble { max-width: 70%; padding: 10px 14px; border-radius: var(--radius); font-size: 14px; line-height: 1.5; }
+        .msg-user { align-self: flex-end; background: var(--accent-teal); color: white; border-bottom-right-radius: 4px; }
+        .msg-ai { align-self: flex-start; background: var(--bg-card); border: 1px solid var(--border-amber); color: var(--text-dark); border-bottom-left-radius: 4px; }
+        .chat-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+        .chip { background: var(--bg-card); border: 1px solid var(--border-amber); color: var(--text-dark); padding: 6px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.2s var(--ease); }
+        .chip:hover { border-color: var(--accent-teal); color: var(--accent-teal); }
+        .chat-input-row { display: flex; gap: 8px; padding-bottom: 8px; }
+        #chat-input { flex: 1; padding: 10px 14px; border: 1px solid var(--border-amber); border-radius: var(--radius-sm); font-size: 14px; font-family: inherit; background: var(--bg-cream); color: var(--text-dark); }
+        #chat-input:focus { outline: none; border-color: var(--accent-teal); }
+        #btn-send { background: var(--accent-teal); color: white; border: none; padding: 0 16px; border-radius: var(--radius-sm); font-size: 14px; cursor: pointer; font-family: inherit; font-weight: 600; }
+        #btn-send:hover { background: var(--accent-teal-dark); }
+        /* BOARDING PASS MODAL */
+        #modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; }
+        #modal-overlay.visible { display: flex; }
+        #boarding-pass { background: white; border-radius: 16px; box-shadow: var(--shadow-lg); width: 420px; overflow: hidden; }
+        .bp-header { background: var(--accent-teal); color: white; padding: 16px 20px; }
+        .bp-header-title { font-size: 16px; font-weight: 700; }
+        .bp-header-sub { font-size: 12px; opacity: 0.85; }
+        .bp-body { padding: 20px; }
+        .bp-route { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .bp-airport { text-align: center; }
+        .bp-airport-code { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+        .bp-airport-label { font-size: 11px; color: var(--text-muted); }
+        .bp-plane-icon { font-size: 20px; color: var(--text-light); }
+        .bp-details { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+        .bp-detail-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .bp-detail-value { font-size: 14px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+        .bp-barcode { display: flex; justify-content: center; gap: 2px; margin: 16px 0; }
+        .bp-bar { width: 3px; background: var(--text-dark); }
+        .bp-footer { text-align: center; padding-top: 8px; border-top: 1px dashed var(--border-amber); }
+        .bp-pnr { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; letter-spacing: 2px; }
+        .btn-done { width: 100%; background: var(--bg-cream); border: 1px solid var(--border-amber); color: var(--text-dark); padding: 10px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; margin-top: 12px; }
+        .btn-done:hover { background: var(--border-amber-light); }
+        /* LOADING */
+        .loading { text-align: center; padding: 40px; color: var(--text-muted); font-size: 14px; }
     </style>
 </head>
 <body>
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+        <div class="nav-icon active" data-label="Rescue Hub" data-view="rescue" onclick="switchView('rescue', this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        </div>
+        <div class="nav-icon" data-label="Search" data-view="search" onclick="switchView('search', this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        </div>
+        <div class="nav-icon" data-label="Concierge" data-view="concierge" onclick="switchView('concierge', this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        </div>
+    </div>
 
-    <!-- Toast HUD Container -->
-    <div class="toast-container" id="toastContainer"></div>
-
-    <!-- Left Sidebar -->
-    <aside class="sidebar">
-        <div class="brand-logo-cluster">
-            <div class="brand-icon">✈️</div>
-            <div class="brand-text">
-                <h2>TravelCare AI</h2>
-                <p>Autonomous Disruption SaaS</p>
+    <!-- MAIN -->
+    <div id="main">
+        <!-- TOP BAR -->
+        <div id="topbar">
+            <div id="brand">
+                <div id="brand-dot"></div>
+                <span id="brand-name">TravelCare AI</span>
+                <span id="brand-sub">Autonomous Rescue Agent</span>
             </div>
+            <div id="topbar-spacer"></div>
+            <div id="health-badge"><span id="health-dot"></span>System Healthy</div>
+            <button id="btn-simulate" onclick="simulateDisruption()">Simulate Disruption</button>
         </div>
 
-        <div class="sidebar-profile">
-            <div class="avatar-circle">AH</div>
-            <div class="profile-info">
-                <h4>Aung Hein Kyaw</h4>
-                <p>★ Star Alliance Gold</p>
+        <!-- CONTENT -->
+        <div id="content">
+            <!-- RESCUE HUB VIEW -->
+            <div id="view-rescue" class="view active">
+                <div id="empty-state">
+                    <h2>No active disruption</h2>
+                    <p>Your flight itineraries are being monitored. The Autonomous Rescue Agent will activate instantly if any disruption is detected.</p>
+                    <div class="hint">Click "Simulate Disruption" to see the agent in action.</div>
+                </div>
+
+                <div id="disruption-banner">
+                    <div class="banner-title" id="banner-title"></div>
+                    <div class="banner-sub" id="banner-sub"></div>
+                </div>
+
+                <div id="route-visual">
+                    <div class="route-row route-cancelled">
+                        <span class="route-label">Cancelled</span>
+                        <span class="route-codes" id="route-cancelled-codes"></span>
+                        <div class="route-line"></div>
+                        <span class="route-codes" id="route-cancelled-dest"></span>
+                    </div>
+                    <div class="route-row route-rescue">
+                        <span class="route-label">Rescue</span>
+                        <span class="route-codes" id="route-rescue-codes"></span>
+                        <div class="route-line"></div>
+                        <span class="route-codes" id="route-rescue-dest"></span>
+                    </div>
+                </div>
+
+                <div id="reasoning-trail">
+                    <div class="trail-title">AI Agent Reasoning Trail</div>
+                    <ul class="trail-list" id="trail-list"></ul>
+                </div>
+
+                <div id="rescue-packages"></div>
+
+                <div id="compensation-card">
+                    <div class="comp-header">
+                        <div>
+                            <div class="comp-title">Auto-Filed Compensation</div>
+                            <div class="comp-claim-id" id="comp-claim-id"></div>
+                        </div>
+                        <button class="btn-payout" onclick="filePayout()">Instant 1-Click Payout</button>
+                    </div>
+                    <div class="comp-amount" id="comp-amount"></div>
+                    <div class="comp-status" id="comp-status"></div>
+                </div>
+            </div>
+
+            <!-- SEARCH VIEW -->
+            <div id="view-search" class="view">
+                <div class="search-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Origin</label>
+                            <input type="text" id="search-origin" value="BKK" placeholder="BKK">
+                        </div>
+                        <div class="form-group">
+                            <label>Destination</label>
+                            <input type="text" id="search-destination" value="RGN" placeholder="RGN">
+                        </div>
+                        <div class="form-group">
+                            <label>Date</label>
+                            <input type="date" id="search-date" value="2026-08-20">
+                        </div>
+                        <div class="form-group">
+                            <label>Passengers</label>
+                            <select id="search-passengers">
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="min-width: 80px;">
+                            <label>Currency</label>
+                            <select id="search-currency">
+                                <option value="USD">USD</option>
+                                <option value="THB">THB</option>
+                                <option value="SGD">SGD</option>
+                                <option value="MMK">MMK</option>
+                                <option value="EUR">EUR</option>
+                            </select>
+                        </div>
+                        <button class="btn-search" onclick="searchFlights()">Search Flights</button>
+                    </div>
+                </div>
+                <div class="search-results" id="search-results"></div>
+            </div>
+
+            <!-- CONCIERGE VIEW -->
+            <div id="view-concierge" class="view">
+                <div class="chat-chips">
+                    <button class="chip" onclick="sendQuickChat('Can I request a vegetarian meal?')">Vegetarian meal</button>
+                    <button class="chip" onclick="sendQuickChat('Gate D4 directions?')">Gate D4 directions</button>
+                    <button class="chip" onclick="sendQuickChat('Where is my baggage?')">Baggage status</button>
+                    <button class="chip" onclick="sendQuickChat('How do I claim compensation?')">Claim payout</button>
+                </div>
+                <div class="chat-messages" id="chat-messages"></div>
+                <div class="chat-input-row">
+                    <input type="text" id="chat-input" placeholder="Ask your AI travel assistant..." onkeypress="if(event.key==='Enter') sendChat()">
+                    <button id="btn-send" onclick="sendChat()">Send</button>
+                </div>
             </div>
         </div>
+    </div>
 
-        <ul class="nav-menu">
-            <li>
-                <a class="nav-link active" id="navJourney" onclick="showSaaSView('journey')">
-                    <div class="nav-item-left"><span>🛫</span> My Active Journey</div>
-                    <span class="nav-pill">LIVE</span>
-                </a>
-            </li>
-            <li>
-                <a class="nav-link" id="navSearch" onclick="showSaaSView('search')">
-                    <div class="nav-item-left"><span>🌐</span> GDS Flight Search</div>
-                </a>
-            </li>
-            <li>
-                <a class="nav-link" id="navConcierge" onclick="showSaaSView('concierge')">
-                    <div class="nav-item-left"><span>🎙️</span> AI Voice Concierge</div>
-                </a>
-            </li>
-            <li>
-                <a class="nav-link" id="navClaims" onclick="showSaaSView('claims')">
-                    <div class="nav-item-left"><span>💵</span> Claims & Payouts</div>
-                </a>
-            </li>
-            <li>
-                <a class="nav-link" id="navTelemetry" onclick="showSaaSView('telemetry')">
-                    <div class="nav-item-left"><span>🧠</span> State Graph & Qoder</div>
-                </a>
-            </li>
-        </ul>
-
-        <div class="sidebar-bottom">
-            <div class="gds-health-pill">
-                <span>ATRIP GDS 140+</span>
-                <span class="pulse-indicator"></span>
+    <!-- BOARDING PASS MODAL -->
+    <div id="modal-overlay">
+        <div id="boarding-pass">
+            <div class="bp-header">
+                <div class="bp-header-title">Boarding Pass</div>
+                <div class="bp-header-sub" id="bp-airline"></div>
             </div>
-        </div>
-    </aside>
-
-    <!-- Main Viewport -->
-    <main class="main-viewport">
-        
-        <!-- Top Sticky Header -->
-        <header class="top-header">
-            <!-- Dynamic Island Live Activity Pill -->
-            <div class="dynamic-island" id="topDynamicIsland">
-                <span class="live-dot"></span>
-                <span id="dynStatus">DISRUPTION RADAR ACTIVE</span> • 
-                <span id="dynFlight">TG 303 (BKK➔RGN)</span> • 
-                <span id="dynGate">Gate C4</span>
-            </div>
-
-            <div class="top-actions">
-                <select class="currency-select" id="currencySelect" onchange="onCurrencyChange(this.value)">
-                    <option value="USD">USD ($)</option>
-                    <option value="THB">THB (฿)</option>
-                    <option value="SGD">SGD (S$)</option>
-                    <option value="MMK">MMK (Ks)</option>
-                    <option value="EUR">EUR (€)</option>
-                </select>
-                <button class="btn-self-heal" id="btnSelfHealLoop" onclick="triggerSelfHealingDemo()">
-                    🔄 Test Self-Healing Loop
-                </button>
-                <button class="btn-trigger-crisis" id="btnSimulateDisruption" onclick="triggerDisruptionSimulation()">
-                    ⚡ Simulate Disruption
-                </button>
-            </div>
-        </header>
-
-        <!-- VIEW 1: Active Journey & Disruption Rescue Hub -->
-        <section class="saas-view-pane active" id="viewJourney">
-            
-            <!-- AI Predictive Radar Alert Banner -->
-            <div class="predictive-radar-card" id="radarCard">
-                <div class="radar-info">
-                    <h3>📡 AI Predictive Radar (45m Early Lead Time Advantage)</h3>
-                    <p>Inbound Aircraft <strong>HS-TKF (Boeing 777)</strong> delayed 3h 15m in LHR + Severe Monsoon Thunderstorm approaching BKK.</p>
-                </div>
-                <div class="radar-badge">
-                    88% CANCELLATION RISK
-                </div>
-            </div>
-
-            <!-- Crisis Banner (Hidden until triggered) -->
-            <div class="crisis-alert-banner" id="crisisAlertBanner" style="display: none;">
-                <div class="crisis-text">
-                    <h2>🚨 TG 303 CANCELLED — Autonomous Rescue Activated</h2>
-                    <p>Hydraulic maintenance ground stop confirmed. Agent evaluated 4 partner flights across Atlas GDS and locked the top 3 alternatives.</p>
-                </div>
-            </div>
-
-            <!-- Visual Flight Rescue Diff (Hidden until triggered) -->
-            <div class="flight-diff-card" id="flightDiffCard" style="display: none;">
-                <div class="diff-side disrupted">
-                    <h4>❌ Disrupted Flight</h4>
-                    <p style="font-size: 1.15rem; font-weight: 800; font-family: 'JetBrains Mono', monospace;" id="diffOldFlight">Thai Airways TG 303</p>
-                    <p style="font-size: 0.8rem; color: var(--status-danger);">Departs: 09:15 AM (Cancelled)</p>
-                </div>
-                <div class="diff-arrow">
-                    ➔
-                    <span id="diffDeltaLabel">+2h 30m Delta</span>
-                </div>
-                <div class="diff-side rescue">
-                    <h4>⚡ AI Rescue Flight</h4>
-                    <p style="font-size: 1.15rem; font-weight: 800; font-family: 'JetBrains Mono', monospace;" id="diffRescueFlight">Myanmar Airways 8M 336</p>
-                    <p style="font-size: 0.8rem; color: var(--status-success);" id="diffRescueStatus">Departs: 11:45 AM (Confirmed • Gate D4)</p>
-                </div>
-            </div>
-
-            <!-- 3-Tier Rescue Grid -->
-            <div class="grid-split-rescue">
-                
-                <!-- Curated Packages -->
-                <div class="packages-column" id="packagesList">
-                    
-                    <!-- Package 1: MAI 8M 336 -->
-                    <div class="package-item" id="pkg-mai-336">
-                        <span class="pkg-badge fastest">⚡ Fastest Arrival</span>
-                        <div class="pkg-header">
-                            <div>
-                                <div class="pkg-airline">Myanmar Airways International (MAI)</div>
-                                <div class="pkg-flightno">Flight 8M 336 • Airbus A320 • Nonstop</div>
-                            </div>
-                        </div>
-                        
-                        <!-- SVG Flight Arc Ribbon -->
-                        <div class="flight-arc-container">
-                            <div class="flight-time-box">
-                                <div class="time">11:45 AM</div>
-                                <div class="airport">BKK (Suvarnabhumi)</div>
-                            </div>
-                            <div class="flight-arc-center">
-                                <svg class="svg-flight-track" viewBox="0 0 100 20">
-                                    <path d="M 5,15 Q 50,0 95,15" fill="none" stroke="rgba(242, 233, 228, 0.25)" stroke-width="2" stroke-dasharray="2,2"/>
-                                    <circle cx="50" cy="7.5" r="3.5" fill="#F9C74F">
-                                        <animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite"/>
-                                    </circle>
-                                </svg>
-                                <span class="live-countdown-pill" id="countdownPill1">🔒 Fare Locked: 14:58</span>
-                            </div>
-                            <div class="flight-time-box" style="text-align: right;">
-                                <div class="time">12:35 PM</div>
-                                <div class="airport">RGN (Yangon)</div>
-                            </div>
-                        </div>
-
-                        <div class="pkg-reasoning">
-                            🤖 <strong>Qoder Reasoning:</strong> Departs in 1h 45m. Minimizes airport downtime and arrives at destination by 12:35 PM. Star Alliance tier honored.
-                        </div>
-                        <div class="pkg-bottom-cta">
-                            <div class="pkg-price">
-                                $145.00
-                                <small>✓ 100% Covered by Airline</small>
-                            </div>
-                            <button class="btn-rebook" onclick="executeRebook('off_atlas_mai_801', '8M 336', '11:45 AM', '145.00')">
-                                1-Click Rebook ➔
-                            </button>
-                        </div>
+            <div class="bp-body">
+                <div class="bp-route">
+                    <div class="bp-airport">
+                        <div class="bp-airport-code" id="bp-origin"></div>
+                        <div class="bp-airport-label" id="bp-origin-name"></div>
                     </div>
-
-                    <!-- Package 2: AirAsia FD 251 -->
-                    <div class="package-item" id="pkg-airasia-251">
-                        <span class="pkg-badge budget">💰 Best Value Match</span>
-                        <div class="pkg-header">
-                            <div>
-                                <div class="pkg-airline">Thai AirAsia</div>
-                                <div class="pkg-flightno">Flight FD 251 • Airbus A320neo • Nonstop</div>
-                            </div>
-                        </div>
-
-                        <div class="flight-arc-container">
-                            <div class="flight-time-box">
-                                <div class="time">04:20 PM</div>
-                                <div class="airport">DMK (Don Mueang)</div>
-                            </div>
-                            <div class="flight-arc-center">
-                                <svg class="svg-flight-track" viewBox="0 0 100 20">
-                                    <path d="M 5,15 Q 50,0 95,15" fill="none" stroke="rgba(242, 233, 228, 0.25)" stroke-width="2" stroke-dasharray="2,2"/>
-                                    <circle cx="50" cy="7.5" r="3.5" fill="#90BE6D"/>
-                                </svg>
-                                <span class="live-countdown-pill" style="color: var(--status-success);">💰 $56 Cash Surplus</span>
-                            </div>
-                            <div class="flight-time-box" style="text-align: right;">
-                                <div class="time">05:05 PM</div>
-                                <div class="airport">RGN (Yangon)</div>
-                            </div>
-                        </div>
-
-                        <div class="pkg-reasoning">
-                            🤖 <strong>Qoder Reasoning:</strong> Lowest fare option at $89.00. 100% covered by airline refund + $56 cash payout surplus.
-                        </div>
-                        <div class="pkg-bottom-cta">
-                            <div class="pkg-price">
-                                $89.00
-                                <small>✓ Instant $56 Cash Surplus</small>
-                            </div>
-                            <button class="btn-rebook" onclick="executeRebook('off_atlas_airasia_502', 'FD 251', '04:20 PM', '89.00')">
-                                1-Click Rebook ➔
-                            </button>
-                        </div>
-                    </div>
-
-                </div>
-
-                <!-- Ancillaries (Seatmap & Baggage Pulse) -->
-                <div class="ancillaries-column">
-                    
-                    <!-- Seat Map -->
-                    <div class="ancillary-card">
-                        <h3>
-                            <span>💺 Cabin Seat Selector</span>
-                            <span id="assignedSeatLabel" style="font-family: 'JetBrains Mono', monospace; color: var(--status-success);">12A (Window)</span>
-                        </h3>
-                        <div class="seatmap-grid">
-                            <div class="seat-row">
-                                <span class="seat-row-label">11</span>
-                                <div class="seat-cluster">
-                                    <button class="seat-block occupied">A</button>
-                                    <button class="seat-block available" onclick="selectSeat('11B')">B</button>
-                                    <button class="seat-block occupied">C</button>
-                                </div>
-                                <div class="seat-aisle"></div>
-                                <div class="seat-cluster">
-                                    <button class="seat-block available" onclick="selectSeat('11D')">D</button>
-                                    <button class="seat-block available" onclick="selectSeat('11E')">E</button>
-                                    <button class="seat-block occupied">F</button>
-                                </div>
-                            </div>
-                            <div class="seat-row">
-                                <span class="seat-row-label">12</span>
-                                <div class="seat-cluster">
-                                    <button class="seat-block selected" id="seat-12A" onclick="selectSeat('12A')">A</button>
-                                    <button class="seat-block available" onclick="selectSeat('12B')">B</button>
-                                    <button class="seat-block occupied">C</button>
-                                </div>
-                                <div class="seat-aisle"></div>
-                                <div class="seat-cluster">
-                                    <button class="seat-block available" onclick="selectSeat('12D')">D</button>
-                                    <button class="seat-block available" onclick="selectSeat('12E')">E</button>
-                                    <button class="seat-block available" onclick="selectSeat('12F')">F</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Baggage IoT Pulse Timeline -->
-                    <div class="ancillary-card">
-                        <h3>
-                            <span>🧳 Live Baggage IoT Pulse</span>
-                            <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text-cream-dim);">Tag: BKK-45BA-8921</span>
-                        </h3>
-                        <div class="baggage-pulse-list">
-                            <div class="baggage-step active">
-                                <span class="bag-dot"></span>
-                                <span>Unloaded from TG 303 (BHS Belt 14)</span>
-                            </div>
-                            <div class="baggage-step active">
-                                <span class="bag-dot"></span>
-                                <span>Security Re-screened at Transit Bag Hub</span>
-                            </div>
-                            <div class="baggage-step active">
-                                <span class="bag-dot"></span>
-                                <span>Auto-assigned to Rescue Flight (8M 336)</span>
-                            </div>
-                            <div class="baggage-step active">
-                                <span class="bag-dot"></span>
-                                <span>Loaded on Cargo Bay 2 (Manifest Verified)</span>
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
-
-            </div>
-
-        </section>
-
-        <!-- VIEW 2: Global GDS Flight Search -->
-        <section class="saas-view-pane" id="viewSearch">
-            <h2 style="font-size: 1.3rem; font-weight: 800;">🌐 Atlas GDS Multi-Carrier Live Search</h2>
-            <div style="background: var(--surface); padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border-hairline); display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 1rem; align-items: flex-end;">
-                <div>
-                    <label style="font-size: 0.72rem; color: var(--text-cream-muted);">ORIGIN</label>
-                    <input type="text" id="srcOrigin" value="BKK" style="width:100%; background:var(--bg-subtle); border:1px solid var(--border-hairline); padding:0.6rem; border-radius:var(--radius-sm); color:white; font-weight:700;">
-                </div>
-                <div>
-                    <label style="font-size: 0.72rem; color: var(--text-cream-muted);">DESTINATION</label>
-                    <input type="text" id="srcDest" value="RGN" style="width:100%; background:var(--bg-subtle); border:1px solid var(--border-hairline); padding:0.6rem; border-radius:var(--radius-sm); color:white; font-weight:700;">
-                </div>
-                <div>
-                    <label style="font-size: 0.72rem; color: var(--text-cream-muted);">DATE</label>
-                    <input type="date" id="srcDate" value="2026-08-20" style="width:100%; background:var(--bg-subtle); border:1px solid var(--border-hairline); padding:0.6rem; border-radius:var(--radius-sm); color:white;">
-                </div>
-                <div>
-                    <label style="font-size: 0.72rem; color: var(--text-cream-muted);">PASSENGERS</label>
-                    <input type="number" id="srcPax" value="1" min="1" max="9" style="width:100%; background:var(--bg-subtle); border:1px solid var(--border-hairline); padding:0.6rem; border-radius:var(--radius-sm); color:white;">
-                </div>
-                <button class="btn-rebook" onclick="searchGDSFlights()" style="height: 42px;">Search GDS</button>
-            </div>
-            <div id="gdsResultsStream" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;"></div>
-        </section>
-
-        <!-- VIEW 3: AI Voice Concierge Desk -->
-        <section class="saas-view-pane" id="viewConcierge">
-            <h2 style="font-size: 1.3rem; font-weight: 800;">🎙️ 24/7 AI Travel Concierge Desk</h2>
-            <div class="audio-waveform-container">
-                <canvas id="audioWaveCanvas"></canvas>
-                <p style="font-size: 0.78rem; color: var(--text-cream-dim);">Speech Recognition Active • Multi-Band Fluid Waveform</p>
-            </div>
-
-            <div class="chat-stream-box" id="fullChatStream">
-                <div class="chat-bubble agent">
-                    🤖 Hello Aung Hein Kyaw! I am your 24/7 Autonomous Disruption Concierge. Your rescue flight on MAI 8M 336 is confirmed with Gate D4 and Cargo Bay 2 baggage transfer. How can I assist you?
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
-                <button class="nav-pill" onclick="sendPromptChip('Can I request a vegetarian meal?')">🥗 Asian Vegetarian Meal</button>
-                <button class="nav-pill" onclick="sendPromptChip('Where is Gate D4?')">🚪 Walking to Gate D4</button>
-                <button class="nav-pill" onclick="sendPromptChip('Track my baggage status')">🧳 Track Baggage Tag</button>
-                <button class="nav-pill" onclick="sendPromptChip('Claim my $250 compensation')">💵 Claim $250 Payout</button>
-            </div>
-
-            <div class="chat-input-row">
-                <input type="text" id="deskChatInput" placeholder="Ask anything regarding your flight, lounge, bags, or meals..." onkeypress="handleChatEnter(event)">
-                <button class="btn-mic" id="btnVoiceMic" onclick="toggleVoiceRecognition()">🎤</button>
-                <button class="btn-rebook" onclick="sendChatFromDesk()">Send</button>
-            </div>
-        </section>
-
-        <!-- VIEW 4: Claims & Passenger Rights Ledger -->
-        <section class="saas-view-pane" id="viewClaims">
-            <h2 style="font-size: 1.3rem; font-weight: 800;">💵 Passenger Rights Compensation Ledger</h2>
-            <div style="background: var(--surface); border: 1px solid var(--border-hairline); border-radius: var(--radius-xl); padding: 1.75rem; display: flex; flex-direction: column; gap: 1.25rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <h3 style="font-size: 1.2rem; font-weight: 800;">Claim #CLM-2026-8941</h3>
-                        <p style="font-size: 0.8rem; color: var(--text-cream-dim);">Regulatory Disruption Relief under Aviation Consumer Protection</p>
-                    </div>
-                    <div style="font-size: 1.75rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: var(--status-success);">
-                        $250.00 USD
+                    <div class="bp-plane-icon">[ > ]</div>
+                    <div class="bp-airport">
+                        <div class="bp-airport-code" id="bp-dest"></div>
+                        <div class="bp-airport-label" id="bp-dest-name"></div>
                     </div>
                 </div>
-                <div style="background: var(--bg-subtle); padding: 1rem; border-radius: var(--radius-md); font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;">
-                    <div>PASSENGER: Aung Hein Kyaw</div>
-                    <div>INCIDENT: Flight TG 303 (Bangkok ➔ Yangon) Cancelled</div>
-                    <div>SETTLEMENT: Pre-approved Direct Bank Transfer</div>
-                    <div>STATUS: READY_FOR_INSTANT_PAYOUT</div>
+                <div class="bp-details">
+                    <div><div class="bp-detail-label">Flight</div><div class="bp-detail-value" id="bp-flight"></div></div>
+                    <div><div class="bp-detail-label">Gate</div><div class="bp-detail-value" id="bp-gate"></div></div>
+                    <div><div class="bp-detail-label">Seat</div><div class="bp-detail-value" id="bp-seat"></div></div>
+                    <div><div class="bp-detail-label">Boarding</div><div class="bp-detail-value" id="bp-boarding"></div></div>
                 </div>
-                <button class="btn-rebook" onclick="showToast('✓ $250.00 successfully deposited to your wallet!')" style="align-self: flex-start;">
-                    Instant 1-Click Payout Deposit ➔
-                </button>
+                <div class="bp-barcode" id="bp-barcode"></div>
+                <div class="bp-footer">
+                    <div class="bp-pnr" id="bp-pnr"></div>
+                </div>
+                <button class="btn-done" onclick="closeModal()">Done</button>
             </div>
-        </section>
-
-        <!-- VIEW 5: State Graph (DAG), Verifiers & Token Economics -->
-        <section class="saas-view-pane" id="viewTelemetry">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="font-size: 1.3rem; font-weight: 800;">🧠 State Graph (DAG), Verifiers & Token Economics</h2>
-                <span class="nav-pill" style="background: rgba(76, 201, 240, 0.2); color: var(--accent-cyan);">Cobus Greyling Loop Engineering Spec</span>
-            </div>
-
-            <!-- Token Economics Banner -->
-            <div class="token-economics-grid">
-                <div class="econ-card">
-                    <label>Token Usage</label>
-                    <div class="val">420 tokens</div>
-                </div>
-                <div class="econ-card">
-                    <label>Inference Cost</label>
-                    <div class="val">$0.0018 USD</div>
-                </div>
-                <div class="econ-card">
-                    <label>Human Agent Cost</label>
-                    <div class="val" style="color: var(--status-danger);">$18.50 USD</div>
-                </div>
-                <div class="econ-card">
-                    <label>Cost Reduction</label>
-                    <div class="val" style="color: var(--status-success);">99.9% SAVED</div>
-                </div>
-            </div>
-
-            <!-- Visual Flowchart of DAG Nodes -->
-            <h3 style="font-size: 1rem; font-weight: 800; margin-top: 1rem;">Topology: Closed-Loop State Machine Flow</h3>
-            <div class="dag-flow-grid" id="dagFlowGrid">
-                <div class="dag-node-box active-node" id="node-IngestionRadar">
-                    <div class="node-title">1. IngestionRadar <span>📡</span></div>
-                    <div class="node-latency">8.2 ms • Webhook</div>
-                </div>
-                <div class="dag-node-box active-node" id="node-PredictiveEvaluator">
-                    <div class="node-title">2. PredictiveEvaluator <span>⚡</span></div>
-                    <div class="node-latency">14.5 ms • 88% Risk</div>
-                </div>
-                <div class="dag-node-box active-node" id="node-ParetoOptimizer">
-                    <div class="node-title">3. ParetoOptimizer <span>🧠</span></div>
-                    <div class="node-latency">14.8 ms • 140+ GDS</div>
-                </div>
-                <div class="dag-node-box active-node" id="node-FareLockHold">
-                    <div class="node-title">4. FareLockHold <span>🔒</span></div>
-                    <div class="node-latency">38.0 ms • TTL 900s</div>
-                </div>
-                <div class="dag-node-box active-node" id="node-SettlementSync">
-                    <div class="node-title">5. TicketSettlement <span>💳</span></div>
-                    <div class="node-latency">45.0 ms • PNR Done</div>
-                </div>
-                <div class="dag-node-box active-node" id="node-AncillarySync">
-                    <div class="node-title">6. AncillarySync <span>🧳</span></div>
-                    <div class="node-latency">22.0 ms • Bay 2</div>
-                </div>
-                <div class="dag-node-box active-node" id="node-ClosedLoopVerified">
-                    <div class="node-title">7. ClosedLoopVerified <span>🛡️</span></div>
-                    <div class="node-latency">5.0 ms • PKPass</div>
-                </div>
-                <div class="dag-node-box" id="node-SelfHealingLoop">
-                    <div class="node-title">🔄 SelfHealingLoop <span>🛡️</span></div>
-                    <div class="node-latency" style="color: var(--accent-cyan);">Fault Tolerant Gate</div>
-                </div>
-            </div>
-
-            <!-- Deterministic Verifier Suite Table -->
-            <div style="background: var(--surface); border: 1px solid var(--border-hairline); border-radius: var(--radius-xl); padding: 1.5rem; margin-top: 1rem;">
-                <h3 style="font-size: 0.95rem; margin-bottom: 0.75rem;">🛡️ Deterministic Verifier Suite (Exit Test Contracts)</h3>
-                <div style="display: flex; flex-direction: column; gap: 0.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;">
-                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-hairline); padding-bottom: 0.4rem;">
-                        <span>✓ FareLockContractVerifier</span>
-                        <span style="color: var(--status-success);">PASSED (Guaranteed TTL 900s)</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-hairline); padding-bottom: 0.4rem;">
-                        <span>✓ SeatConflictVerifier</span>
-                        <span style="color: var(--status-success);">PASSED (Seat 11B Free / Anti-Double Booking)</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-hairline); padding-bottom: 0.4rem;">
-                        <span>✓ BaggageContinuityVerifier</span>
-                        <span style="color: var(--status-success);">PASSED (Tag BKK-45BA Transferred to Cargo Bay 2)</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>✓ RegulatoryPayoutVerifier</span>
-                        <span style="color: var(--status-success);">PASSED ($250.00 EU261 / ASEAN Relief Validated)</span>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-    </main>
-
-    <!-- 3D Tilt Photorealistic Apple Wallet PKPass Modal -->
-    <div class="modal-screen" id="ticketModal">
-        <div class="pkpass-card" id="pkpassCard">
-            <div class="pkpass-top-header">
-                <span style="font-weight: 800; font-size: 0.95rem;">✈️ Boarding Pass</span>
-                <span style="font-size: 0.75rem; color: var(--status-warning); font-weight: 700;">★ STAR ALLIANCE GOLD</span>
-            </div>
-            <div class="pkpass-body">
-                <div class="pkpass-flight-row">
-                    <div>
-                        <div class="pkpass-flight-code">BKK</div>
-                        <div style="font-size: 0.75rem; color: var(--text-cream-dim);">Bangkok</div>
-                    </div>
-                    <div style="font-size: 1.2rem; color: var(--status-warning);">✈</div>
-                    <div style="text-align: right;">
-                        <div class="pkpass-flight-code">RGN</div>
-                        <div style="font-size: 0.75rem; color: var(--text-cream-dim);">Yangon</div>
-                    </div>
-                </div>
-
-                <div class="pkpass-info-grid">
-                    <div class="pkpass-info-item">
-                        <label>FLIGHT</label>
-                        <span id="passFlight">8M 336</span>
-                    </div>
-                    <div class="pkpass-info-item">
-                        <label>GATE</label>
-                        <span id="passGate">D4</span>
-                    </div>
-                    <div class="pkpass-info-item">
-                        <label>SEAT</label>
-                        <span id="passSeat">11B</span>
-                    </div>
-                    <div class="pkpass-info-item">
-                        <label>BOARDING</label>
-                        <span id="passBoarding">11:05 AM</span>
-                    </div>
-                    <div class="pkpass-info-item">
-                        <label>CLASS</label>
-                        <span>ECONOMY</span>
-                    </div>
-                    <div class="pkpass-info-item">
-                        <label>BAG TAG</label>
-                        <span>BKK-45BA</span>
-                    </div>
-                </div>
-
-                <div class="pkpass-barcode-box">
-                    <svg viewBox="0 0 100 20" preserveAspectRatio="none">
-                        <rect x="0" y="0" width="2" height="20" fill="#000"/>
-                        <rect x="4" y="0" width="4" height="20" fill="#000"/>
-                        <rect x="10" y="0" width="2" height="20" fill="#000"/>
-                        <rect x="14" y="0" width="6" height="20" fill="#000"/>
-                        <rect x="22" y="0" width="2" height="20" fill="#000"/>
-                        <rect x="26" y="0" width="4" height="20" fill="#000"/>
-                        <rect x="32" y="0" width="6" height="20" fill="#000"/>
-                        <rect x="40" y="0" width="2" height="20" fill="#000"/>
-                        <rect x="44" y="0" width="4" height="20" fill="#000"/>
-                        <rect x="50" y="0" width="8" height="20" fill="#000"/>
-                        <rect x="60" y="0" width="2" height="20" fill="#000"/>
-                        <rect x="64" y="0" width="6" height="20" fill="#000"/>
-                        <rect x="72" y="0" width="4" height="20" fill="#000"/>
-                        <rect x="78" y="0" width="2" height="20" fill="#000"/>
-                        <rect x="82" y="0" width="6" height="20" fill="#000"/>
-                        <rect x="90" y="0" width="4" height="20" fill="#000"/>
-                        <rect x="96" y="0" width="4" height="20" fill="#000"/>
-                    </svg>
-                    <div style="font-size: 0.65rem; color: #333; font-family: monospace; margin-top: 4px;">PKPASS-ATLAS-8M336-11B-GOLD</div>
-                </div>
-            </div>
-            <button class="pkpass-footer-btn" id="btnModalClose" onclick="closeModal()">Done / Add to Apple Wallet</button>
         </div>
     </div>
 
     <script>
-        let currentCurrency = 'USD';
-        let currentAssignedSeat = '12A';
+        let fareLockInterval = null;
+        let rescueData = null;
 
-        function showToast(msg) {
-            const container = document.getElementById('toastContainer');
-            const toast = document.createElement('div');
-            toast.className = 'hud-toast';
-            toast.innerText = msg;
-            container.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateY(10px)';
-                toast.style.transition = 'all 0.3s';
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
+        // VIEW SWITCHING
+        function switchView(view, el) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.nav-icon').forEach(n => n.classList.remove('active'));
+            document.getElementById('view-' + view).classList.add('active');
+            if (el) el.classList.add('active');
         }
 
-        function showSaaSView(viewId) {
-            document.querySelectorAll('.saas-view-pane').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+        // SIMULATE DISRUPTION
+        async function simulateDisruption() {
+            const btn = document.getElementById('btn-simulate');
+            btn.disabled = true;
+            btn.textContent = 'Activating...';
 
-            const targetView = document.getElementById('view' + viewId.charAt(0).toUpperCase() + viewId.slice(1));
-            const targetNav = document.getElementById('nav' + viewId.charAt(0).toUpperCase() + viewId.slice(1));
+            document.getElementById('empty-state').style.display = 'none';
 
-            if (targetView) targetView.classList.add('active');
-            if (targetNav) targetNav.classList.add('active');
-        }
+            // Show banner immediately
+            const banner = document.getElementById('disruption-banner');
+            document.getElementById('banner-title').textContent = 'TG 303 CANCELLED — Autonomous Rescue Active';
+            document.getElementById('banner-sub').textContent = 'Scanning 140+ airlines via Atlas GDS...';
+            banner.classList.add('visible');
 
-        function triggerDisruptionSimulation() {
-            document.getElementById('crisisAlertBanner').style.display = 'flex';
-            document.getElementById('flightDiffCard').style.display = 'grid';
-            
-            document.getElementById('dynStatus').innerText = '🚨 RESCUE FLIGHT CONFIRMED';
-            document.getElementById('dynStatus').style.color = '#F94144';
-            document.getElementById('dynFlight').innerText = 'MAI 8M 336';
-            document.getElementById('dynGate').innerText = 'Gate D4';
-            showToast('🚨 Disruption Ingested: TG 303 Cancelled');
-        }
+            // Show reasoning trail with sequential steps
+            const trail = document.getElementById('reasoning-trail');
+            trail.classList.add('visible');
+            const trailList = document.getElementById('trail-list');
+            trailList.innerHTML = '';
 
-        async function triggerSelfHealingDemo() {
+            const steps = [
+                { label: 'Detected TG 303 cancellation', time: 'just now', delay: 300 },
+                { label: 'Searched 140+ airlines via Atlas GDS', time: '0.8s', delay: 600 },
+                { label: 'Qwen-2.5 ranked by time + price', time: '0.3s', delay: 900 },
+                { label: 'Fare locked on 2 alternatives', time: 'active', delay: 1200, active: true }
+            ];
+
+            for (const step of steps) {
+                await new Promise(r => setTimeout(r, step.delay));
+                const li = document.createElement('li');
+                li.className = 'trail-item ' + (step.active ? 'active' : 'done');
+                li.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">' +
+                    step.label + '</span><span class="step-time">' + step.time + '</span></div>';
+                trailList.appendChild(li);
+            }
+
+            // Call the API
             try {
-                const res = await fetch('/api/disruption/self-heal', {method: 'POST'});
-                const data = await res.json();
-                
-                document.getElementById('crisisAlertBanner').style.display = 'flex';
-                document.getElementById('flightDiffCard').style.display = 'grid';
-                
-                document.getElementById('diffRescueFlight').innerText = 'Thai Airways TG 307 (Self-Healed)';
-                document.getElementById('diffRescueStatus').innerText = 'Departs: 18:00 (Auto-recovered from seat exhaustion)';
-                document.getElementById('diffDeltaLabel').innerText = 'Auto-Recovered';
-                
-                document.getElementById('passFlight').innerText = 'TG 307';
-                document.getElementById('passGate').innerText = 'C7';
-                document.getElementById('passSeat').innerText = '14A';
-                document.getElementById('passBoarding').innerText = '17:20';
-                document.getElementById('ticketModal').classList.add('show');
-                
-                document.getElementById('dynStatus').innerText = '🔄 SELF-HEALED: TG 307';
-                document.getElementById('dynFlight').innerText = 'TG 307 (Gate C7)';
-                showToast('🔄 Self-Healing Loop Auto-Recovered in 144ms!');
+                const res = await fetch('/api/disruption/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        flight_number: 'TG303',
+                        passenger_name: 'Aung Hein Kyaw',
+                        date: '2026-08-20',
+                        currency: 'USD'
+                    })
+                });
+                rescueData = await res.json();
+                renderRescueData(rescueData);
             } catch (err) {
-                showToast('Self-Healing Loop executed successfully!');
+                console.error('Disruption analysis failed:', err);
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Simulate Disruption';
+        }
+
+        function renderRescueData(data) {
+            // Update banner sub
+            document.getElementById('banner-sub').textContent = '2 rescue packages ready — Qwen-2.5 ranking complete';
+
+            // Route visual
+            const disruption = data.disruption;
+            const route = document.getElementById('route-visual');
+            document.getElementById('route-cancelled-codes').textContent = disruption.origin;
+            document.getElementById('route-cancelled-dest').textContent = disruption.destination;
+
+            const firstPkg = data.rescue_packages[0];
+            document.getElementById('route-rescue-codes').textContent = firstPkg.origin;
+            document.getElementById('route-rescue-dest').textContent = firstPkg.destination;
+            route.classList.add('visible');
+
+            // Rescue packages (show only first 2)
+            renderPackages(data.rescue_packages.slice(0, 2));
+
+            // Compensation card
+            const claim = data.compensation_claim;
+            document.getElementById('comp-claim-id').textContent = 'Claim #' + claim.claim_id + ' • $' + claim.eligible_payout_usd.toFixed(2) + ' USD';
+            document.getElementById('comp-amount').textContent = '$' + claim.eligible_payout_usd.toFixed(2) + ' USD';
+            document.getElementById('comp-status').textContent = 'Status: ' + claim.status.replace(/_/g, ' ');
+            document.getElementById('compensation-card').classList.add('visible');
+
+            // Start fare lock countdown
+            startFareLockCountdown();
+        }
+
+        function renderPackages(packages) {
+            const container = document.getElementById('rescue-packages');
+            container.innerHTML = '';
+
+            packages.forEach((pkg, idx) => {
+                const isFastest = pkg.package_type === 'FASTEST_RECOVERY';
+                const card = document.createElement('div');
+                card.className = 'package-card';
+
+                const depTime = pkg.departure_time.split(' ')[1] || pkg.departure_time;
+                const arrTime = pkg.arrival_time.split(' ')[1] || pkg.arrival_time;
+                const priceDisplay = pkg.currency_symbol + (pkg.price_converted || pkg.price_usd).toFixed(2);
+                const coverageText = isFastest ? 'Airline-covered' : 'Instant payout';
+
+                card.innerHTML =
+                    '<div class="package-badge">' + (isFastest ? 'FASTEST' : 'BEST VALUE') + '</div>' +
+                    '<div class="package-body">' +
+                        '<div class="package-airline">' + pkg.airline + '</div>' +
+                        '<div class="package-flight">' + pkg.airline_code + ' ' + pkg.flight_number + '</div>' +
+                        '<div class="package-route">' +
+                            '<span class="codes">' + pkg.origin + '</span>' +
+                            '<span class="arrow">--></span>' +
+                            '<span class="codes">' + pkg.destination + '</span>' +
+                        '</div>' +
+                        '<div class="package-time">' + depTime + ' --> ' + arrTime + ' - Nonstop</div>' +
+                        '<div class="package-reason">' + pkg.agent_recommendation_reason + '</div>' +
+                        (isFastest ?
+                            '<div class="package-farelock">Fare Lock <span class="package-farelock-timer" data-pkg="' + idx + '">14:59</span> remaining</div>' : '') +
+                        '<div class="package-price">' + priceDisplay + '</div>' +
+                        '<div class="package-coverage">' + coverageText + '</div>' +
+                        '<button class="btn-rebook" onclick="rebookFlight(\'' + pkg.offer_id + '\', ' + idx + ')">1-Click Rebook</button>' +
+                    '</div>';
+                container.appendChild(card);
+            });
+        }
+
+        function startFareLockCountdown() {
+            if (fareLockInterval) clearInterval(fareLockInterval);
+            let seconds = 899; // 14:59
+            fareLockInterval = setInterval(() => {
+                seconds--;
+                if (seconds < 0) { clearInterval(fareLockInterval); return; }
+                const m = Math.floor(seconds / 60);
+                const s = seconds % 60;
+                const display = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+                document.querySelectorAll('.package-farelock-timer').forEach(el => el.textContent = display);
+            }, 1000);
+        }
+
+        // 1-CLICK REBOOK
+        async function rebookFlight(offerId, pkgIdx) {
+            if (!rescueData) return;
+            const pkg = rescueData.rescue_packages[pkgIdx];
+
+            try {
+                const res = await fetch('/api/rescue/book', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        offer_id: offerId,
+                        passenger_name: 'Aung Hein Kyaw',
+                        passport_number: 'MB987654',
+                        price_usd: pkg.price_usd,
+                        baggage_addon: '30kg Priority Included',
+                        seat_selected: '12A'
+                    })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showBoardingPass(result.ticket, pkg);
+                }
+            } catch (err) {
+                console.error('Rebooking failed:', err);
             }
         }
 
-        function selectSeat(seatCode) {
-            currentAssignedSeat = seatCode;
-            document.querySelectorAll('.seat-block').forEach(el => el.classList.remove('selected'));
-            document.getElementById('assignedSeatLabel').innerText = seatCode + ' (Locked)';
-            document.getElementById('passSeat').innerText = seatCode;
-            showToast('✓ Seat ' + seatCode + ' locked in Atlas Inventory');
-        }
+        function showBoardingPass(ticket, pkg) {
+            const overlay = document.getElementById('modal-overlay');
+            document.getElementById('bp-airline').textContent = pkg.airline;
+            document.getElementById('bp-origin').textContent = pkg.origin;
+            document.getElementById('bp-origin-name').textContent = pkg.origin_airport || pkg.origin;
+            document.getElementById('bp-dest').textContent = pkg.destination;
+            document.getElementById('bp-dest-name').textContent = pkg.destination_airport || pkg.destination;
+            document.getElementById('bp-flight').textContent = pkg.airline_code + ' ' + pkg.flight_number;
+            document.getElementById('bp-gate').textContent = ticket.gate || pkg.gate || 'D4';
+            document.getElementById('bp-seat').textContent = ticket.seat_assigned || '12A';
+            document.getElementById('bp-boarding').textContent = ticket.boarding_time || '11:05 AM';
+            document.getElementById('bp-pnr').textContent = ticket.pnr || 'ATLAS-XXXXXX';
 
-        function executeRebook(offerId, flightNo, depTime, price) {
-            document.getElementById('passFlight').innerText = flightNo;
-            document.getElementById('passBoarding').innerText = '11:05 AM';
-            document.getElementById('passSeat').innerText = currentAssignedSeat;
-            document.getElementById('ticketModal').classList.add('show');
-            
-            triggerDisruptionSimulation();
-            showToast('✓ Rebooked on ' + flightNo + ' (PNR Issued)');
+            // Generate barcode bars
+            const barcode = document.getElementById('bp-barcode');
+            barcode.innerHTML = '';
+            for (let i = 0; i < 40; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'bp-bar';
+                bar.style.height = (20 + Math.random() * 20) + 'px';
+                bar.style.opacity = Math.random() > 0.3 ? '1' : '0.3';
+                barcode.appendChild(bar);
+            }
+
+            overlay.classList.add('visible');
         }
 
         function closeModal() {
-            document.getElementById('ticketModal').classList.remove('show');
+            document.getElementById('modal-overlay').classList.remove('visible');
         }
 
-        function onCurrencyChange(curr) {
-            currentCurrency = curr;
-            showToast('Currency updated to ' + curr);
+        // COMPENSATION PAYOUT
+        async function filePayout() {
+            if (!rescueData) return;
+            try {
+                await fetch('/api/claims/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        flight_number: 'TG303',
+                        passenger_name: 'Aung Hein Kyaw'
+                    })
+                });
+                document.getElementById('comp-status').textContent = 'Status: PAYOUT_INITIATED';
+            } catch (err) {
+                console.error('Claim filing failed:', err);
+            }
         }
 
-        // Live Fare Lock Countdown
-        let countdownSec = 899;
-        setInterval(() => {
-            if (countdownSec > 0) countdownSec--;
-            const mins = Math.floor(countdownSec / 60);
-            const secs = countdownSec % 60;
-            const el = document.getElementById('countdownPill1');
-            if (el) el.innerText = `🔒 Fare Locked: ${mins}:${secs < 10 ? '0' : ''}${secs}`;
-        }, 1000);
+        // FLIGHT SEARCH
+        async function searchFlights() {
+            const results = document.getElementById('search-results');
+            results.innerHTML = '<div class="loading">Searching 140+ airlines via Atlas GDS...</div>';
 
-        // 3D Card Gyroscope Tilt Effect on PKPass
-        const pkCard = document.getElementById('pkpassCard');
-        const modal = document.getElementById('ticketModal');
-        if (modal && pkCard) {
-            modal.addEventListener('mousemove', (e) => {
-                const rect = pkCard.getBoundingClientRect();
-                const x = e.clientX - rect.left - rect.width / 2;
-                const y = e.clientY - rect.top - rect.height / 2;
-                const rotateX = -y / 15;
-                const rotateY = x / 15;
-                pkCard.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+            try {
+                const res = await fetch('/api/flights/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        origin: document.getElementById('search-origin').value,
+                        destination: document.getElementById('search-destination').value,
+                        date: document.getElementById('search-date').value,
+                        passengers: parseInt(document.getElementById('search-passengers').value),
+                        cabin_class: 'ECONOMY',
+                        currency: document.getElementById('search-currency').value
+                    })
+                });
+                const data = await res.json();
+                renderSearchResults(data.offers);
+            } catch (err) {
+                results.innerHTML = '<div class="loading">Search failed. Please try again.</div>';
+                console.error('Search failed:', err);
+            }
+        }
+
+        function renderSearchResults(offers) {
+            const container = document.getElementById('search-results');
+            container.innerHTML = '';
+
+            if (!offers || offers.length === 0) {
+                container.innerHTML = '<div class="loading">No flights found.</div>';
+                return;
+            }
+
+            offers.forEach(o => {
+                const depTime = o.departure_time.split(' ')[1] || o.departure_time;
+                const arrTime = o.arrival_time.split(' ')[1] || o.arrival_time;
+                const price = (o.currency_symbol || '$') + (o.price_converted || o.price_usd).toFixed(2);
+
+                const card = document.createElement('div');
+                card.className = 'search-result-card';
+                card.innerHTML =
+                    '<div class="src-left">' +
+                        '<div class="src-airline">' + o.airline + '</div>' +
+                        '<div class="src-flight">' + o.airline_code + ' ' + o.flight_number + '</div>' +
+                        '<div class="src-route">' + o.origin + ' --> ' + o.destination + ' - ' + depTime + ' to ' + arrTime + '</div>' +
+                    '</div>' +
+                    '<div class="src-right">' +
+                        '<div class="src-price">' + price + '</div>' +
+                        '<div class="src-seats">' + o.seats_available + ' seats left</div>' +
+                    '</div>';
+                container.appendChild(card);
             });
-            modal.addEventListener('mouseleave', () => {
-                pkCard.style.transform = 'rotateX(0deg) rotateY(0deg)';
-            });
         }
 
-        // Voice Concierge
-        function sendPromptChip(text) {
-            document.getElementById('deskChatInput').value = text;
-            sendChatFromDesk();
-        }
-
-        function handleChatEnter(e) {
-            if (e.key === 'Enter') sendChatFromDesk();
-        }
-
-        async function sendChatFromDesk() {
-            const input = document.getElementById('deskChatInput');
-            const q = input.value.trim();
-            if (!q) return;
-
-            const stream = document.getElementById('fullChatStream');
-            stream.innerHTML += `<div class="chat-bubble user">${q}</div>`;
+        // CONCIERGE CHAT
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const msg = input.value.trim();
+            if (!msg) return;
             input.value = '';
+            await sendConciergeQuery(msg);
+        }
+
+        async function sendQuickChat(msg) {
+            await sendConciergeQuery(msg);
+        }
+
+        async function sendConciergeQuery(query) {
+            // Show user message
+            const container = document.getElementById('chat-messages');
+            const userMsg = document.createElement('div');
+            userMsg.className = 'msg-bubble msg-user';
+            userMsg.textContent = query;
+            container.appendChild(userMsg);
+
+            // Typing indicator
+            const typing = document.createElement('div');
+            typing.className = 'msg-bubble msg-ai';
+            typing.textContent = '...';
+            container.appendChild(typing);
+            container.scrollTop = container.scrollHeight;
 
             try {
                 const res = await fetch('/api/chat/concierge', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({query: q})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query })
                 });
                 const data = await res.json();
-                stream.innerHTML += `<div class="chat-bubble agent">🤖 ${data.reply}</div>`;
-                stream.scrollTop = stream.scrollHeight;
+                typing.textContent = data.reply;
             } catch (err) {
-                stream.innerHTML += `<div class="chat-bubble agent">🤖 Rebooked flight is confirmed on MAI 8M 336 (Departs 11:45 AM). Gate D4. Baggage in Cargo Bay 2.</div>`;
+                typing.textContent = 'Sorry, I could not process your request right now.';
+                console.error('Concierge failed:', err);
+            }
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // HEALTH CHECK
+        async function checkHealth() {
+            try {
+                const res = await fetch('/api/health');
+                const data = await res.json();
+                document.querySelector('#health-badge').innerHTML = '<span id="health-dot"></span>' + data.status;
+            } catch (err) {
+                document.querySelector('#health-badge').innerHTML = '<span id="health-dot" style="background:#DC2626"></span>Offline';
             }
         }
 
-        let isRecording = false;
-        function toggleVoiceRecognition() {
-            const btn = document.getElementById('btnVoiceMic');
-            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                alert('Speech Recognition is supported in Chrome/Safari.');
-                return;
-            }
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'en-US';
-
-            if (!isRecording) {
-                isRecording = true;
-                btn.classList.add('recording');
-                recognition.start();
-
-                recognition.onresult = (event) => {
-                    const transcript = event.results[0][0].transcript;
-                    document.getElementById('deskChatInput').value = transcript;
-                    sendChatFromDesk();
-                    btn.classList.remove('recording');
-                    isRecording = false;
-                };
-
-                recognition.onerror = () => {
-                    btn.classList.remove('recording');
-                    isRecording = false;
-                };
-            }
-        }
-
-        // Multi-Band Fluid Audio Waveform Visualizer
-        const canvas = document.getElementById('audioWaveCanvas');
-        if (canvas) {
-            const ctx = canvas.getContext('2d');
-            let step = 0;
-            function drawWave() {
-                canvas.width = canvas.offsetWidth;
-                canvas.height = canvas.offsetHeight;
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                // Layer 1: Cyan Ribbon
-                ctx.lineWidth = 2.5;
-                ctx.strokeStyle = '#4CC9F0';
-                ctx.beginPath();
-                for (let x = 0; x < canvas.width; x++) {
-                    const y = canvas.height / 2 + Math.sin((x + step) * 0.04) * 14 * Math.sin(step * 0.02);
-                    if (x === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                }
-                ctx.stroke();
-
-                // Layer 2: Emerald Green Ribbon
-                ctx.lineWidth = 1.5;
-                ctx.strokeStyle = 'rgba(144, 190, 109, 0.7)';
-                ctx.beginPath();
-                for (let x = 0; x < canvas.width; x++) {
-                    const y = canvas.height / 2 + Math.cos((x - step) * 0.035) * 10 * Math.sin(step * 0.025);
-                    if (x === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                }
-                ctx.stroke();
-
-                // Layer 3: Cream Accent Ribbon
-                ctx.lineWidth = 1.0;
-                ctx.strokeStyle = 'rgba(242, 233, 228, 0.4)';
-                ctx.beginPath();
-                for (let x = 0; x < canvas.width; x++) {
-                    const y = canvas.height / 2 + Math.sin((x + step * 1.5) * 0.05) * 6;
-                    if (x === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                }
-                ctx.stroke();
-
-                step += 2;
-                requestAnimationFrame(drawWave);
-            }
-            drawWave();
-        }
+        // INIT
+        checkHealth();
     </script>
 </body>
 </html>
