@@ -339,6 +339,21 @@
         .impact-total-value { font-size: 20px; font-weight: 700; color: var(--status-success); font-family: "JetBrains Mono", monospace; }
         /* QODER BADGE */
         #qoder-badge { font-size: 11px; font-weight: 600; color: var(--accent-teal); background: var(--accent-teal-light); padding: 3px 10px; border-radius: 20px; }
+        /* ADD FLIGHT FORM */
+        .add-flight-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; justify-content: center; max-width: 600px; margin: 20px auto 0; }
+        .add-flight-form .form-group { min-width: 120px; }
+        .add-flight-form input { width: 100%; padding: 8px 12px; border: 1px solid var(--border-amber); border-radius: var(--radius-sm); font-size: 14px; font-family: inherit; background: var(--bg-card); color: var(--text-dark); }
+        .add-flight-form input:focus { outline: none; border-color: var(--accent-teal); }
+        .btn-add-flight { background: var(--accent-teal); color: white; border: none; padding: 9px 18px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; height: 38px; transition: background 0.2s var(--ease); }
+        .btn-add-flight:hover { background: var(--accent-teal-dark); }
+        .monitored-flights { max-width: 600px; margin: 16px auto 0; }
+        .monitored-flight-item { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border: 1px solid var(--border-amber); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 8px; }
+        .monitored-flight-info { display: flex; align-items: center; gap: 8px; }
+        .monitored-flight-num { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 14px; color: var(--text-dark); }
+        .monitored-flight-date { font-size: 12px; color: var(--text-muted); }
+        .monitored-status { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--status-success); }
+        .monitored-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-success); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         /* LOADING */
         .loading { text-align: center; padding: 40px; color: var(--text-muted); font-size: 14px; }
     </style>
@@ -377,9 +392,35 @@
             <!-- RESCUE HUB VIEW -->
             <div id="view-rescue" class="view active">
                 <div id="empty-state">
-                    <h2>No active disruption</h2>
-                    <p>Your flight itineraries are being monitored. The Autonomous Rescue Agent will activate instantly if any disruption is detected.</p>
-                    <div class="hint">Click "Simulate Disruption" to see the agent in action.</div>
+                    <h2>Add Your Flight</h2>
+                    <p>Enter your flight details below. The Autonomous Rescue Agent will monitor it and activate instantly if any disruption is detected.</p>
+                    <div class="add-flight-form">
+                        <div class="form-group">
+                            <label>Flight Number</label>
+                            <input type="text" id="input-flight-number" placeholder="e.g. TG303" value="TG303">
+                        </div>
+                        <div class="form-group">
+                            <label>Date</label>
+                            <input type="date" id="input-flight-date" value="2026-08-20">
+                        </div>
+                        <div class="form-group">
+                            <label>Passenger Name</label>
+                            <input type="text" id="input-passenger-name" placeholder="Your name" value="Aung Hein Kyaw">
+                        </div>
+                        <div class="form-group" style="min-width: 80px;">
+                            <label>Currency</label>
+                            <select id="input-currency">
+                                <option value="USD">USD</option>
+                                <option value="THB">THB</option>
+                                <option value="SGD">SGD</option>
+                                <option value="MMK">MMK</option>
+                                <option value="EUR">EUR</option>
+                            </select>
+                        </div>
+                        <button class="btn-add-flight" onclick="addFlight()">Add Flight</button>
+                    </div>
+                    <div class="monitored-flights" id="monitored-flights"></div>
+                    <div class="hint" style="margin-top: 20px;">Click "Simulate Disruption" to see the agent in action.</div>
                 </div>
 
                 <div id="disruption-banner">
@@ -434,6 +475,8 @@
                         <span class="impact-total-value" id="impact-total">$293.50</span>
                     </div>
                 </div>
+
+            </div>
 
             <!-- SEARCH VIEW -->
             <div id="view-search" class="view">
@@ -548,8 +591,45 @@
             if (el) el.classList.add('active');
         }
 
+        // STORE MONITORED FLIGHTS
+        let monitoredFlights = [];
+
+        // ADD FLIGHT
+        function addFlight() {
+            const flightNum = document.getElementById('input-flight-number').value.trim().toUpperCase();
+            const flightDate = document.getElementById('input-flight-date').value;
+            const passenger = document.getElementById('input-passenger-name').value.trim();
+            if (!flightNum) return;
+
+            monitoredFlights.push({ flight_number: flightNum, date: flightDate, passenger_name: passenger });
+            renderMonitoredFlights();
+
+            // Clear input
+            document.getElementById('input-flight-number').value = '';
+        }
+
+        function renderMonitoredFlights() {
+            const container = document.getElementById('monitored-flights');
+            if (monitoredFlights.length === 0) { container.innerHTML = ''; return; }
+            container.innerHTML = monitoredFlights.map(f =>
+                '<div class="monitored-flight-item">' +
+                    '<div class="monitored-flight-info">' +
+                        '<span class="monitored-flight-num">' + f.flight_number + '</span>' +
+                        '<span class="monitored-flight-date">' + f.date + '</span>' +
+                    '</div>' +
+                    '<div class="monitored-status"><span class="monitored-dot"></span>Monitoring</div>' +
+                '</div>'
+            ).join('');
+        }
+
         // SIMULATE DISRUPTION
         async function simulateDisruption() {
+            // Use entered flight if available, otherwise use defaults
+            const flightNum = (monitoredFlights.length > 0 ? monitoredFlights[0].flight_number : 'TG303');
+            const passenger = (monitoredFlights.length > 0 ? monitoredFlights[0].passenger_name : 'Aung Hein Kyaw');
+            const flightDate = (monitoredFlights.length > 0 ? monitoredFlights[0].date : '2026-08-20');
+            const currency = document.getElementById('input-currency') ? document.getElementById('input-currency').value : 'USD';
+
             const btn = document.getElementById('btn-simulate');
             btn.disabled = true;
             btn.textContent = 'Activating...';
@@ -558,7 +638,7 @@
 
             // Show banner immediately
             const banner = document.getElementById('disruption-banner');
-            document.getElementById('banner-title').textContent = 'TG 303 CANCELLED — Autonomous Rescue Active';
+            document.getElementById('banner-title').textContent = flightNum + ' CANCELLED \u2014 Autonomous Rescue Active';
             document.getElementById('banner-sub').textContent = 'Scanning 140+ airlines via Atlas GDS...';
             banner.classList.add('visible');
 
@@ -569,7 +649,7 @@
             trailList.innerHTML = '';
 
             const steps = [
-                { label: 'Detected TG303 cancellation via Atlas GDS', time: 'just now', delay: 300 },
+                { label: 'Detected ' + flightNum + ' cancellation via Atlas GDS', time: 'just now', delay: 300 },
                 { label: 'Searched 140+ airlines across Atlas Sandbox', time: '0.8s', delay: 600 },
                 { label: 'Qwen-2.5 via Qoder: multi-criteria ranking (time + price + coverage)', time: '0.3s', delay: 900 },
                 { label: 'Fare locked on 2 alternatives \u2014 awaiting selection', time: 'active', delay: 1200, active: true }
@@ -590,10 +670,10 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        flight_number: 'TG303',
-                        passenger_name: 'Aung Hein Kyaw',
-                        date: '2026-08-20',
-                        currency: 'USD'
+                        flight_number: flightNum,
+                        passenger_name: passenger,
+                        date: flightDate,
+                        currency: currency
                     })
                 });
                 rescueData = await res.json();
@@ -754,7 +834,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         offer_id: pkg.offer_id,
-                        passenger_name: 'Aung Hein Kyaw',
+                        passenger_name: (monitoredFlights.length > 0 ? monitoredFlights[0].passenger_name : 'Aung Hein Kyaw'),
                         passport_number: 'MB987654',
                         price_usd: pkg.price_usd,
                         baggage_addon: '30kg Priority Included',
@@ -821,8 +901,8 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        flight_number: 'TG303',
-                        passenger_name: 'Aung Hein Kyaw'
+                        flight_number: (monitoredFlights.length > 0 ? monitoredFlights[0].flight_number : 'TG303'),
+                        passenger_name: (monitoredFlights.length > 0 ? monitoredFlights[0].passenger_name : 'Aung Hein Kyaw')
                     })
                 });
                 document.getElementById('comp-status').textContent = 'Status: PAYOUT_INITIATED';
