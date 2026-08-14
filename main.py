@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from routers.v1 import flights, disruptions, bookings, concierge, claims, telemetry
+from routers.v1 import flights, disruptions, bookings, concierge, claims, telemetry, hotels
 
 app = FastAPI(
     title=settings.app_name,
@@ -35,6 +35,7 @@ app.include_router(bookings.router)
 app.include_router(concierge.router)
 app.include_router(claims.router)
 app.include_router(telemetry.router)
+app.include_router(hotels.router)
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():

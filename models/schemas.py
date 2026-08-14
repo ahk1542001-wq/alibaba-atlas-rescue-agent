@@ -30,6 +30,52 @@ class FlightSearchRequest(BaseModel):
     cabin_class: Optional[str] = Field("ECONOMY")
     currency: Optional[str] = Field("USD")
 
+class PredictiveDisruptionRadar(BaseModel):
+    flight_number: str
+    inbound_aircraft_tail: str
+    inbound_route: str
+    inbound_delay_minutes: int
+    airspace_congestion_index: str
+    weather_radar_status: str
+    predicted_cancellation_risk_percent: int
+    lead_time_advantage_minutes: int
+    recommendation: str
+
+class FlightRescueDiff(BaseModel):
+    original_flight: str
+    original_carrier: str
+    original_departure: str
+    original_status: str
+    rescue_flight: str
+    rescue_carrier: str
+    rescue_departure: str
+    time_delta_display: str
+    loyalty_tier_status: str
+    baggage_transfer_status: str
+    queue_time_saved_minutes: int
+
+class HotelVoucher(BaseModel):
+    voucher_id: str
+    hotel_name: str
+    stars: int = 4
+    location: str
+    airside_no_visa: bool = False
+    check_in: str
+    check_out: str
+    room_type: str
+    amenities: List[str]
+    free_breakfast: bool = True
+    shuttle_service: str
+    status: str = "CONFIRMED_AND_PAID_BY_AIRLINE"
+    qr_code_token: str
+
+class CareGiftVouchers(BaseModel):
+    lounge_voucher: str
+    dining_credit: str
+    grab_transfer_pass: str
+    global_esim_data: str
+    total_gift_value_usd: float = 95.00
+
 class DisruptionEvent(BaseModel):
     flight_number: str
     passenger_name: Optional[str] = "Aung Hein Kyaw"
@@ -38,7 +84,7 @@ class DisruptionEvent(BaseModel):
     party_size: Optional[int] = 1
 
 class RescuePackage(BaseModel):
-    package_type: str  # FASTEST_RECOVERY | BEST_VALUE | DIRECT_COMFORT
+    package_type: str  # FASTEST_RECOVERY | BEST_VALUE | DIRECT_COMFORT | OVERNIGHT_HOTEL_BUNDLE
     badge: str
     airline: str
     flight_number: str
@@ -53,6 +99,7 @@ class RescuePackage(BaseModel):
     destination: str
     agent_recommendation_reason: str
     offer_id: str
+    hotel_included: Optional[HotelVoucher] = None
 
 class BookingRequest(BaseModel):
     offer_id: str
@@ -62,6 +109,7 @@ class BookingRequest(BaseModel):
     seat_selected: Optional[str] = "12A"
     price_usd: float
     party_size: Optional[int] = 1
+    hotel_needed: Optional[bool] = False
 
 class BookingConfirmation(BaseModel):
     booking_id: str
@@ -75,6 +123,8 @@ class BookingConfirmation(BaseModel):
     boarding_time: str
     lounge_pass: str
     baggage_tag: str
+    hotel_voucher: Optional[HotelVoucher] = None
+    care_gifts: Optional[CareGiftVouchers] = None
 
 class CompensationClaim(BaseModel):
     claim_id: str

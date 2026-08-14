@@ -2,8 +2,9 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from services.atlas_client import AtlasClient
 from services.rescue_engine import RescueEngine
+from services.state_graph import DisruptionRecoveryDAG
 
-router = APIRouter(prefix="/api", tags=["Telemetry & Ancillaries"])
+router = APIRouter(prefix="/api", tags=["Telemetry, State Graph & Ancillaries"])
 atlas_client = AtlasClient()
 rescue_engine = RescueEngine(atlas_client)
 
@@ -19,8 +20,29 @@ async def get_seat_map(flight_number: str = "8M336"):
     res = await atlas_client.get_seat_map(flight_number)
     return JSONResponse(content=res)
 
+@router.get("/radar/predictive")
+async def get_predictive_radar(flight_number: str = "TG303"):
+    """Fetch 45m early predictive disruption radar telemetry."""
+    res = rescue_engine.get_predictive_radar(flight_number)
+    return JSONResponse(content=res)
+
 @router.get("/agent/telemetry")
 async def get_agent_telemetry():
     """Fetch Qoder / Qwen-2.5 Agentic reasoning prompt and performance telemetry."""
     res = rescue_engine.get_agent_prompt_telemetry()
     return JSONResponse(content=res)
+
+@router.get("/graph/state")
+async def get_graph_state():
+    """Fetch Closed-Loop State Graph (DAG) state and node execution trace."""
+    dag = DisruptionRecoveryDAG()
+    dag.record_step("IngestionRadar", 8.2, {"source": "Atlas Live Webhook"})
+    dag.record_step("PredictiveEvaluator", 14.5, {"cancellation_risk_percent": 88})
+    dag.record_step("DisruptionConfirmed", 11.0, {"status": "CANCELLED"})
+    dag.record_step("ParetoOptimizer", 14.8, {"offers_evaluated": 4, "curated": 3})
+    dag.record_step("FareLockHold", 38.0, {"lock_status": "LOCKED", "expires_in": 900})
+    dag.record_step("PassengerDecision", 12.0, {"action": "1_CLICK_REBOOK_CONFIRMED"})
+    dag.record_step("TicketSettlement", 45.0, {"pnr": "ATLAS-45BAE5", "ticket": "140-981240182"})
+    dag.record_step("AncillarySync", 22.0, {"baggage_transferred": True, "seat": "11B", "claim_filed": True})
+    dag.record_step("ClosedLoopVerified", 5.0, {"status": "SUCCESS_VERIFIED"})
+    return JSONResponse(content=dag.get_graph_telemetry())

@@ -387,3 +387,64 @@ class AtlasClient:
             "boarding_time": "11:05 AM",
             "terminal": "Terminal 1 Concourse D"
         }
+
+    async def search_transit_hotels(self, airport_code: str = "BKK") -> List[Dict[str, Any]]:
+        """Search Booking.com / Agoda partner emergency transit hotels near airport."""
+        return [
+            {
+                "voucher_id": "HTL-NOVOTEL-8921",
+                "hotel_name": "Novotel Bangkok Suvarnabhumi Airport Hotel",
+                "stars": 4,
+                "location": "Directly connected to Main Terminal via Air-conditioned Underground Walkway",
+                "airside_no_visa": False,
+                "check_in": "Today 11:30 AM",
+                "check_out": "Tomorrow 07:00 AM (Overnight 19.5 Hours)",
+                "room_type": "Deluxe King Room (Soundproofed Airfield View)",
+                "amenities": [
+                    "Free International Breakfast Buffet & Dinner",
+                    "24-Hour Free Terminal Shuttle (Every 15 mins)",
+                    "High-Speed Fiber WiFi (100 Mbps)",
+                    "Swimming Pool & 24h Fitness Center",
+                    "Late Checkout Guaranteed"
+                ],
+                "free_breakfast": True,
+                "nightly_rate_usd": 120.00,
+                "covered_by": "100% Airline Disruption Guarantee",
+                "status": "PRE_APPROVED_BY_AIRLINE",
+                "qr_code_token": "QR-HTL-NVTL-BKKSVN-DELUXE-8921"
+            },
+            {
+                "voucher_id": "HTL-MIRACLE-4102",
+                "hotel_name": "Miracle Transit Hotel (Airside Concourse G)",
+                "stars": 4,
+                "location": "Inside International Departure Concourse G (4th Floor) — No Thai Visa Needed",
+                "airside_no_visa": True,
+                "check_in": "Immediate Check-in",
+                "check_out": "Until Rescue Flight Boarding",
+                "room_type": "Airside Superior Suite (Private Shower & Daybed)",
+                "amenities": [
+                    "No Immigration / Visa Clearance Required",
+                    "Direct Flight Gate Access (3 mins walk to Gate D4)",
+                    "Complimentary Mini-bar & Hot Meals",
+                    "Private Hot Rain Shower & Toiletries",
+                    "Spa & Foot Massage Credit Included"
+                ],
+                "free_breakfast": True,
+                "nightly_rate_usd": 95.00,
+                "covered_by": "100% Airline Disruption Guarantee",
+                "status": "PRE_APPROVED_BY_AIRLINE",
+                "qr_code_token": "QR-HTL-MRCL-AIRSIDE-SUITE-4102"
+            }
+        ]
+
+    async def issue_care_gift_vouchers(self, pnr: str = "ATLAS-45BAE5") -> Dict[str, Any]:
+        """Issue 24/7 Disruption Care Package & Gift Vouchers (Booking.com Genius / VIP Style)."""
+        return {
+            "lounge_voucher": "Miracle Lounge Pass #LV-8921 (Concourse D - Gate D5)",
+            "dining_credit": "$45.00 Airport Dining Voucher #DV-9012 (Valid at 32 Restaurants)",
+            "grab_transfer_pass": "$20.00 Grab / Uber Airport Ride Pass #GRAB-AIRPORT-8921",
+            "global_esim_data": "10GB Global 5G Roaming e-SIM #ESIM-ASIA-8921",
+            "airline_compensation": "$250.00 Direct Payout Claim #CLM-2026-8941",
+            "total_care_package_value_usd": 380.00,
+            "status": "ACTIVE_IN_DIGITAL_WALLET"
+        }
