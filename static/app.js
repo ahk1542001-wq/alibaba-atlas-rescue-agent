@@ -444,19 +444,34 @@
         }
 
         async function sendConciergeQuery(query) {
-            // Show user message
             const container = document.getElementById('chat-messages');
-            const userMsg = document.createElement('div');
-            userMsg.className = 'msg-bubble msg-user';
-            userMsg.textContent = query;
-            container.appendChild(userMsg);
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
-            // Typing indicator
-            const typing = document.createElement('div');
-            typing.className = 'msg-bubble msg-ai';
-            typing.textContent = '...';
-            container.appendChild(typing);
-            container.scrollTop = container.scrollHeight;
+            // User message with timestamp
+            const userRow = document.createElement('div');
+            userRow.className = 'msg-content';
+            userRow.style.alignSelf = 'flex-end';
+
+            const userBubble = document.createElement('div');
+            userBubble.className = 'msg-bubble msg-user';
+            userBubble.textContent = query;
+
+            const userTime = document.createElement('div');
+            userTime.className = 'msg-time';
+            userTime.style.textAlign = 'right';
+            userTime.textContent = timeStr;
+
+            userRow.appendChild(userBubble);
+            userRow.appendChild(userTime);
+            container.appendChild(userRow);
+
+            // AI typing indicator with avatar
+            const aiRow = document.createElement('div');
+            aiRow.className = 'msg-row msg-ai-row';
+            aiRow.innerHTML = '<div class="msg-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 1-3-3V5a3 3 0 0 1 3-3z"/><path d="M12 14c-4 0-7 2-7 5v3h14v-3c0-3-3-5-7-5z"/></svg></div><div class="msg-content"><div class="msg-bubble msg-ai"><div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>';
+            container.appendChild(aiRow);
+            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
 
             try {
                 const res = await fetch('/api/chat/concierge', {
@@ -465,12 +480,17 @@
                     body: JSON.stringify({ query: query })
                 });
                 const data = await res.json();
-                typing.textContent = data.reply;
+                const replyTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                aiRow.querySelector('.msg-bubble').textContent = data.reply;
+                var timeDiv = document.createElement('div');
+                timeDiv.className = 'msg-time';
+                timeDiv.textContent = replyTime;
+                aiRow.querySelector('.msg-content').appendChild(timeDiv);
             } catch (err) {
-                typing.textContent = 'Sorry, I could not process your request right now.';
+                aiRow.querySelector('.msg-bubble').textContent = 'Sorry, I could not process your request right now.';
                 console.error('Concierge failed:', err);
             }
-            container.scrollTop = container.scrollHeight;
+            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
         }
 
         // HEALTH CHECK
