@@ -5,8 +5,14 @@
         function switchView(view, el) {
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             document.querySelectorAll('.nav-icon').forEach(n => n.classList.remove('active'));
+            document.querySelectorAll('.bottom-nav-item').forEach(n => n.classList.remove('active'));
             document.getElementById('view-' + view).classList.add('active');
-            if (el) el.classList.add('active');
+            if (el) {
+                el.classList.add('active');
+                // Sync the other nav (sidebar <-> bottom nav)
+                const viewName = el.getAttribute('data-view');
+                document.querySelectorAll('[data-view="' + viewName + '"]').forEach(n => n.classList.add('active'));
+            }
         }
 
         // STORE MONITORED FLIGHTS
