@@ -85,6 +85,8 @@
             const passenger = (monitoredFlights.length > 0 ? monitoredFlights[0].passenger_name : 'Aung Hein Kyaw');
             const flightDate = (monitoredFlights.length > 0 ? monitoredFlights[0].date : '2026-08-20');
             const currency = document.getElementById('input-currency') ? document.getElementById('input-currency').value : 'USD';
+            selectedCurrency = currency;
+            updateCurrencyBadge();
 
             const btn = document.getElementById('btn-simulate');
             btn.disabled = true;
