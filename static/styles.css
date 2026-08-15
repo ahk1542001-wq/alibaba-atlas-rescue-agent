@@ -401,3 +401,29 @@
 .bottom-nav-item span { font-size: 10px; font-weight: 600; }
 .bottom-nav-item.active { color: var(--accent-teal); }
 .bottom-nav-item.active svg { stroke: var(--accent-teal); }
+
+/* ===== MOBILE RESPONSIVE ===== */
+@media (max-width: 768px) {
+    #sidebar { display: none; }
+    #bottom-nav { display: flex; }
+    #content { padding: 12px 16px; padding-bottom: 70px; }
+    #brand-sub { display: none; }
+    #btn-add-flight, #btn-simulate {
+        font-size: 0;
+        padding: 6px 8px;
+        display: flex; align-items: center; justify-content: center;
+    }
+    #btn-add-flight::before { content: "+"; font-size: 16px; font-weight: 700; }
+    #btn-simulate::before { content: "\26A1"; font-size: 14px; }
+    #rescue-packages { flex-direction: column; }
+    #route-visual { gap: 12px; }
+    .route-label { font-size: 10px; width: 50px; }
+    .route-codes { font-size: 12px; }
+    #boarding-pass, .af-card {
+        width: calc(100vw - 16px) !important;
+        max-width: 420px;
+    }
+    .bp-airport-code { font-size: 22px; }
+    .chat-chips { flex-wrap: nowrap; overflow-x: auto; }
+    .msg-bubble { max-width: 85%; }
+}
