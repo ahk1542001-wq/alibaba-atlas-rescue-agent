@@ -218,7 +218,14 @@
                         '<div class="package-time">' + depTime + ' --> ' + arrTime + ' - Nonstop</div>' +
                         '<div class="package-reason">' + pkg.agent_recommendation_reason + '</div>' +
                         (isFastest ?
-                            '<div class="package-farelock">Fare Lock <span class="package-farelock-timer" data-pkg="' + idx + '">14:59</span> remaining</div>' : '') +
+                            '<div class="package-farelock"><div class="package-farelock-label">Fare Lock</div>' +
+                            '<div class="farelock-ring">' +
+                                '<svg width="80" height="80">' +
+                                    '<circle cx="40" cy="40" r="34" fill="none" stroke="var(--border-amber)" stroke-width="4"/>' +
+                                    '<circle class="farelock-progress" cx="40" cy="40" r="34" fill="none" stroke="var(--accent-teal)" stroke-width="4" stroke-dasharray="213.6" stroke-dashoffset="0" stroke-linecap="round" style="transition: stroke-dashoffset 1s linear, stroke 0.5s"/>' +
+                                '</svg>' +
+                                '<div class="farelock-ring-text" data-pkg="' + idx + '">14:59</div>' +
+                            '</div></div>' : '') +
                         '<div class="package-price">' + priceDisplay + '</div>' +
                         '<div class="package-coverage">' + coverageText + '</div>' +
                         '<button class="btn-rebook" onclick="rebookFlight(\'' + pkg.offer_id + '\', ' + idx + ')">1-Click Rebook</button>' +
@@ -230,14 +237,28 @@
 
         function startFareLockCountdown() {
             if (fareLockInterval) clearInterval(fareLockInterval);
-            let seconds = 899; // 14:59
+            let seconds = 899;
+            const total = 899;
+            const circumference = 2 * Math.PI * 34;
+
             fareLockInterval = setInterval(() => {
                 seconds--;
                 if (seconds < 0) { clearInterval(fareLockInterval); return; }
+
                 const m = Math.floor(seconds / 60);
                 const s = seconds % 60;
                 const display = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
-                document.querySelectorAll('.package-farelock-timer').forEach(el => el.textContent = display);
+
+                document.querySelectorAll('.farelock-ring-text').forEach(el => el.textContent = display);
+
+                const progress = seconds / total;
+                const offset = circumference * (1 - progress);
+                document.querySelectorAll('.farelock-progress').forEach(ring => {
+                    ring.style.strokeDashoffset = offset;
+                    if (seconds > 600) ring.style.stroke = 'var(--accent-teal)';
+                    else if (seconds > 300) ring.style.stroke = 'var(--status-warning)';
+                    else ring.style.stroke = 'var(--status-danger)';
+                });
             }, 1000);
         }
 

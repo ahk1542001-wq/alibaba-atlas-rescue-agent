@@ -506,3 +506,26 @@
     0%, 60%, 100% { transform: translateY(0); }
     30% { transform: translateY(-4px); }
 }
+
+
+/* FARE LOCK RING */
+.farelock-ring {
+    position: relative;
+    width: 80px; height: 80px;
+    flex-shrink: 0;
+}
+.farelock-ring svg { transform: rotate(-90deg); }
+.farelock-ring-text {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px; font-weight: 700;
+    color: var(--accent-teal-dark);
+}
+.package-farelock {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 10px;
+}
+.package-farelock-label {
+    font-size: 12px; color: var(--accent-teal-dark); font-weight: 600;
+}
