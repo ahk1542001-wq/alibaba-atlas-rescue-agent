@@ -220,12 +220,6 @@
         .package-route .arrow { color: var(--text-muted); }
         .package-time { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
         .package-reason { font-size: 12px; color: var(--text-muted); margin-top: 10px; font-style: italic; line-height: 1.4; }
-        .package-farelock {
-            display: flex; align-items: center; gap: 6px;
-            margin-top: 10px;
-            font-size: 12px; color: var(--accent-teal-dark);
-        }
-        .package-farelock-timer { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
         .package-price { font-size: 24px; font-weight: 700; color: var(--text-dark); margin-top: 10px; font-family: 'JetBrains Mono', monospace; }
         .package-price-label { font-size: 12px; color: var(--text-muted); }
         .package-coverage { font-size: 12px; color: var(--status-success); margin-top: 4px; font-weight: 500; }
@@ -359,13 +353,6 @@
         .impact-total-value { font-size: 20px; font-weight: 700; color: var(--status-success); font-family: "JetBrains Mono", monospace; }
         /* QODER BADGE */
         #qoder-badge { font-size: 11px; font-weight: 600; color: var(--accent-teal); background: var(--accent-teal-light); padding: 3px 10px; border-radius: 20px; }
-        /* ADD FLIGHT FORM */
-        .add-flight-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; justify-content: center; max-width: 600px; margin: 20px auto 0; }
-        .add-flight-form .form-group { min-width: 120px; }
-        .add-flight-form input { width: 100%; padding: 8px 12px; border: 1px solid var(--border-amber); border-radius: var(--radius-sm); font-size: 14px; font-family: inherit; background: var(--bg-card); color: var(--text-dark); }
-        .add-flight-form input:focus { outline: none; border-color: var(--accent-teal); }
-        .btn-add-flight { background: var(--accent-teal); color: white; border: none; padding: 9px 18px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; height: 38px; transition: background 0.2s var(--ease); }
-        .btn-add-flight:hover { background: var(--accent-teal-dark); }
         .monitored-flights { max-width: 600px; margin: 16px auto 0; }
         .monitored-flight-item { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border: 1px solid var(--border-amber); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 8px; }
         .monitored-flight-info { display: flex; align-items: center; gap: 8px; }
@@ -529,3 +516,22 @@
 .package-farelock-label {
     font-size: 12px; color: var(--accent-teal-dark); font-weight: 600;
 }
+
+/* TOAST */
+#toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--status-danger);
+    color: white;
+    padding: 12px 20px;
+    border-radius: var(--radius-sm);
+    font-size: 14px; font-weight: 500;
+    box-shadow: var(--shadow-lg);
+    z-index: 200;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.3s var(--ease), transform 0.3s var(--ease);
+    pointer-events: none;
+    max-width: 380px;
+}
+#toast.visible { opacity: 1; transform: translateY(0); }

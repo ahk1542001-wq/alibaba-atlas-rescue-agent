@@ -18,6 +18,16 @@
             if (badge) badge.textContent = selectedCurrency;
         }
 
+        // TOAST NOTIFICATION
+        let toastTimer = null;
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('visible');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(function() { toast.classList.remove('visible'); }, 4000);
+        }
+
         // VIEW SWITCHING
         function switchView(view, el) {
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -155,6 +165,8 @@
                 trailList.appendChild(finalLi);
             } catch (err) {
                 console.error('Disruption analysis failed:', err);
+                document.getElementById('banner-sub').textContent = 'Unable to analyze disruption. Please try again.';
+                showToast('Unable to analyze disruption. Please check your connection and try again.');
             }
 
             btn.disabled = false;
@@ -329,6 +341,7 @@
                 }
             } catch (err) {
                 console.error('Rebooking failed:', err);
+                showToast('Booking failed. Please try rebooking again.');
             }
         }
 
@@ -390,8 +403,11 @@
                     })
                 });
                 document.getElementById('comp-status').textContent = 'Status: PAYOUT_INITIATED';
+                showToast('Compensation claim filed successfully.');
             } catch (err) {
                 console.error('Claim filing failed:', err);
+                document.getElementById('comp-status').textContent = 'Status: PAYOUT_FAILED';
+                showToast('Unable to file compensation claim. Please try again.');
             }
         }
 
