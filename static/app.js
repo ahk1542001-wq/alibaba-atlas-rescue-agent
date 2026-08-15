@@ -90,7 +90,7 @@
 
             const btn = document.getElementById('btn-simulate');
             btn.disabled = true;
-            btn.textContent = 'Activating...';
+            btn.innerHTML = '<span class="spinner"></span>Activating...';
 
             document.getElementById('empty-state').style.display = 'none';
 
@@ -158,7 +158,7 @@
             }
 
             btn.disabled = false;
-            btn.textContent = 'Simulate Disruption';
+            btn.innerHTML = 'Simulate Disruption';
         }
 
         function renderRescueData(data) {
@@ -185,6 +185,7 @@
             document.getElementById('comp-amount').textContent = convertCurrency(claim.eligible_payout_usd);
             document.getElementById('comp-status').textContent = 'Status: ' + claim.status.replace(/_/g, ' ');
             document.getElementById('compensation-card').classList.add('visible');
+            document.getElementById('compensation-card').classList.add('fade-in-up');
 
             // Start fare lock countdown
             startFareLockCountdown();
@@ -223,6 +224,7 @@
                         '<button class="btn-rebook" onclick="rebookFlight(\'' + pkg.offer_id + '\', ' + idx + ')">1-Click Rebook</button>' +
                     '</div>';
                 container.appendChild(card);
+                setTimeout(() => card.classList.add('fade-in-up'), idx * 200);
             });
         }
 
@@ -372,7 +374,7 @@
         // FLIGHT SEARCH
         async function searchFlights() {
             const results = document.getElementById('search-results');
-            results.innerHTML = '<div class="loading">Searching 140+ airlines via Atlas GDS...</div>';
+            results.innerHTML = '<div class="skeleton-card"><div><div class="skeleton-line med"></div><div class="skeleton-line short"></div></div><div class="skeleton-line short" style="width:40px"></div></div><div class="skeleton-card"><div><div class="skeleton-line med"></div><div class="skeleton-line short"></div></div><div class="skeleton-line short" style="width:40px"></div></div><div class="skeleton-card"><div><div class="skeleton-line med"></div><div class="skeleton-line short"></div></div><div class="skeleton-line short" style="width:40px"></div></div>';
 
             try {
                 const res = await fetch('/api/flights/search', {

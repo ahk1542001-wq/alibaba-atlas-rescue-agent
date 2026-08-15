@@ -435,3 +435,48 @@
     .chat-chips { flex-wrap: nowrap; overflow-x: auto; }
     .msg-bubble { max-width: 85%; }
 }
+
+/* ANIMATIONS */
+.fade-in-up {
+    opacity: 0;
+    transform: translateY(8px);
+    animation: fadeInUp 0.4s var(--ease) forwards;
+}
+@keyframes fadeInUp {
+    to { opacity: 1; transform: translateY(0); }
+}
+/* SKELETON LOADER */
+.skeleton-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-amber);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+@keyframes skeletonPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+.skeleton-line {
+    height: 12px;
+    background: var(--border-amber-light);
+    border-radius: 4px;
+    margin-bottom: 6px;
+}
+.skeleton-line.short { width: 60px; }
+.skeleton-line.med { width: 120px; }
+/* SPINNER */
+.spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
