@@ -1,6 +1,23 @@
         let fareLockInterval = null;
         let rescueData = null;
 
+        // MULTI-CURRENCY
+        const CURRENCY_RATES = { USD: 1.0, THB: 35.4, SGD: 1.34, MMK: 3500.0, EUR: 0.92 };
+        const CURRENCY_SYMBOLS = { USD: "$", THB: "\u0E3F", SGD: "S$", MMK: "Ks ", EUR: "\u20AC" };
+        let selectedCurrency = "USD";
+
+        function convertCurrency(usdAmount) {
+            const rate = CURRENCY_RATES[selectedCurrency] || 1.0;
+            const symbol = CURRENCY_SYMBOLS[selectedCurrency] || "$";
+            const converted = (usdAmount * rate).toFixed(2);
+            return symbol + converted;
+        }
+
+        function updateCurrencyBadge() {
+            const badge = document.getElementById('currency-badge');
+            if (badge) badge.textContent = selectedCurrency;
+        }
+
         // VIEW SWITCHING
         function switchView(view, el) {
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -35,6 +52,11 @@
             if (!flightNum) return;
 
             monitoredFlights.push({ flight_number: flightNum, date: flightDate, passenger_name: passenger });
+            const currencySelect = document.getElementById('input-currency');
+            if (currencySelect) {
+                selectedCurrency = currencySelect.value;
+                updateCurrencyBadge();
+            }
             renderMonitoredFlights();
             closeAddFlightModal();
 
@@ -158,7 +180,7 @@
             // Compensation card
             const claim = data.compensation_claim;
             document.getElementById('comp-claim-id').textContent = 'Claim #' + claim.claim_id + ' • $' + claim.eligible_payout_usd.toFixed(2) + ' USD';
-            document.getElementById('comp-amount').textContent = '$' + claim.eligible_payout_usd.toFixed(2) + ' USD';
+            document.getElementById('comp-amount').textContent = convertCurrency(claim.eligible_payout_usd);
             document.getElementById('comp-status').textContent = 'Status: ' + claim.status.replace(/_/g, ' ');
             document.getElementById('compensation-card').classList.add('visible');
 
@@ -289,10 +311,10 @@
         function showImpactCard(pkg) {
             const card = document.getElementById('impact-card');
             document.getElementById('impact-time').textContent = '190 min';
-            document.getElementById('impact-cost').textContent = '$18.50';
-            document.getElementById('impact-comp').textContent = '$250.00';
-            document.getElementById('impact-voucher').textContent = '$25.00';
-            document.getElementById('impact-total').textContent = '$293.50';
+            document.getElementById('impact-cost').textContent = convertCurrency(18.50);
+            document.getElementById('impact-comp').textContent = convertCurrency(250.00);
+            document.getElementById('impact-voucher').textContent = convertCurrency(25.00);
+            document.getElementById('impact-total').textContent = convertCurrency(293.50);
             card.classList.add('visible');
         }
 
