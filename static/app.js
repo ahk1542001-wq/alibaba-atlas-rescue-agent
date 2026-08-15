@@ -335,14 +335,17 @@
             document.getElementById('bp-boarding').textContent = ticket.boarding_time || '11:05 AM';
             document.getElementById('bp-pnr').textContent = ticket.pnr || 'ATLAS-XXXXXX';
 
-            // Generate barcode bars
             const barcode = document.getElementById('bp-barcode');
             barcode.innerHTML = '';
-            for (let i = 0; i < 40; i++) {
+            const pnr = ticket.pnr || 'ATLAS-XXXXXX';
+            for (let i = 0; i < 50; i++) {
+                const charCode = pnr.charCodeAt(i % pnr.length);
+                const isThick = (charCode + i) % 3 === 0;
                 const bar = document.createElement('div');
                 bar.className = 'bp-bar';
-                bar.style.height = (20 + Math.random() * 20) + 'px';
-                bar.style.opacity = Math.random() > 0.3 ? '1' : '0.3';
+                bar.style.width = isThick ? '4px' : '2px';
+                bar.style.height = (24 + ((charCode + i) % 12)) + 'px';
+                bar.style.opacity = (charCode + i) % 2 === 0 ? '1' : '0.4';
                 barcode.appendChild(bar);
             }
 
