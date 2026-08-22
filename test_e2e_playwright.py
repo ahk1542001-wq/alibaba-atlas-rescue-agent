@@ -49,7 +49,8 @@ async def run_e2e_test():
         await page.wait_for_timeout(2500)
 
         assert await page.is_visible("#disruption-banner")
-        assert await page.is_visible("#route-visual")
+        # Reasoning-trail animation takes ~3s before the analyze API resolves
+        await page.wait_for_selector("#route-visual", state="visible", timeout=10000)
         assert await page.is_visible("#reasoning-trail")
 
         packages = await page.query_selector_all(".package-card")
@@ -69,9 +70,8 @@ async def run_e2e_test():
         rebook_btn = await page.query_selector(".btn-rebook")
         assert rebook_btn is not None
         await rebook_btn.click()
-        await page.wait_for_timeout(1500)
-
-        assert await page.is_visible("#modal-overlay")
+        # Rescue timeline animation runs ~4s before booking API resolves
+        await page.wait_for_selector("#modal-overlay", state="visible", timeout=15000)
         assert await page.is_visible("#boarding-pass")
         bp_origin = await page.inner_text("#bp-origin")
         bp_dest = await page.inner_text("#bp-dest")
