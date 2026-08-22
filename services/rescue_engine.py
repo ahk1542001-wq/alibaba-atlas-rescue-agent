@@ -1,14 +1,45 @@
 import datetime
 import uuid
 from typing import Dict, Any, List, Optional
+from services import llm
 from services.atlas_client import AtlasClient
 from services.state_graph import DisruptionRecoveryDAG
+
+
+def settings_default_model() -> str:
+    from config import settings as _s
+    return _s.default_model
+
+
+CONCIERGE_SYSTEM_PROMPT = (
+    "You are the 24/7 AI Travel Concierge of TravelCare AI, an autonomous flight "
+    "rescue agent. Current passenger context: original flight TG303 BKK-RGN was "
+    "cancelled; the agent rebooked the passenger on Myanmar Airways International "
+    "8M 336 (BKK-RGN, departs 11:45, gate D4, seat 12A, PNR issued); baggage was "
+    "auto-transferred; a $250 compensation claim and a $25 dining voucher are active. "
+    "Answer the passenger's question concisely (max 3 sentences), warm and specific. "
+    "Never invent facts outside the context unless clearly generic advice."
+)
+
 
 class RescueEngine:
     """Agentic AI reasoning engine for autonomous flight disruption resolution."""
 
     def __init__(self, atlas_client: AtlasClient):
         self.atlas = atlas_client
+
+    async def _qwen_concierge_reply(self, query: str) -> Optional[str]:
+        """Real Qwen-2.5 reply; None when LLM unavailable so rules take over."""
+        reply = await llm.chat(
+            messages=[
+                {"role": "system", "content": CONCIERGE_SYSTEM_PROMPT},
+                {"role": "user", "content": query},
+            ],
+            max_tokens=220,
+            temperature=0.5,
+        )
+        return reply
+
 
     async def handle_disruption(
         self,
@@ -178,8 +209,21 @@ class RescueEngine:
 
     async def answer_concierge(self, query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """AI Travel Concierge responses based on Atlas travel context and passenger needs."""
+        # Real Qwen-2.5 first (grounded); deterministic rules as fallback
+        qwen_reply = await self._qwen_concierge_reply(query)
+        if qwen_reply:
+            return {
+                "reply": qwen_reply,
+                "action_taken": "QWEN_LLM_REPLY",
+                "engine": llm.provider_name(),
+                "model": settings_default_model(),
+            }
+        return await self._rule_based_concierge(query)
+
+    async def _rule_based_concierge(self, query: str) -> Dict[str, Any]:
+        """Deterministic keyword concierge (fallback when LLM unavailable)."""
         q_lower = query.lower()
-        
+
         if "meal" in q_lower or "food" in q_lower or "vegetarian" in q_lower:
             return {
                 "reply": "🥗 Special meal request confirmed! Your Asian Vegetarian Meal (AVML) has been recorded for flight MAI 8M 336. In addition, a $25 Airport Dining Voucher #DV-9012 is active at all Terminal 1 restaurants.",

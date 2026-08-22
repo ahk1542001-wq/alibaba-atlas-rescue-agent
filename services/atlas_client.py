@@ -1,8 +1,14 @@
-import uuid
+import asyncio
 import datetime
+import json as _json
+import logging
+import shutil
+import uuid
 from typing import Dict, Any, List, Optional
-import httpx
 from config import settings
+
+logger = logging.getLogger("atlas")
+
 
 class AtlasClient:
     """Client for interacting with Atlas Flight APIs & ATRIP Sandbox."""
@@ -28,6 +34,77 @@ class AtlasClient:
         self.ak = settings.atrip_ak
         self.sk = settings.atrip_sk
         self.use_mock = settings.use_mock_fallback
+        self.last_cli_envelope: Optional[Dict[str, Any]] = None
+
+    # ------------------------------------------------------------------
+    # Official atlas-flight CLI bridge (real Atlas Sandbox)
+    # Enabled when ATLAS_USE_CLI=true AND auth completed via `atlas-flight auth`.
+    # Any failure returns None so callers fall back to curated mock data.
+    # ------------------------------------------------------------------
+    async def _run_cli(self, args: List[str]) -> Optional[Dict[str, Any]]:
+        binary = shutil.which("atlas-flight")
+        if not settings.atlas_use_cli or not binary:
+            return None
+        cmd = [binary] + args + ["--json"]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=90)
+            line = stdout.decode().strip()
+            if not line:
+                logger.warning("atlas-flight empty output: %.200s", stderr.decode()[:200])
+                return None
+            envelope = _json.loads(line.splitlines()[-1])
+            self.last_cli_envelope = envelope
+            if (
+                envelope.get("status") == "success"
+                and envelope.get("data") is not None
+            ):
+                return envelope["data"]
+            logger.warning(
+                "atlas-flight action_required code=%s message=%.160s",
+                envelope.get("code"),
+                envelope.get("message"),
+            )
+            return None
+        except FileNotFoundError:
+            logger.warning("atlas-flight binary not found")
+            return None
+        except Exception as exc:  # noqa: BLE001 — CLI bridge must never break the API
+            logger.warning("atlas-flight CLI failed (%s): %.200s", type(exc).__name__, str(exc))
+            return None
+
+    async def cli_search_flights(
+        self, origin: str, destination: str, date: str, adults: int, currency: str
+    ) -> List[Dict[str, Any]]:
+        """Real live flight search through the signed atlas-flight CLI.
+
+        Returns [] when the CLI is disabled/unauthenticated/failed — caller falls back.
+        """
+        data = await self._run_cli(
+            [
+                "search",
+                "--origin", origin,
+                "--destination", destination,
+                "--depart", date,
+                "--adults", str(adults),
+                "--currency", currency,
+            ]
+        )
+        if data is None:
+            return []
+        # The success envelope may carry the offer list directly or nested;
+        # normalize defensively until the first live payload is inspected.
+        offers = data if isinstance(data, list) else None
+        if offers is None and isinstance(data, dict):
+            for key in ("offers", "results", "items", "flights"):
+                if isinstance(data.get(key), list):
+                    offers = data[key]
+                    break
+        return offers or []
 
     def _get_headers(self) -> Dict[str, str]:
         return {
@@ -134,6 +211,24 @@ class AtlasClient:
         self, origin: str, destination: str, date: str, passengers: int = 1, cabin_class: str = "ECONOMY", currency: str = "USD"
     ) -> List[Dict[str, Any]]:
         """Search available flights across 140+ airlines on Atlas GDS with multi-currency conversion."""
+        # Real Atlas Sandbox first (official atlas-flight CLI), curated mock as fallback
+        cli_offers = await self.cli_search_flights(
+            origin=origin, destination=destination, date=date, adults=passengers, currency=currency
+        )
+        if cli_offers:
+            rate = self.RATES.get(currency.upper(), 1.0)
+            symbol = self.SYMBOLS.get(currency.upper(), "$")
+            normalized = []
+            for o in cli_offers:
+                offer = dict(o)
+                offer.setdefault("currency_symbol", symbol)
+                base_price = o.get("price_usd") or o.get("price") or o.get("total_price")
+                if isinstance(base_price, (int, float)):
+                    offer["price_usd"] = float(base_price)
+                    offer["price_converted"] = round(float(base_price) * rate, 2)
+                normalized.append(offer)
+            return normalized
+
         origin = origin.upper().strip()
         destination = destination.upper().strip()
         currency = currency.upper().strip() if currency in self.RATES else "USD"
