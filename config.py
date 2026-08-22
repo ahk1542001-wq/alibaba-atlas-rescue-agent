@@ -17,6 +17,8 @@ class Settings(BaseModel):
     default_model: str = os.getenv("DEFAULT_MODEL", "Qwen/Qwen2.5-72B-Instruct")
     # Real Atlas flight search via official atlas-flight CLI
     atlas_use_cli: bool = os.getenv("ATLAS_USE_CLI", "false").lower() == "true"
+    # Autonomous radar scan interval (seconds)
+    radar_interval_seconds: int = int(os.getenv("RADAR_INTERVAL_SECONDS", "15"))
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "8050"))
 

@@ -1,18 +1,32 @@
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from routers.v1 import flights, disruptions, bookings, concierge, claims, telemetry, hotels
+from routers.v1 import flights, disruptions, bookings, concierge, claims, telemetry, hotels, radar
+from services.radar import get_radar
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the autonomous radar background loop on boot; stop on shutdown."""
+    radar_engine = get_radar()
+    radar_engine.start()
+    try:
+        yield
+    finally:
+        await radar_engine.stop()
+
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.version,
     description="TravelCare AI — Autonomous Flight Disruption Recovery & Travel Companion SaaS (Alibaba Cloud x Atlas Hackathon 2026)",
     docs_url="/api/docs",
-    redoc_url="/api/redoc"
+    redoc_url="/api/redoc",
+    lifespan=lifespan,
 )
 
 # Enable CORS for external client integrations
@@ -36,6 +50,7 @@ app.include_router(concierge.router)
 app.include_router(claims.router)
 app.include_router(telemetry.router)
 app.include_router(hotels.router)
+app.include_router(radar.router)
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():

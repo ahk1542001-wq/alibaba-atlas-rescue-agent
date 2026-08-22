@@ -40,6 +40,111 @@
                 const viewName = el.getAttribute('data-view');
                 document.querySelectorAll('[data-view="' + viewName + '"]').forEach(n => n.classList.add('active'));
             }
+            if (view === 'radar') loadRadar();
+        }
+
+        // AUTONOMOUS RESCUE RADAR
+        let radarAlerts = [];
+        let radarEventSource = null;
+
+        async function loadRadar() {
+            try {
+                const res = await fetch('/api/radar');
+                const data = await res.json();
+                renderRadar(data);
+            } catch (err) {
+                console.error('Radar load failed:', err);
+            }
+            connectRadarStream();
+        }
+
+        function connectRadarStream() {
+            if (radarEventSource) return;
+            radarEventSource = new EventSource('/api/radar/stream');
+            radarEventSource.onmessage = function (ev) {
+                try {
+                    const alert = JSON.parse(ev.data);
+                    radarAlerts.unshift(alert);
+                    renderRadarAlerts();
+                    showToast('Proactive rescue drafted for ' + alert.flight_number);
+                } catch (e) { /* ignore malformed event */ }
+            };
+            radarEventSource.onerror = function () { /* SSE will auto-reconnect */ };
+        }
+
+        function renderRadar(data) {
+            radarAlerts = data.alerts || [];
+            const sub = document.getElementById('radar-sub');
+            const flights = (data.last_scan && data.last_scan.flights) ? data.last_scan.flights : [];
+            const disrupted = flights.filter(f => f.disrupted).length;
+            sub.textContent = 'Monitoring ' + (data.watchlist ? data.watchlist.length : flights.length) +
+                ' flights • ' + disrupted + ' active disruption(s)';
+
+            const fc = document.getElementById('radar-flights');
+            if (flights.length === 0) {
+                fc.innerHTML = '<div class="loading">Initializing radar scan...</div>';
+            } else {
+                fc.innerHTML = flights.map(f => {
+                    const cls = f.disrupted ? 'disrupted' : 'ok';
+                    const statusText = (f.status || 'UNKNOWN') + (f.reason ? ' — ' + f.reason : '');
+                    const flag = f.disrupted
+                        ? '<span class="rf-flag">ALERT</span>'
+                        : '<span class="rf-ok">On Time</span>';
+                    return '<div class="radar-flight ' + cls + '">' +
+                        '<div class="rf-dot"></div>' +
+                        '<div class="rf-info"><span class="rf-num">' + f.flight_number + '</span>' +
+                        '<span class="rf-status">' + statusText + '</span></div>' +
+                        flag +
+                        '</div>';
+                }).join('');
+            }
+            renderRadarAlerts();
+        }
+
+        function renderRadarAlerts() {
+            const ac = document.getElementById('radar-alerts');
+            if (!radarAlerts || radarAlerts.length === 0) {
+                ac.innerHTML = '<div class="loading">No disruptions detected. Radar standing by.</div>';
+                return;
+            }
+            ac.innerHTML = radarAlerts.map(a => {
+                const comp = a.compensation_usd ? ' • $' + a.compensation_usd + ' compensation' : '';
+                const reason = a.reason ? ' (' + a.reason + ')' : '';
+                return '<div class="radar-alert">' +
+                    '<div class="ra-head"><span class="ra-flight">' + a.flight_number + '</span>' +
+                    '<span class="ra-status">' + (a.status || 'DISRUPTED') + '</span></div>' +
+                    '<div class="ra-reason">' + reason + comp + '</div>' +
+                    '<button class="btn-radar-accept" onclick="acceptRadarAlert(\'' + a.id + '\')">Review &amp; Accept Rescue</button>' +
+                    '</div>';
+            }).join('');
+        }
+
+        async function radarScanNow() {
+            const btn = document.getElementById('btn-radar-scan');
+            btn.disabled = true;
+            btn.textContent = 'Scanning...';
+            try {
+                const res = await fetch('/api/radar/scan', { method: 'POST' });
+                const data = await res.json();
+                renderRadar(data);
+            } catch (e) {
+                showToast('Radar scan failed. Please try again.');
+            }
+            btn.disabled = false;
+            btn.textContent = 'Scan Now';
+        }
+
+        function acceptRadarAlert(id) {
+            const alert = radarAlerts.find(a => a.id === id);
+            if (!alert || !alert.rescue_plan) return;
+            rescueData = alert.rescue_plan;
+            document.getElementById('empty-state').style.display = 'none';
+            document.getElementById('banner-title').textContent =
+                alert.flight_number + ' ' + (alert.status || 'DISRUPTION') + ' — Autonomous Rescue Active';
+            document.getElementById('banner-sub').textContent = '2 rescue packages ready — Qwen-2.5 ranking complete';
+            document.getElementById('disruption-banner').classList.add('visible');
+            switchView('rescue');
+            renderRescueData(rescueData);
         }
 
         // STORE MONITORED FLIGHTS
