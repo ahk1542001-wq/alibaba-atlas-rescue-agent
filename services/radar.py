@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -21,12 +22,15 @@ DISRUPTION_STATES = {
 }
 
 # Seeded watchlist so the demo shows autonomous behaviour immediately.
-DEFAULT_WATCHLIST = [
-    {"flight_number": "TG303", "date": "2026-08-25", "passenger_name": "Aung Hein Kyaw"},
-    {"flight_number": "PG920", "date": "2026-08-25", "passenger_name": "Aung Hein Kyaw"},
-    {"flight_number": "FD251", "date": "2026-08-25", "passenger_name": "Aung Hein Kyaw"},
-    {"flight_number": "SQ970", "date": "2026-08-25", "passenger_name": "Aung Hein Kyaw"},
-]
+# Dates are always computed (today+2) so the sandbox never scans past dates.
+def _default_watchlist() -> List[Dict[str, Any]]:
+    d = (datetime.date.today() + datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+    return [
+        {"flight_number": "TG303", "date": d},
+        {"flight_number": "PG920", "date": d},
+        {"flight_number": "FD251", "date": d},
+        {"flight_number": "SQ970", "date": d},
+    ]
 
 
 class RescueRadar:
@@ -40,7 +44,7 @@ class RescueRadar:
     def __init__(self, atlas: AtlasClient, engine: RescueEngine):
         self.atlas = atlas
         self.engine = engine
-        self.watchlist: List[Dict[str, Any]] = [dict(w) for w in DEFAULT_WATCHLIST]
+        self.watchlist: List[Dict[str, Any]] = _default_watchlist()
         self.alerts: List[Dict[str, Any]] = []
         self.last_scan: Dict[str, Any] = {}
         self._task: Optional[asyncio.Task] = None
@@ -48,7 +52,7 @@ class RescueRadar:
         self._seen_keys: set = set()
 
     # --- watchlist management ----------------------------------------------
-    def add_flight(self, flight_number: str, date: str, passenger_name: str = "Aung Hein Kyaw") -> bool:
+    def add_flight(self, flight_number: str, date: str, passenger_name: str = "") -> bool:
         flight_number = (flight_number or "").upper().strip()
         if not flight_number or not date:
             return False
@@ -119,7 +123,7 @@ class RescueRadar:
                     try:
                         plan = await self.engine.handle_disruption(
                             flight_number=item["flight_number"],
-                            passenger_name=item.get("passenger_name", "Aung Hein Kyaw"),
+                            passenger_name=item.get("passenger_name", ""),
                             date=item["date"],
                             currency="USD",
                         )

@@ -25,7 +25,7 @@ class FlightOffer(BaseModel):
 class FlightSearchRequest(BaseModel):
     origin: str = Field(..., description="IATA 3-letter origin airport code")
     destination: str = Field(..., description="IATA 3-letter destination airport code")
-    date: Optional[str] = Field("2026-08-20", description="Departure date YYYY-MM-DD")
+    date: Optional[str] = Field(None, description="Departure date YYYY-MM-DD (defaults to next search day)")
     passengers: Optional[int] = Field(1, ge=1, le=9)
     cabin_class: Optional[str] = Field("ECONOMY")
     currency: Optional[str] = Field("USD")
@@ -78,7 +78,7 @@ class CareGiftVouchers(BaseModel):
 
 class DisruptionEvent(BaseModel):
     flight_number: str
-    passenger_name: Optional[str] = "Aung Hein Kyaw"
+    passenger_name: str
     date: Optional[str] = None
     currency: Optional[str] = "USD"
     party_size: Optional[int] = 1
@@ -105,7 +105,7 @@ class RescuePackage(BaseModel):
 class BookingRequest(BaseModel):
     offer_id: str
     passenger_name: str
-    passport_number: Optional[str] = "MB987654"
+    passport_number: Optional[str] = None
     baggage_addon: Optional[str] = "30kg Priority Included"
     seat_selected: Optional[str] = "12A"
     price_usd: float

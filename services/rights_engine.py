@@ -15,6 +15,7 @@ airlines wrongfully reject ~52% of claims citing "extraordinary circumstances".
 """
 
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 from services import llm
@@ -151,6 +152,48 @@ AIRLINE_COUNTRY = {
     "EK": "AE", "EY": "AE", "QR": "QA",
     "KE": "KR", "OZ": "KR", "NH": "JP", "JL": "JP", "MM": "JP",
 }
+
+
+# IATA airport -> (lat, lon) for great-circle route distance. Same coverage
+# as AIRPORT_COUNTRY; unknown airports yield distance 0 (never guessed).
+AIRPORT_COORDS: Dict[str, tuple] = {
+    "RGN": (16.9070, 96.1332), "MDL": (21.7019, 95.9784), "NYU": (21.4603, 96.4736),
+    "HEH": (20.7452, 96.7858), "THL": (12.5811, 97.0064), "SNW": (20.8947, 94.5086),
+    "BKK": (13.6900, 100.7501), "DMK": (13.9126, 100.6068), "HKT": (8.1132, 98.3169),
+    "CNX": (18.7669, 98.9626), "USM": (9.5481, 100.0618),
+    "SIN": (1.3644, 103.9915), "KUL": (2.7456, 101.7099), "PEN": (5.2971, 100.2769),
+    "SGN": (10.8188, 106.6519), "HAN": (21.2212, 105.8072), "DAD": (16.0439, 108.1994),
+    "MNL": (14.5086, 121.0194), "CEB": (10.3075, 123.9790), "CGK": (-6.1256, 106.6558),
+    "DPS": (-8.7482, 115.1672), "DEL": (28.5562, 77.1000), "BOM": (19.0896, 72.8656),
+    "BLR": (13.1986, 77.7066), "MAA": (12.9941, 80.1709),
+    "PEK": (40.0799, 116.6031), "PVG": (31.1443, 121.8083), "CAN": (23.3924, 113.2988),
+    "SZX": (22.6393, 113.8108), "KTM": (27.6966, 85.3591), "DAC": (23.8433, 90.3978),
+    "CXB": (21.4511, 91.9647), "CMB": (7.1808, 79.8841),
+    "JFK": (40.6413, -73.7781), "LAX": (33.9416, -118.4085), "SFO": (37.6213, -122.3790),
+    "ORD": (41.9742, -87.9073), "IAD": (38.9531, -77.4565),
+    "LHR": (51.4700, -0.4543), "MAN": (53.3650, -2.2725), "EDI": (55.9500, -3.3725),
+    "FRA": (50.0379, 8.5622), "MUC": (48.3538, 11.7861), "CDG": (49.0097, 2.5479),
+    "ORY": (48.7233, 2.3794), "AMS": (52.3105, 4.7683),
+    "MAD": (40.4936, -3.5668), "BCN": (41.2974, 2.0833), "FCO": (41.8003, 12.2389),
+    "MXP": (45.6306, 8.7281), "ZRH": (47.4647, 8.5492),
+    "IST": (41.2753, 28.7519), "AYT": (36.8988, 30.8005), "SAW": (40.8986, 29.3092),
+    "DXB": (25.2532, 55.3657), "AUH": (24.4330, 54.6511), "DOH": (25.2609, 51.6138),
+    "ICN": (37.4602, 126.4407), "NRT": (35.7719, 140.3929), "HND": (35.5494, 139.7798),
+    "KIX": (34.4273, 135.2440), "TPE": (25.0777, 121.2328),
+    "HKG": (22.3080, 113.9185), "MFM": (22.1496, 113.5915),
+}
+
+
+def route_distance_km(origin_airport: str, dest_airport: str) -> int:
+    """Great-circle distance in km; 0 when either airport is unmapped."""
+    a = AIRPORT_COORDS.get((origin_airport or "").upper())
+    b = AIRPORT_COORDS.get((dest_airport or "").upper())
+    if not a or not b:
+        return 0
+    lat1, lon1, lat2, lon2 = map(math.radians, (*a, *b))
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return int(round(6371.0088 * 2 * math.asin(math.sqrt(h))))
 
 
 def airports_to_countries(

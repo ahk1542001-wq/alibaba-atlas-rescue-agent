@@ -1,3 +1,5 @@
+import datetime
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from models.schemas import FlightSearchRequest
@@ -6,6 +8,11 @@ from services.atlas_client import AtlasClient
 router = APIRouter(prefix="/api/flights", tags=["Flights"])
 atlas_client = AtlasClient()
 
+
+def _default_search_date() -> str:
+    """Sandbox rejects same-day/past searches — default to the day after tomorrow."""
+    return (datetime.date.today() + datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+
 @router.post("/search")
 async def search_flights(req: FlightSearchRequest):
     """Global Multi-Carrier Flight Search on Atlas GDS with multi-currency conversion."""
@@ -13,7 +20,7 @@ async def search_flights(req: FlightSearchRequest):
         offers = await atlas_client.search_flights(
             origin=req.origin,
             destination=req.destination,
-            date=req.date or "2026-08-20",
+            date=req.date or _default_search_date(),
             passengers=req.passengers or 1,
             cabin_class=req.cabin_class or "ECONOMY",
             currency=req.currency or "USD"

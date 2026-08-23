@@ -1,3 +1,5 @@
+import datetime
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -9,6 +11,8 @@ from services.rights_engine import (
     detect_jurisdictions,
     build_evidence_pack,
     draft_appeal,
+    airports_to_countries,
+    route_distance_km,
 )
 from services.atlas_client import AtlasClient
 from services.rescue_engine import RescueEngine
@@ -20,39 +24,66 @@ rescue_engine = RescueEngine(atlas_client)
 
 
 class ClaimAssessRequest(BaseModel):
-    flight_number: str = "TG303"
-    date: str = "2026-08-20"
-    passenger_name: str = "Aung Hein Kyaw"
-    origin_country: str = "FR"
-    destination_country: str = "TH"
-    carrier_country: str = "FR"
-    distance_km: int = Field(9200, ge=1, le=20000)
+    flight_number: str
+    date: Optional[str] = None
+    passenger_name: Optional[str] = None
+    origin_airport: Optional[str] = None
+    destination_airport: Optional[str] = None
 
 
 @router.post("/assess")
 async def assess_claim(req: ClaimAssessRequest):
-    """Claim Autopilot: detect regime, compute entitlement, classify cause."""
+    """Claim Autopilot: detect regime, compute entitlement, classify cause.
+
+    Jurisdictions are derived server-side from the real itinerary (airports +
+    airline code) — never from client-supplied country hints.
+    """
     try:
-        status = await atlas_client.get_flight_status(req.flight_number, req.date)
+        date = req.date or datetime.date.today().strftime("%Y-%m-%d")
+        status = await atlas_client.get_flight_status(req.flight_number, date)
         reason = str(status.get("reason", ""))
         disruption_type = str(status.get("status", "disruption"))
 
-        regimes = detect_jurisdictions(
-            req.origin_country, req.destination_country, req.carrier_country
-        )
+        origin_airport = (req.origin_airport or status.get("origin") or "").upper()
+        dest_airport = (req.destination_airport or status.get("destination") or "").upper()
+        airline_code = req.flight_number[:2]
+        o_c, d_c, c_c = airports_to_countries(origin_airport, dest_airport, airline_code)
+        distance_km = route_distance_km(origin_airport, dest_airport)
+
+        route_info = {
+            "origin_airport": origin_airport or None,
+            "destination_airport": dest_airport or None,
+            "origin_country": o_c or "UNKNOWN",
+            "destination_country": d_c or "UNKNOWN",
+            "carrier_country": c_c or "UNKNOWN",
+            "distance_km": distance_km,
+        }
+
+        regimes = detect_jurisdictions(o_c, d_c, c_c)
         if not regimes:
+            unmapped = [
+                k for k, v in (
+                    ("origin", o_c), ("destination", d_c), ("carrier", c_c)
+                ) if not v
+            ]
+            verdict = (
+                f"No mandatory air-passenger-rights regime detected for "
+                f"{origin_airport or '?'}→{dest_airport or '?'}. "
+                + (
+                    f"Jurisdiction could not be resolved for: {', '.join(unmapped)}. "
+                    if unmapped else ""
+                )
+                + "Duty-of-care still applies under the airline's conditions of carriage."
+            )
             return JSONResponse(content={
+                "route": route_info,
                 "jurisdictions": [],
                 "best": None,
-                "verdict": (
-                    "No mandatory air-passenger-rights regime detected for this "
-                    "route. Duty-of-care still applies under the airline's "
-                    "conditions of carriage."
-                ),
+                "verdict": verdict,
             })
 
         best = regimes[0]
-        entitlement = compute_entitlement(best["id"], req.distance_km)
+        entitlement = compute_entitlement(best["id"], distance_km)
         classification = await classify_cause(reason, best["id"])
         compensable = classification.get("classification") == "COMPENSABLE"
 
@@ -60,8 +91,10 @@ async def assess_claim(req: ClaimAssessRequest):
             "jurisdiction_id": best["id"],
             "airline": status.get("airline", req.flight_number[:2]),
             "flight_number": req.flight_number,
-            "date": req.date,
-            "passenger_name": req.passenger_name,
+            "date": date,
+            "passenger_name": req.passenger_name or "",
+            "origin_airport": origin_airport,
+            "destination_airport": dest_airport,
             "reason": reason,
             "disruption_type": disruption_type,
             "classification": classification.get("classification"),
@@ -78,6 +111,7 @@ async def assess_claim(req: ClaimAssessRequest):
                  "still applies cause-blind."
         )
         return JSONResponse(content={
+            "route": route_info,
             "jurisdictions": [
                 {"id": r["id"], "name": r["name"], "citation": r["citation"],
                  "trigger": r["trigger"]}

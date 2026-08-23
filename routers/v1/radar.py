@@ -30,7 +30,7 @@ async def radar_watch(req: Dict[str, Any]):
     date = req.get("date")
     if not fn or not date:
         return JSONResponse(status_code=400, content={"error": "flight_number and date required"})
-    added = get_radar().add_flight(fn, date, req.get("passenger_name", "Aung Hein Kyaw"))
+    added = get_radar().add_flight(fn, date, req.get("passenger_name", ""))
     return JSONResponse(content={"added": added, "watchlist": get_radar().watchlist})
 
 

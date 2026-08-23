@@ -14,7 +14,7 @@ async def analyze_disruption(req: DisruptionEvent):
     try:
         result = await rescue_engine.handle_disruption(
             flight_number=req.flight_number,
-            passenger_name=req.passenger_name or "Aung Hein Kyaw",
+            passenger_name=req.passenger_name,
             date=req.date,
             currency=req.currency or "USD",
             nationality=req.nationality or "MM"
@@ -24,7 +24,7 @@ async def analyze_disruption(req: DisruptionEvent):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/self-heal")
-async def trigger_self_healing_recovery(flight_number: str = "TG303", passenger: str = "Aung Hein Kyaw"):
+async def trigger_self_healing_recovery(flight_number: str, passenger: str = ""):
     """Trigger Graph & Loop Engineering Fault Injection & Auto Self-Healing Recovery."""
     try:
         result = await rescue_engine.execute_self_healing_recovery(flight_number, passenger)

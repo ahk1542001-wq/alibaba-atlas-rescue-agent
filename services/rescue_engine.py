@@ -94,7 +94,7 @@ class RescueEngine:
     async def handle_disruption(
         self,
         flight_number: str,
-        passenger_name: str = "Aung Hein Kyaw",
+        passenger_name: str = "",
         date: str = None,
         currency: str = "USD",
         nationality: str = "MM"
@@ -411,7 +411,7 @@ class RescueEngine:
                 "action_taken": "GENERAL_ASSISTANCE"
             }
 
-    async def execute_self_healing_recovery(self, flight_number: str = "TG303", passenger_name: str = "Aung Hein Kyaw") -> Dict[str, Any]:
+    async def execute_self_healing_recovery(self, flight_number: str, passenger_name: str = "") -> Dict[str, Any]:
         """
         Demonstrates Graph & Loop Engineering Self-Healing with Fault Injection:
         1. Attempts to lock Primary Choice (MAI 8M 336).

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from routers.v1 import flights, disruptions, bookings, concierge, claims, telemetry, hotels, radar
 from services.radar import get_radar
+from services import llm
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,7 +63,11 @@ async def health_check():
         "atlas_endpoint": settings.atrip_api_base,
         "mock_mode": settings.use_mock_fallback,
         "runtime": "Python 3.13 / FastAPI Async Gateway",
-        "ai_engine": "Alibaba Cloud Qwen-2.5 via Qoder"
+        "ai_engine": (
+            f"{settings.default_model} via {llm.provider_name()}"
+            if llm.provider_name() != "none"
+            else "deterministic-fallback (no LLM configured)"
+        )
     }
 
 @app.get("/", response_class=HTMLResponse, tags=["Frontend"])
