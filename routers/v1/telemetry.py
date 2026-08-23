@@ -34,8 +34,13 @@ async def get_agent_telemetry():
 
 @router.get("/graph/state")
 async def get_graph_state():
-    """Fetch Closed-Loop State Graph (DAG) state and node execution trace."""
-    dag = DisruptionRecoveryDAG()
+    """Demo replay of the Closed-Loop State Graph (DAG) execution trace.
+
+    The values below are a canned demo replay, not a live execution — the
+    live DAG trace for an actual disruption run is included in every
+    /api/disruption/analyze response (session_id + nodes).
+    """
+    dag = DisruptionRecoveryDAG(session_id="demo_replay")
     dag.record_step("IngestionRadar", 8.2, {"source": "Atlas Live Webhook"})
     dag.record_step("PredictiveEvaluator", 14.5, {"cancellation_risk_percent": 88})
     dag.record_step("DisruptionConfirmed", 11.0, {"status": "CANCELLED"})
@@ -45,4 +50,6 @@ async def get_graph_state():
     dag.record_step("TicketSettlement", 45.0, {"pnr": "ATLAS-45BAE5", "ticket": "140-981240182"})
     dag.record_step("AncillarySync", 22.0, {"baggage_transferred": True, "seat": "11B", "claim_filed": True})
     dag.record_step("ClosedLoopVerified", 5.0, {"status": "SUCCESS_VERIFIED"})
-    return JSONResponse(content=dag.get_graph_telemetry())
+    telemetry = dag.get_graph_telemetry()
+    telemetry["mode"] = "demo_replay"
+    return JSONResponse(content=telemetry)
