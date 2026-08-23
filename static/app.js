@@ -359,16 +359,16 @@
             document.getElementById('rights-sub').textContent = r.best.name;
             const badge = document.getElementById('rights-regime-badge');
             badge.textContent = r.best.id;
-            badge.style.display = '';
+            badge.classList.add('shown');
 
             const v = document.getElementById('rights-verdict');
             v.textContent = r.verdict;
-            v.style.display = '';
             v.className = 'rights-verdict ' + (r.classification.classification === 'COMPENSABLE' ? 'verdict-good' : 'verdict-warn');
+            v.classList.add('shown');
 
             const cls = r.classification;
             const cb = document.getElementById('rights-classification');
-            cb.style.display = '';
+            cb.classList.add('shown');
             const chip = document.getElementById('class-chip');
             chip.textContent = cls.classification;
             chip.className = 'classification-chip ' + (cls.classification === 'COMPENSABLE' ? 'chip-good' : 'chip-warn');
@@ -376,7 +376,7 @@
             document.getElementById('class-reasoning').textContent = cls.legal_reasoning + (cls.key_article ? ' — ' + cls.key_article : '');
 
             const money = document.getElementById('rights-money');
-            money.style.display = '';
+            money.classList.add('shown');
             const cash = r.entitlement.fixed_cash_compensation;
             if (cash) {
                 document.getElementById('ent-amount').textContent = cash.currency + ' ' + cash.amount.toLocaleString();
@@ -387,7 +387,7 @@
             }
 
             const ev = document.getElementById('rights-evidence');
-            ev.style.display = '';
+            ev.classList.add('shown');
             const list = document.getElementById('evidence-list');
             list.innerHTML = '';
             r.evidence_pack.checklist.forEach(d => {
@@ -423,7 +423,7 @@
                 });
                 const out = await res.json();
                 document.getElementById('appeal-letter-text').textContent = out.appeal_letter;
-                document.getElementById('appeal-box').style.display = '';
+                document.getElementById('appeal-box').classList.add('shown');
                 showToast('Appeal letter drafted and ready to send.');
             } catch (err) {
                 showToast('Appeal drafting failed.');
