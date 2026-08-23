@@ -10,6 +10,10 @@ from config import settings
 logger = logging.getLogger("atlas")
 
 
+def tomorrow_iso() -> str:
+    return (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+
+
 class AtlasClient:
     """Client for interacting with Atlas Flight APIs & ATRIP Sandbox."""
 
@@ -121,6 +125,7 @@ class AtlasClient:
         disruptions = {
             "TG303": {
                 "flight_number": "TG303",
+                "airline_code": "TG",
                 "carrier": "Thai Airways",
                 "origin": "BKK",
                 "origin_airport": "Suvarnabhumi Airport (BKK)",
@@ -155,6 +160,7 @@ class AtlasClient:
             },
             "FD251": {
                 "flight_number": "FD251",
+                "airline_code": "FD",
                 "carrier": "Thai AirAsia",
                 "origin": "DMK",
                 "origin_airport": "Don Mueang Airport (DMK)",
@@ -172,6 +178,7 @@ class AtlasClient:
             },
             "SQ970": {
                 "flight_number": "SQ970",
+                "airline_code": "SQ",
                 "carrier": "Singapore Airlines",
                 "origin": "SIN",
                 "origin_airport": "Changi Airport (SIN)",
@@ -191,6 +198,7 @@ class AtlasClient:
         
         return disruptions.get(clean_code, {
             "flight_number": flight_number,
+            "airline_code": flight_number[:2].upper(),
             "carrier": "International Carrier",
             "origin": "BKK",
             "origin_airport": "Suvarnabhumi Airport (BKK)",
@@ -207,10 +215,75 @@ class AtlasClient:
             "compensation_amount_usd": 200.0
         })
 
+    # Carrier code -> marketing name for offers returned by the live CLI
+    CARRIER_NAMES = {
+        "TR": "Scoot", "TG": "Thai Airways", "8M": "Myanmar Airways International",
+        "SQ": "Singapore Airlines", "FD": "Thai AirAsia", "AK": "AirAsia",
+        "SL": "Thai Lion Air", "VZ": "Thai Vietjet", "QH": "Lao Airlines",
+        "PG": "Bangkok Airways", "WE": "Thai Smile", "EK": "Emirates",
+        "QR": "Qatar Airways", "LH": "Lufthansa", "BA": "British Airways",
+        "AF": "Air France", "KL": "KLM", "CX": "Cathay Pacific", "MH": "Malaysia Airlines",
+        "VN": "Vietnam Airlines", "PR": "Philippine Airlines", "GA": "Garuda Indonesia",
+        "KE": "Korean Air", "OZ": "Asiana", "NH": "ANA", "JL": "Japan Airlines",
+        "TK": "Turkish Airlines", "AI": "Air India", "UL": "SriLankan", "BG": "Biman",
+        "CA": "Air China", "MU": "China Eastern", "CZ": "China Southern", "UO": "HK Express",
+        "5J": "Cebu Pacific", "JT": "Lion Air", "ID": "Batik Air", "KT": "Citilink",
+    }
+
+    @staticmethod
+    def _fmt_cli_time(raw: Any) -> str:
+        """'202608250905' -> '2026-08-25 09:05'; passes through other formats."""
+        s = str(raw or "")
+        if len(s) == 12 and s.isdigit():
+            return f"{s[0:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
+        return s
+
+    def _normalize_cli_offer(self, o: Dict[str, Any], rate: float, symbol: str) -> Dict[str, Any]:
+        """Map a live atlas-flight CLI offer onto the app's FlightOffer shape."""
+        segments = o.get("segments") or []
+        first = segments[0] if segments else {}
+        last = segments[-1] if segments else {}
+        carrier = (first.get("carrier") or "").upper()
+        total = o.get("total_price")
+        cabin = first.get("cabin_class")
+        cabin_name = {1: "ECONOMY", 2: "PREMIUM_ECONOMY", 3: "BUSINESS", 4: "FIRST"}.get(
+            cabin if isinstance(cabin, int) else None, str(cabin or "ECONOMY").upper()
+        )
+        duration = sum(int(s.get("duration_minutes") or 0) for s in segments) or None
+        return {
+            "offer_id": o.get("offer_id") or f"off_cli_{uuid.uuid4().hex[:10]}",
+            "airline": self.CARRIER_NAMES.get(carrier, carrier or "Unknown Carrier"),
+            "airline_code": carrier,
+            "flight_number": first.get("flight_number") or "",
+            "origin": first.get("departure_airport", ""),
+            "destination": last.get("arrival_airport", ""),
+            "departure_time": self._fmt_cli_time(first.get("departure_time")),
+            "arrival_time": self._fmt_cli_time(last.get("arrival_time")),
+            "duration_minutes": duration,
+            "price_usd": float(total) if isinstance(total, (int, float)) else 0.0,
+            "price_converted": round(float(total) * rate, 2) if isinstance(total, (int, float)) else 0.0,
+            "currency": o.get("currency", "USD"),
+            "currency_symbol": symbol,
+            "cabin_class": cabin_name,
+            "seats_available": 9,
+            "alliance": "",
+            "stops": max(0, len(segments) - 1),
+            "via": [s.get("departure_airport") for s in segments[1:] if s.get("departure_airport")],
+            "bookable": bool(o.get("bookable")),
+            "price_status": o.get("price_status", ""),
+        }
+
     async def search_flights(
         self, origin: str, destination: str, date: str, passengers: int = 1, cabin_class: str = "ECONOMY", currency: str = "USD"
     ) -> List[Dict[str, Any]]:
         """Search available flights across 140+ airlines on Atlas GDS with multi-currency conversion."""
+        # Live inventory only exists for future dates; clamp stale/same-day inputs
+        try:
+            today = datetime.date.today().isoformat()
+            if date and date <= today:
+                date = tomorrow_iso()
+        except (TypeError, ValueError):
+            pass
         # Real Atlas Sandbox first (official atlas-flight CLI), curated mock as fallback
         cli_offers = await self.cli_search_flights(
             origin=origin, destination=destination, date=date, adults=passengers, currency=currency
@@ -218,16 +291,7 @@ class AtlasClient:
         if cli_offers:
             rate = self.RATES.get(currency.upper(), 1.0)
             symbol = self.SYMBOLS.get(currency.upper(), "$")
-            normalized = []
-            for o in cli_offers:
-                offer = dict(o)
-                offer.setdefault("currency_symbol", symbol)
-                base_price = o.get("price_usd") or o.get("price") or o.get("total_price")
-                if isinstance(base_price, (int, float)):
-                    offer["price_usd"] = float(base_price)
-                    offer["price_converted"] = round(float(base_price) * rate, 2)
-                normalized.append(offer)
-            return normalized
+            return [self._normalize_cli_offer(o, rate, symbol) for o in cli_offers]
 
         origin = origin.upper().strip()
         destination = destination.upper().strip()

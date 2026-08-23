@@ -6,6 +6,16 @@
         const CURRENCY_SYMBOLS = { USD: "$", THB: "\u0E3F", SGD: "S$", MMK: "Ks ", EUR: "\u20AC" };
         let selectedCurrency = "USD";
 
+        // Keep default flight dates in the future so live inventory always applies
+        (function initDates() {
+            const t = new Date(Date.now() + 2 * 86400000);
+            const iso = t.toISOString().split('T')[0];
+            ['input-flight-date', 'search-date'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = iso;
+            });
+        })();
+
         function convertCurrency(usdAmount) {
             const rate = CURRENCY_RATES[selectedCurrency] || 1.0;
             const symbol = CURRENCY_SYMBOLS[selectedCurrency] || "$";
@@ -422,8 +432,10 @@
                     })
                 });
                 const out = await res.json();
+                const box = document.getElementById('appeal-box');
                 document.getElementById('appeal-letter-text').textContent = out.appeal_letter;
-                document.getElementById('appeal-box').classList.add('shown');
+                box.classList.add('shown');
+                box.open = true;
                 showToast('Appeal letter drafted and ready to send.');
             } catch (err) {
                 showToast('Appeal drafting failed.');

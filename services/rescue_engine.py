@@ -24,17 +24,65 @@ CONCIERGE_SYSTEM_PROMPT = (
 )
 
 
+def _build_concierge_prompt(context: Optional[Dict[str, Any]]) -> str:
+    """Ground the concierge on the live session state instead of a canned story."""
+    if not context:
+        return (
+            "You are the 24/7 AI Travel Concierge of TravelCare AI, an autonomous "
+            "flight rescue agent. No active disruption session right now. Answer the "
+            "passenger's question concisely (max 3 sentences), warm and specific. "
+            "Never invent flight facts."
+        )
+    parts = [
+        "You are the 24/7 AI Travel Concierge of TravelCare AI, an autonomous flight "
+        "rescue agent. Ground EVERY answer strictly in this live session context:"
+    ]
+    d = context.get("disruption") or {}
+    if d:
+        parts.append(
+            f"- Flight {d.get('flight_number')} {d.get('origin')}-{d.get('destination')} "
+            f"is {d.get('status')} ({d.get('reason')})."
+        )
+    pkg = (context.get("rescue_packages") or [None])[0]
+    if pkg:
+        parts.append(
+            f"- Top rescue option locked: {pkg.get('airline')} {pkg.get('flight_number')} "
+            f"{pkg.get('origin')}-{pkg.get('destination')}, departs {pkg.get('departure_time')}, "
+            f"fare {pkg.get('currency_symbol')}{pkg.get('price_converted', pkg.get('price_usd'))}."
+        )
+    vg = context.get("visa_guard")
+    if vg:
+        parts.append(f"- Passport on file: {vg.get('passport')}; visa check: {vg.get('summary')}")
+    claim = context.get("compensation_claim")
+    if claim:
+        payout = claim.get("eligible_payout_usd")
+        basis = claim.get("rights_basis")
+        parts.append(
+            f"- Claim {claim.get('claim_id')}: "
+            + (f"${payout} under {basis}" if payout else f"{basis or 'refund/duty-of-care route'}")
+        )
+    gp = context.get("guardian_push")
+    if gp and gp.get("simulated") is False:
+        parts.append("- A Telegram guardian push was really sent.")
+    parts.append(
+        "Answer the passenger's question concisely (max 3 sentences), warm and specific. "
+        "Never invent facts outside this context unless clearly generic advice."
+    )
+    return "\n".join(parts)
+
+
 class RescueEngine:
     """Agentic AI reasoning engine for autonomous flight disruption resolution."""
 
     def __init__(self, atlas_client: AtlasClient):
         self.atlas = atlas_client
+        self.last_session_context: Optional[Dict[str, Any]] = None
 
     async def _qwen_concierge_reply(self, query: str) -> Optional[str]:
-        """Real Qwen-2.5 reply; None when LLM unavailable so rules take over."""
+        """Real Qwen reply grounded on live session state; None so rules take over."""
         reply = await llm.chat(
             messages=[
-                {"role": "system", "content": CONCIERGE_SYSTEM_PROMPT},
+                {"role": "system", "content": _build_concierge_prompt(self.last_session_context)},
                 {"role": "user", "content": query},
             ],
             max_tokens=220,
@@ -107,12 +155,12 @@ class RescueEngine:
         # Ancillary & Support Data
         advisory = self._generate_disruption_advisory(disruption_info)
         seat_map = await self.atlas.get_seat_map(flight_number)
-        claim = self.generate_compensation_claim(disruption_info, passenger_name)
+        claim = await self.generate_compensation_claim(disruption_info, passenger_name, nationality)
         hotels = await self.atlas.search_transit_hotels(origin)
         care_gifts = await self.atlas.issue_care_gift_vouchers(f"ATLAS-{flight_number}")
         flight_diff = self.generate_flight_diff("TG303", "8M336")
 
-        return {
+        result = {
             "session_id": dag.session_id,
             "disruption": disruption_info,
             "passenger": {
@@ -139,6 +187,14 @@ class RescueEngine:
             "dag_telemetry": dag.get_graph_telemetry(),
             "status": "PACKAGES_READY_FOR_CONFIRMATION"
         }
+        self.last_session_context = {
+            "disruption": disruption_info,
+            "rescue_packages": packages[:2],
+            "visa_guard": result["visa_guard"],
+            "guardian_push": guardian_push,
+            "compensation_claim": claim,
+        }
+        return result
 
     def get_predictive_radar(self, flight_number: str = "TG303") -> Dict[str, Any]:
         """Provides AI-driven 45m early pre-cancellation warning based on inbound tail tracking & weather."""
@@ -173,7 +229,16 @@ class RescueEngine:
     def _curate_rescue_packages(
         self, offers: List[Dict[str, Any]], disruption: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Ranks and structures top 3 optimized rescue packages for passenger."""
+        """Ranks and structures top optimized rescue packages for passenger."""
+        # Never present the same live flight twice under different package labels
+        seen: set = set()
+        unique_offers = []
+        for o in offers:
+            key = (o.get("flight_number"), o.get("departure_time"))
+            if key not in seen:
+                seen.add(key)
+                unique_offers.append(o)
+        offers = unique_offers
         curated = []
 
         # Package 1: Fastest Recovery (Earliest departure)
@@ -225,23 +290,73 @@ class RescueEngine:
             "claim_status": "Pre-filled claim #CLM-2026-8941 registered on passenger's behalf."
         }
 
-    def generate_compensation_claim(self, disruption: Dict[str, Any], passenger_name: str) -> Dict[str, Any]:
-        """Generates pre-filled passenger compensation claim document under aviation consumer rules."""
+    async def generate_compensation_claim(
+        self, disruption: Dict[str, Any], passenger_name: str, nationality: str = "MM"
+    ) -> Dict[str, Any]:
+        """Rights-engine-grounded claim: jurisdiction detection + Qwen cause
+        classification + distance-band entitlement. Honest zero-cash output on
+        routes where no mandatory scheme exists (duty-of-care/refund route)."""
+        from services import rights_engine as re_engine
+
         claim_id = f"CLM-{uuid.uuid4().hex[:6].upper()}"
-        amount = disruption.get("compensation_amount_usd", 250.0)
-        return {
+        reason = disruption.get("reason", "Operational Disruption")
+        o_country, d_country, c_country = re_engine.airports_to_countries(
+            disruption.get("origin", ""), disruption.get("destination", ""), disruption.get("airline_code", "")
+        )
+        regimes = re_engine.detect_jurisdictions(o_country, d_country, c_country)
+
+        claim = {
             "claim_id": claim_id,
             "passenger_name": passenger_name,
-            "flight_number": disruption.get("flight_number", "TG303"),
-            "carrier": disruption.get("carrier", "Thai Airways"),
-            "incident_type": disruption.get("status", "CANCELLED"),
-            "cause": disruption.get("reason", "Operational Maintenance"),
-            "eligible_payout_usd": amount,
-            "status": "PRE_SUBMITTED_BY_AGENT",
+            "nationality": nationality,
+            "flight_number": disruption.get("flight_number", ""),
+            "carrier": disruption.get("carrier", ""),
+            "incident_type": disruption.get("status", ""),
+            "cause": reason,
+            "eligible_payout_usd": 0.0,
+            "rights_basis": None,
+            "jurisdiction": None,
+            "classification": None,
+            "status": "ASSESSING",
             "settlement_method": "Direct Bank Deposit / Atlas Wallet Credit",
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "filing_officer": "Autonomous Rescue Agent (Qoder AI Travel Protocol)"
+            "filing_officer": "Autonomous Rescue Agent (Qoder AI Travel Protocol)",
         }
+        if not regimes:
+            claim["rights_basis"] = (
+                "No mandated cash-compensation regime on this route — duty of care "
+                "(meals/hotel) and refund/re-routing rights still apply cause-blind."
+            )
+            claim["status"] = "DUTY_OF_CARE_REFUND_ROUTE"
+            return claim
+
+        best = regimes[0]
+        distance_km = disruption.get("distance_km") or 1500
+        entitlement = re_engine.compute_entitlement(best["id"], distance_km)
+        classification = await re_engine.classify_cause(reason, best["id"])
+        cash = entitlement.get("fixed_cash_compensation")
+
+        claim["jurisdiction"] = {"id": best["id"], "name": best["name"], "citation": best["citation"]}
+        claim["classification"] = classification.get("classification")
+        claim["classification_reasoning"] = classification.get("legal_reasoning")
+        claim["entitlement"] = entitlement
+        if cash and claim["classification"] == "COMPENSABLE":
+            # Convert to USD for the payout card using static reference rates
+            rate = self.atlas.RATES.get(cash["currency"], 1.0)
+            usd = round(float(cash["amount"]) / rate, 2) if rate else float(cash["amount"])
+            claim["eligible_payout_usd"] = usd
+            claim["payout_original"] = cash
+            claim["status"] = "PRE_SUBMITTED_BY_AGENT"
+        elif cash:
+            claim["rights_basis"] = (
+                f"{best['name']} applies but the stated cause may be extraordinary "
+                f"({classification.get('key_article', '')}); airline must prove it."
+            )
+            claim["status"] = "PENDING_AIRLINE_PROOF"
+        else:
+            claim["rights_basis"] = best.get("cash_note") or best.get("duty_of_care")
+            claim["status"] = "DUTY_OF_CARE_REFUND_ROUTE"
+        return claim
 
     async def answer_concierge(self, query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """AI Travel Concierge responses based on Atlas travel context and passenger needs."""

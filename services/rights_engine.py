@@ -109,6 +109,59 @@ _EU_EEA = {
     "SI", "ES", "SE", "IS", "LI", "NO",
 }
 
+# IATA airport -> ISO country (covers demo routes + major hubs)
+AIRPORT_COUNTRY = {
+    "BKK": "TH", "DMK": "TH", "HKT": "TH", "CNX": "TH", "UTP": "TH",
+    "RGN": "MM", "MDL": "MM", "NYU": "MM", "HEH": "MM",
+    "SIN": "SG", "KUL": "MY", "PEN": "MY",
+    "HAN": "VN", "SGN": "VN", "DAD": "VN",
+    "MNL": "PH", "CEB": "PH",
+    "CGK": "ID", "DPS": "ID",
+    "DEL": "IN", "BOM": "IN", "BLR": "IN", "MAA": "IN",
+    "PEK": "CN", "PVG": "CN", "CAN": "CN", "SZX": "CN",
+    "KTM": "NP", "DAC": "BD", "CXB": "BD", "CMB": "LK",
+    "JFK": "US", "LAX": "US", "SFO": "US", "ORD": "US", "IAD": "US",
+    "LHR": "GB", "MAN": "GB", "EDI": "GB",
+    "FRA": "DE", "MUC": "DE", "CDG": "FR", "ORY": "FR", "AMS": "NL",
+    "MAD": "ES", "BCN": "ES", "FCO": "IT", "MXP": "IT", "ZRH": "CH",
+    "IST": "TR", "AYT": "TR", "SAW": "TR",
+    "DXB": "AE", "AUH": "AE", "DOH": "QA",
+    "ICN": "KR", "NRT": "JP", "HND": "JP", "KIX": "JP",
+    "TPE": "TW", "HK": "HK", "HKG": "HK", "MFM": "MO",
+}
+
+
+# IATA airline code -> licensing country (jurisdiction-relevant subset)
+AIRLINE_COUNTRY = {
+    "TG": "TH", "WE": "TH", "FD": "TH", "SL": "TH", "VZ": "TH", "PG": "TH",
+    "8M": "MM", "UB": "MM",
+    "SQ": "SG", "TR": "SG", "MI": "SG",
+    "MH": "MY", "AK": "MY", "D7": "MY",
+    "VN": "VN", "VJ": "VN", "BL": "VN",
+    "PR": "PH", "5J": "PH",
+    "GA": "ID", "JT": "ID", "ID": "ID",
+    "AI": "IN", "UK": "IN", "6E": "IN",
+    "CA": "CN", "MU": "CN", "CZ": "CN", "HU": "CN",
+    "RA": "NP", "BG": "BD", "UL": "LK",
+    "BA": "GB", "VS": "GB", "U2": "GB",
+    "AF": "FR", "KL": "NL", "LH": "DE", "EW": "DE",
+    "IB": "ES", "AZ": "IT", "TP": "PT", "OS": "AT", "SK": "SE", "AY": "FI",
+    "TK": "TR", "PC": "TR",
+    "AA": "US", "DL": "US", "UA": "US", "B6": "US", "WN": "US",
+    "EK": "AE", "EY": "AE", "QR": "QA",
+    "KE": "KR", "OZ": "KR", "NH": "JP", "JL": "JP", "MM": "JP",
+}
+
+
+def airports_to_countries(
+    origin_airport: str, dest_airport: str, airline_code: str = ""
+) -> tuple:
+    """Resolve itinerary countries from airport + airline codes."""
+    o = AIRPORT_COUNTRY.get((origin_airport or "").upper(), "")
+    d = AIRPORT_COUNTRY.get((dest_airport or "").upper(), "")
+    c = AIRLINE_COUNTRY.get((airline_code or "").upper(), "")
+    return o, d, c
+
 
 def detect_jurisdictions(
     origin_country: str, dest_country: str, carrier_country: str = ""
