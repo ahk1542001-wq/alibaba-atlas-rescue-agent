@@ -238,7 +238,7 @@ class AtlasClient:
             return f"{s[0:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
         return s
 
-    def _normalize_cli_offer(self, o: Dict[str, Any], rate: float, symbol: str) -> Dict[str, Any]:
+    def _normalize_cli_offer(self, o: Dict[str, Any], rate: float, symbol: str, display_currency: str = "USD") -> Dict[str, Any]:
         """Map a live atlas-flight CLI offer onto the app's FlightOffer shape."""
         segments = o.get("segments") or []
         first = segments[0] if segments else {}
@@ -262,7 +262,7 @@ class AtlasClient:
             "duration_minutes": duration,
             "price_usd": float(total) if isinstance(total, (int, float)) else 0.0,
             "price_converted": round(float(total) * rate, 2) if isinstance(total, (int, float)) else 0.0,
-            "currency": o.get("currency", "USD"),
+            "currency": display_currency,
             "currency_symbol": symbol,
             "cabin_class": cabin_name,
             "seats_available": 9,
@@ -284,14 +284,21 @@ class AtlasClient:
                 date = tomorrow_iso()
         except (TypeError, ValueError):
             pass
-        # Real Atlas Sandbox first (official atlas-flight CLI), curated mock as fallback
+        # Real Atlas Sandbox first (official atlas-flight CLI), curated mock as fallback.
+        # Always query the CLI in USD: Atlas returns total_price in the requested
+        # currency, so requesting the display currency here would double-convert.
+        # Display-currency conversion happens locally via RATES below.
         cli_offers = await self.cli_search_flights(
-            origin=origin, destination=destination, date=date, adults=passengers, currency=currency
+            origin=origin, destination=destination, date=date, adults=passengers, currency="USD"
         )
         if cli_offers:
-            rate = self.RATES.get(currency.upper(), 1.0)
-            symbol = self.SYMBOLS.get(currency.upper(), "$")
-            return [self._normalize_cli_offer(o, rate, symbol) for o in cli_offers]
+            upper = currency.upper()
+            rate = self.RATES.get(upper, 1.0)
+            symbol = self.SYMBOLS.get(upper, "$")
+            return [
+                self._normalize_cli_offer(o, rate, symbol, display_currency=upper)
+                for o in cli_offers
+            ]
 
         origin = origin.upper().strip()
         destination = destination.upper().strip()
