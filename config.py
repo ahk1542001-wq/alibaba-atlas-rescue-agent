@@ -19,6 +19,9 @@ class Settings(BaseModel):
     atlas_use_cli: bool = os.getenv("ATLAS_USE_CLI", "false").lower() == "true"
     # Autonomous radar scan interval (seconds)
     radar_interval_seconds: int = int(os.getenv("RADAR_INTERVAL_SECONDS", "15"))
+    # Proactive Telegram guardian (optional; simulated when unset)
+    telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "8050"))
 

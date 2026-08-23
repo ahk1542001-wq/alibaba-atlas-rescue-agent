@@ -16,7 +16,8 @@ async def analyze_disruption(req: DisruptionEvent):
             flight_number=req.flight_number,
             passenger_name=req.passenger_name or "Aung Hein Kyaw",
             date=req.date,
-            currency=req.currency or "USD"
+            currency=req.currency or "USD",
+            nationality=req.nationality or "MM"
         )
         return JSONResponse(content=result)
     except Exception as e:

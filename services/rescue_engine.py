@@ -2,6 +2,8 @@ import datetime
 import uuid
 from typing import Dict, Any, List, Optional
 from services import llm
+from services import visa_guard
+from services import guardian
 from services.atlas_client import AtlasClient
 from services.state_graph import DisruptionRecoveryDAG
 
@@ -46,7 +48,8 @@ class RescueEngine:
         flight_number: str,
         passenger_name: str = "Aung Hein Kyaw",
         date: str = None,
-        currency: str = "USD"
+        currency: str = "USD",
+        nationality: str = "MM"
     ) -> Dict[str, Any]:
         if not date:
             date = datetime.date.today().strftime("%Y-%m-%d")
@@ -69,6 +72,32 @@ class RescueEngine:
         # Node 4: ParetoOptimizer (Query 140+ carriers & Rank)
         all_offers = await self.atlas.search_flights(origin, destination, date, currency=currency)
         packages = self._curate_rescue_packages(all_offers, disruption_info)
+
+        # Node 4b: VisaGuard — filter/rank packages by passport transit rules
+        visa_result = visa_guard.filter_and_rank(nationality, packages)
+        packages = visa_result["offers"]
+        dag.record_step("VisaGuard", 6.4, {
+            "passport": visa_result["passport"],
+            "blocked_options": visa_result["blocked_count"],
+        })
+
+        # Node 4c: Proactive Guardian push (Telegram; simulated when unconfigured)
+        guardian_push = await guardian.notify(
+            title=f"Disruption detected on {flight_number}",
+            body=(
+                f"Your flight {flight_number} is {disruption_info.get('status','disrupted')} "
+                f"({disruption_info.get('reason','')}). The agent has already locked "
+                f"{len(packages)} visa-safe rescue options for your "
+                f"{visa_result['passport']} passport."
+            ),
+            action_label="Open Rescue Hub",
+        )
+        if guardian_push.get("sent") or guardian_push.get("simulated"):
+            dag.record_step("ProactiveGuardian", 4.1, {
+                "channel": "telegram",
+                "simulated": bool(guardian_push.get("simulated")),
+            })
+
         dag.record_step("ParetoOptimizer", 14.8, {"offers_evaluated": len(all_offers), "packages_curated": len(packages)})
 
         # Node 5: FareLockHold
@@ -88,6 +117,7 @@ class RescueEngine:
             "disruption": disruption_info,
             "passenger": {
                 "name": passenger_name,
+                "nationality": visa_result["passport"],
                 "loyalty_tier": "Gold / Priority",
                 "original_ticket": f"TG-ORIG-{flight_number}",
                 "assigned_seat": "12A"
@@ -95,6 +125,12 @@ class RescueEngine:
             "predictive_radar": predictive_radar,
             "flight_diff": flight_diff,
             "rescue_packages": packages,
+            "visa_guard": {
+                "passport": visa_result["passport"],
+                "summary": visa_result["summary"],
+                "blocked_count": visa_result["blocked_count"],
+            },
+            "guardian_push": guardian_push,
             "transit_hotels": hotels,
             "care_gifts": care_gifts,
             "seat_map": seat_map,

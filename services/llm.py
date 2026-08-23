@@ -49,6 +49,35 @@ def provider_name() -> str:
     return url
 
 
+def parse_json(text: Optional[str]) -> Any:
+    """Extract the first JSON object/array from LLM text (handles ``` fences)."""
+    if not text:
+        return None
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:]
+    start = min(
+        (i for i in (cleaned.find("{"), cleaned.find("[")) if i != -1),
+        default=-1,
+    )
+    if start == -1:
+        return None
+    opener = cleaned[start]
+    closer = "}" if opener == "{" else "]"
+    end = cleaned.rfind(closer)
+    if end <= start:
+        return None
+    import json
+
+    try:
+        return json.loads(cleaned[start : end + 1])
+    except json.JSONDecodeError:
+        logger.warning("LLM JSON parse failed: %.120s", text)
+        return None
+
+
 async def chat(
     messages: List[Dict[str, Any]],
     model: Optional[str] = None,

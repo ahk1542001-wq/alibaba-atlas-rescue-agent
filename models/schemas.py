@@ -82,6 +82,7 @@ class DisruptionEvent(BaseModel):
     date: Optional[str] = None
     currency: Optional[str] = "USD"
     party_size: Optional[int] = 1
+    nationality: Optional[str] = "MM"
 
 class RescuePackage(BaseModel):
     package_type: str  # FASTEST_RECOVERY | BEST_VALUE | DIRECT_COMFORT | OVERNIGHT_HOTEL_BUNDLE

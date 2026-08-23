@@ -200,6 +200,7 @@
             const passenger = (monitoredFlights.length > 0 ? monitoredFlights[0].passenger_name : 'Aung Hein Kyaw');
             const flightDate = (monitoredFlights.length > 0 ? monitoredFlights[0].date : '2026-08-20');
             const currency = document.getElementById('input-currency') ? document.getElementById('input-currency').value : 'USD';
+            const nationality = document.getElementById('input-nationality') ? document.getElementById('input-nationality').value : 'MM';
             selectedCurrency = currency;
             updateCurrencyBadge();
 
@@ -246,7 +247,8 @@
                         flight_number: flightNum,
                         passenger_name: passenger,
                         date: flightDate,
-                        currency: currency
+                        currency: currency,
+                        nationality: nationality
                     })
                 });
                 rescueData = await res.json();
@@ -304,8 +306,130 @@
             document.getElementById('compensation-card').classList.add('visible');
             document.getElementById('compensation-card').classList.add('fade-in-up');
 
+            // Visa guard summary + guardian push in trail
+            if (data.visa_guard) {
+                const vgLi = document.createElement('li');
+                vgLi.className = 'trail-item done';
+                vgLi.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">🛂 VisaGuard: ' + data.visa_guard.summary + '</span><span class="step-time">done</span></div>';
+                document.getElementById('trail-list').appendChild(vgLi);
+            }
+            if (data.guardian_push && data.guardian_push.preview) {
+                const gLi = document.createElement('li');
+                gLi.className = 'trail-item done';
+                const simTag = data.guardian_push.simulated ? ' (demo mode)' : '';
+                gLi.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">📨 Proactive Telegram Guardian push sent' + simTag + '</span><span class="step-time">done</span></div>';
+                document.getElementById('trail-list').appendChild(gLi);
+            }
+
+            // Claims Autopilot panel
+            runClaimsAutopilot();
+
             // Start fare lock countdown
             startFareLockCountdown();
+        }
+
+        async function runClaimsAutopilot() {
+            const panel = document.getElementById('rights-panel');
+            panel.classList.add('visible');
+            try {
+                const res = await fetch('/api/claims/assess', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        flight_number: rescueData.disruption.flight_number || 'TG303',
+                        date: rescueData.disruption.date || '2026-08-20',
+                        passenger_name: rescueData.passenger ? rescueData.passenger.name : 'Aung Hein Kyaw',
+                        origin_country: 'FR', destination_country: 'TH', carrier_country: 'FR',
+                        distance_km: 9200
+                    })
+                });
+                const rights = await res.json();
+                renderRightsPanel(rights);
+            } catch (err) {
+                console.error('Claims autopilot failed:', err);
+                document.getElementById('rights-sub').textContent = 'Rights check unavailable.';
+            }
+        }
+
+        function renderRightsPanel(r) {
+            if (!r.best) {
+                document.getElementById('rights-sub').textContent = r.verdict || 'No mandatory regime detected.';
+                return;
+            }
+            document.getElementById('rights-sub').textContent = r.best.name;
+            const badge = document.getElementById('rights-regime-badge');
+            badge.textContent = r.best.id;
+            badge.style.display = '';
+
+            const v = document.getElementById('rights-verdict');
+            v.textContent = r.verdict;
+            v.style.display = '';
+            v.className = 'rights-verdict ' + (r.classification.classification === 'COMPENSABLE' ? 'verdict-good' : 'verdict-warn');
+
+            const cls = r.classification;
+            const cb = document.getElementById('rights-classification');
+            cb.style.display = '';
+            const chip = document.getElementById('class-chip');
+            chip.textContent = cls.classification;
+            chip.className = 'classification-chip ' + (cls.classification === 'COMPENSABLE' ? 'chip-good' : 'chip-warn');
+            document.getElementById('class-confidence').textContent = 'confidence ' + (cls.confidence != null ? cls.confidence : '?') + '% • engine: ' + (cls.engine || 'qwen');
+            document.getElementById('class-reasoning').textContent = cls.legal_reasoning + (cls.key_article ? ' — ' + cls.key_article : '');
+
+            const money = document.getElementById('rights-money');
+            money.style.display = '';
+            const cash = r.entitlement.fixed_cash_compensation;
+            if (cash) {
+                document.getElementById('ent-amount').textContent = cash.currency + ' ' + cash.amount.toLocaleString();
+                document.getElementById('ent-basis').textContent = 'under ' + r.best.citation;
+            } else {
+                document.getElementById('ent-amount').textContent = 'Refund route';
+                document.getElementById('ent-basis').textContent = r.entitlement.note || '';
+            }
+
+            const ev = document.getElementById('rights-evidence');
+            ev.style.display = '';
+            const list = document.getElementById('evidence-list');
+            list.innerHTML = '';
+            r.evidence_pack.checklist.forEach(d => {
+                const li = document.createElement('li');
+                li.innerHTML = '<strong>' + d.item + '</strong><span>' + d.why + '</span>';
+                list.appendChild(li);
+            });
+            document.getElementById('claim-letter-text').textContent = r.evidence_pack.claim_letter;
+
+            window._lastClaimForAppeal = {
+                jurisdiction_id: r.best.id,
+                airline: 'Airline Customer Relations',
+                flight_number: r.reason ? 'AF198' : 'AF198',
+                date: rescueData.disruption.date || '2026-08-20',
+                passenger_name: rescueData.passenger ? rescueData.passenger.name : 'Aung Hein Kyaw',
+                reason: r.reason,
+                classification: cls.classification
+            };
+        }
+
+        async function appealRejection() {
+            const btn = document.querySelector('.btn-appeal');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Drafting appeal...';
+            try {
+                const res = await fetch('/api/claims/appeal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        claim: window._lastClaimForAppeal || {},
+                        rejection_reason: 'Extraordinary circumstances beyond our control'
+                    })
+                });
+                const out = await res.json();
+                document.getElementById('appeal-letter-text').textContent = out.appeal_letter;
+                document.getElementById('appeal-box').style.display = '';
+                showToast('Appeal letter drafted and ready to send.');
+            } catch (err) {
+                showToast('Appeal drafting failed.');
+            }
+            btn.disabled = false;
+            btn.innerHTML = 'Airline said no? Draft appeal letter';
         }
 
         function renderPackages(packages) {
@@ -321,9 +445,18 @@
                 const arrTime = pkg.arrival_time.split(' ')[1] || pkg.arrival_time;
                 const priceDisplay = pkg.currency_symbol + (pkg.price_converted || pkg.price_usd).toFixed(2);
                 const coverageText = isFastest ? 'Airline-covered' : 'Instant payout';
+                let visaBadge = '';
+                if (pkg.visa_status === 'CLEAR') {
+                    visaBadge = '<div class="visa-badge visa-clear">🛂 Visa-safe for your passport</div>';
+                } else if (pkg.visa_status === 'BLOCKED_RISK') {
+                    visaBadge = '<div class="visa-badge visa-risk">⚠️ ' + (pkg.visa_hub || 'Transit') + ' transit-visa risk: ' + (pkg.visa_note || '') + '</div>';
+                } else if (pkg.visa_status === 'TRANSIT_VISA_REQUIRED') {
+                    visaBadge = '<div class="visa-badge visa-warn">🛂 Transit visa needed at ' + (pkg.visa_hub || 'hub') + '</div>';
+                }
 
                 card.innerHTML =
                     '<div class="package-badge">' + (isFastest ? 'FASTEST' : 'BEST VALUE') + '</div>' +
+                    visaBadge +
                     '<div class="package-body">' +
                         '<div class="package-airline">' + pkg.airline + '</div>' +
                         '<div class="package-flight">' + pkg.flight_number + '</div>' +
