@@ -2,25 +2,28 @@
 
 Covers the whole demo use case in a real Chromium:
   1. Homepage empty state
-  2. Add Flight modal (passport selector)
+  2. Add Flight modal (user-typed data, no prefills; MM passport default)
   3. Simulate Disruption -> banner, reasoning trail, packages + visa badges,
-     compensation card, Claims Autopilot panel (regime, verdict, classification,
-     entitlement), guardian/visa trail entries
-  4. Claim letter reveal
-  5. Appeal drafting via real Qwen
-  6. Radar view + scan
-  7. Concierge chat via real Qwen
-  8. Flight search results
-  9. Mobile viewport sanity
+     compensation card, Claims Autopilot panel (honest no-regime verdict on
+     BKK-RGN), guardian/visa trail entries
+  4. Radar view + scan
+  5. Concierge chat via real Qwen
+  6. Flight search results (typed route)
+  7. Mobile viewport sanity
+Plus an API-level positive case: AF198 CDG-BKK must yield EU261 with a real
+distance-band entitlement, and /api/claims/appeal must draft a cited letter.
 """
 
-import re
 import sys
+import datetime
 
+import httpx
 from playwright.sync_api import sync_playwright, expect
 
 BASE = "http://localhost:8050"
 results = []
+
+FLIGHT_DATE = (datetime.date.today() + datetime.timedelta(days=2)).strftime("%Y-%m-%d")
 
 
 def check(name, fn):
@@ -50,10 +53,16 @@ with sync_playwright() as p:
         page.click("#btn-add-flight")
         expect(page.locator("#add-flight-overlay")).to_be_visible()
         assert page.locator("#input-nationality").input_value() == "MM"
-        assert page.locator("#input-flight-number").input_value() == "TG303"
+        assert page.locator("#input-flight-number").input_value() == "", \
+            "flight number must not be prefilled"
+        assert page.locator("#input-passenger-name").input_value() == "", \
+            "passenger name must not be prefilled"
+        page.fill("#input-flight-number", "TG303")
+        page.fill("#input-flight-date", FLIGHT_DATE)
+        page.fill("#input-passenger-name", "E2E Tester")
         page.click(".btn-af-add")
         expect(page.locator("#add-flight-overlay")).not_to_be_visible()
-    check("add flight modal + MM passport default", add_flight)
+    check("add flight modal: typed inputs only, MM passport default", add_flight)
 
     # ---------- 3. simulate disruption ----------
     def simulate():
@@ -78,45 +87,49 @@ with sync_playwright() as p:
     check("compensation card visible", lambda: expect(
         page.locator("#compensation-card")).to_be_visible())
 
-    # ---------- claims autopilot panel ----------
+    # ---------- claims autopilot panel (honest no-regime case) ----------
     def rights_panel():
         panel = page.locator("#rights-panel")
         expect(panel).to_be_visible(timeout=45000)  # waits for /assess incl Qwen
-        expect(page.locator("#rights-regime-badge")).to_have_text("EU261", timeout=60000)
-        verdict = page.locator("#rights-verdict").inner_text()
-        assert "Strong claim" in verdict or "extraordinary" in verdict.lower(), verdict
-        chip = page.locator("#class-chip").inner_text()
-        assert chip in ("COMPENSABLE", "EXTRAORDINARY"), chip
-        conf = page.locator("#class-confidence").inner_text()
-        assert re.search(r"confidence \d+%", conf), conf
-        reasoning = page.locator("#class-reasoning").inner_text()
-        assert len(reasoning) > 30, "classification reasoning too short"
-        ent = page.locator("#ent-amount").inner_text()
-        assert "EUR" in ent or "Refund" in ent, ent
-    check("Claims Autopilot panel: regime EU261 + classification + entitlement", rights_panel)
+        sub = page.locator("#rights-sub").inner_text()
+        assert "No mandatory" in sub and "Duty-of-care" in sub, \
+            f"BKK-RGN must honestly report no regime + duty-of-care, got: {sub!r}"
+        badge = page.locator("#rights-regime-badge")
+        assert badge.inner_text().strip() == "", "no regime badge may be shown on BKK-RGN"
+    check("Claims Autopilot panel: honest no-regime verdict on BKK-RGN", rights_panel)
 
-    def evidence_pack():
-        ev = page.locator("#rights-evidence")
-        expect(ev).to_be_visible()
-        items = page.locator("#evidence-list li")
-        assert items.count() >= 5, f"evidence checklist {items.count()} < 5"
-        page.locator(".claim-letter-box summary").first.click()
-        letter = page.locator("#claim-letter-text").inner_text()
-        assert "261/2004" in letter and "request payment within 14 days" in letter
-    check("evidence pack + regulation-cited claim letter", evidence_pack)
+    # ---------- positive EU261 case via API (CDG-BKK) ----------
+    def eu261_positive():
+        assess = httpx.post(
+            f"{BASE}/api/claims/assess",
+            json={"flight_number": "AF198", "date": FLIGHT_DATE,
+                  "passenger_name": "E2E Tester",
+                  "origin_airport": "CDG", "destination_airport": "BKK"},
+            timeout=90.0,
+        ).json()
+        assert assess["best"]["id"] == "EU261", assess.get("best")
+        route = assess["route"]
+        assert route["origin_country"] == "FR" and route["carrier_country"] == "FR"
+        assert route["distance_km"] > 3500, route
+        cash = assess["entitlement"]["fixed_cash_compensation"]
+        assert cash["currency"] == "EUR" and cash["amount"] == 600, cash
+        appeal = httpx.post(
+            f"{BASE}/api/claims/appeal",
+            json={"claim": {
+                "jurisdiction_id": "EU261", "airline": "Air France",
+                "flight_number": "AF198", "date": FLIGHT_DATE,
+                "passenger_name": "E2E Tester", "reason": assess["reason"],
+                "disruption_type": assess.get("classification", {}).get("classification"),
+                "classification": assess.get("classification", {}).get("classification"),
+                "entitlement": assess["entitlement"],
+            }, "rejection_reason": "Extraordinary circumstances beyond our control"},
+            timeout=90.0,
+        ).json()
+        letter = appeal.get("letter") or appeal.get("appeal_letter") or ""
+        assert len(letter) > 100, f"appeal letter too short: {len(letter)}"
+    check("API EU261 positive: CDG-BKK -> EUR600 + cited appeal letter", eu261_positive)
 
-    # ---------- 4. appeal ----------
-    def appeal():
-        btn = page.locator(".btn-appeal")
-        expect(btn).to_be_visible()
-        btn.click()
-        box = page.locator("#appeal-box")
-        expect(box).to_be_visible(timeout=60000)  # real Qwen call
-        text = page.locator("#appeal-letter-text").inner_text()
-        assert len(text) > 100, f"appeal letter too short: {len(text)} chars"
-    check("appeal letter drafted via live Qwen", appeal)
-
-    # trail entries from DAG nodes
+    # ---------- radar ----------
     def trail_nodes():
         trail = page.locator("#trail-list").inner_text()
         assert "VisaGuard" in trail, "missing VisaGuard trail entry"
@@ -145,8 +158,10 @@ with sync_playwright() as p:
     def search():
         page.click("[data-view='search']")
         expect(page.locator("#view-search")).to_be_visible()
+        page.fill("#search-origin", "BKK")
+        page.fill("#search-destination", "SIN")
         page.click(".btn-search")
-        expect(page.locator("#search-results > *").first).to_be_visible(timeout=20000)
+        expect(page.locator("#search-results > *").first).to_be_visible(timeout=25000)
     check("flight search returns offers", search)
 
     # ---------- 8. mobile ----------

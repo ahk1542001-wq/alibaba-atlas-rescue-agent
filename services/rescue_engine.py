@@ -248,7 +248,8 @@ class RescueEngine:
             p1["package_type"] = "FASTEST_RECOVERY"
             p1["badge"] = "⚡ Fastest Arrival"
             p1["agent_recommendation_reason"] = (
-                "Departs in 1h 45m. Minimizes airport downtime and arrives at destination by 12:35 PM."
+                f"Earliest departure among {len(offers)} live options "
+                f"({p1['departure_time'].split(' ')[-1]}). Minimizes airport downtime."
             )
             curated.append(p1)
 
@@ -259,21 +260,27 @@ class RescueEngine:
             p2["package_type"] = "BEST_VALUE"
             p2["badge"] = "💰 Best Value Match"
             p2["agent_recommendation_reason"] = (
-                f"Lowest fare option at {p2.get('currency_symbol', '$')}{p2.get('price_converted', p2['price_usd'])}. 100% covered by airline refund."
+                f"Lowest fare among {len(offers)} live options at "
+                f"{p2.get('currency_symbol', '$')}{p2.get('price_converted', p2['price_usd'])}."
             )
             curated.append(p2)
 
         # Package 3: Same Alliance / Direct Comfort
         comfort_matches = [
-            o for o in offers 
+            o for o in offers
             if o.get("alliance") == "Star Alliance" or "Flex" in o.get("cabin_class", "")
         ]
         p3 = comfort_matches[0].copy() if comfort_matches else (offers[-1].copy() if offers else None)
         if p3:
             p3["package_type"] = "DIRECT_COMFORT"
-            p3["badge"] = "🛡️ Direct Comfort & Alliance"
+            alliance_note = (
+                f"{p3.get('alliance')} priority perks" if comfort_matches
+                else "Comfort-oriented option"
+            )
+            p3["badge"] = "🛡️ Direct Comfort & Alliance" if comfort_matches else "🛡️ Comfort Option"
             p3["agent_recommendation_reason"] = (
-                "Star Alliance priority boarding, 30kg luggage included, and airport lounge access."
+                f"{alliance_note} on {p3.get('airline', 'carrier')} "
+                f"{p3.get('flight_number', '')}. Cabin: {p3.get('cabin_class', 'ECONOMY')}."
             )
             curated.append(p3)
 

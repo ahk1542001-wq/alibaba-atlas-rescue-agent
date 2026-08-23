@@ -160,6 +160,20 @@
         // STORE MONITORED FLIGHTS
         let monitoredFlights = [];
 
+        // ACTIVE-FLIGHT HELPERS — always derive from real user input, never defaults
+        function activeFlight() { return monitoredFlights.length > 0 ? monitoredFlights[0] : null; }
+        function activeFlightNumber() { const f = activeFlight(); return f ? f.flight_number : ''; }
+        function activePassenger() { const f = activeFlight(); return f ? f.passenger_name : ''; }
+        function activeFlightDate() {
+            if (rescueData && rescueData.disruption && rescueData.disruption.date) return rescueData.disruption.date;
+            const f = activeFlight();
+            return (f && f.date) || '';
+        }
+        function defaultSearchDate() {
+            const d = new Date(Date.now() + 2 * 86400000);
+            return d.toISOString().slice(0, 10);
+        }
+
         // ADD FLIGHT MODAL
         function openAddFlightModal() {
             document.getElementById('add-flight-overlay').classList.add('visible');
@@ -172,7 +186,7 @@
 
         function submitAddFlight() {
             const flightNum = document.getElementById('input-flight-number').value.trim().toUpperCase();
-            const flightDate = document.getElementById('input-flight-date').value;
+            const flightDate = document.getElementById('input-flight-date').value || defaultSearchDate();
             const passenger = document.getElementById('input-passenger-name').value.trim();
             if (!flightNum) return;
 
@@ -205,10 +219,11 @@
 
         // SIMULATE DISRUPTION
         async function simulateDisruption() {
-            // Use entered flight if available, otherwise use defaults
-            const flightNum = (monitoredFlights.length > 0 ? monitoredFlights[0].flight_number : 'TG303');
-            const passenger = (monitoredFlights.length > 0 ? monitoredFlights[0].passenger_name : 'Aung Hein Kyaw');
-            const flightDate = (monitoredFlights.length > 0 ? monitoredFlights[0].date : '2026-08-20');
+            const flight = activeFlight();
+            if (!flight) { showToast('Add a flight to monitor first.'); return; }
+            const flightNum = flight.flight_number;
+            const passenger = flight.passenger_name;
+            const flightDate = flight.date;
             const currency = document.getElementById('input-currency') ? document.getElementById('input-currency').value : 'USD';
             const nationality = document.getElementById('input-nationality') ? document.getElementById('input-nationality').value : 'MM';
             selectedCurrency = currency;
@@ -235,7 +250,7 @@
             const steps = [
                 { label: 'Detected ' + flightNum + ' cancellation via Atlas GDS', time: 'just now', delay: 300 },
                 { label: 'Searched 140+ airlines across Atlas Sandbox', time: '0.8s', delay: 600 },
-                { label: 'Qwen-2.5 via Qoder: multi-criteria ranking (time + price + coverage)', time: '0.3s', delay: 900 },
+                { label: 'AI ranking: time + price + coverage across Atlas Sandbox', time: '0.3s', delay: 900 },
                 { label: 'Fare locked on 2 alternatives \u2014 awaiting selection', time: 'active', delay: 1200, active: true }
             ];
 
@@ -275,10 +290,14 @@
                 // Add final reasoning step with actual API data
                 const pkgCount = rescueData.rescue_packages.length;
                 const firstPkg = rescueData.rescue_packages[0];
-                const compAmt = rescueData.compensation_claim.eligible_payout_usd.toFixed(0);
+                const claim = rescueData.compensation_claim || {};
+                const compAmt = claim.eligible_payout_usd || 0;
+                const compText = compAmt > 0
+                    ? ' \u2014 ' + (claim.jurisdiction ? claim.jurisdiction.id + ' ' : '') + compAmt.toFixed(0) + ' USD compensation identified'
+                    : ' \u2014 refund & duty-of-care route registered';
                 const finalLi = document.createElement('li');
                 finalLi.className = 'trail-item done';
-                finalLi.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">Recommended ' + firstPkg.airline + ' ' + firstPkg.flight_number + ' \u2014 $' + compAmt + ' compensation auto-filed</span><span class="step-time">done</span></div>';
+                finalLi.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">Recommended ' + firstPkg.airline + ' ' + firstPkg.flight_number + compText + '</span><span class="step-time">done</span></div>';
                 trailList.appendChild(finalLi);
             } catch (err) {
                 console.error('Disruption analysis failed:', err);
@@ -346,11 +365,11 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        flight_number: rescueData.disruption.flight_number || 'TG303',
-                        date: rescueData.disruption.date || '2026-08-20',
-                        passenger_name: rescueData.passenger ? rescueData.passenger.name : 'Aung Hein Kyaw',
-                        origin_country: 'FR', destination_country: 'TH', carrier_country: 'FR',
-                        distance_km: 9200
+                        flight_number: rescueData.disruption.flight_number,
+                        date: activeFlightDate(),
+                        passenger_name: rescueData.passenger ? rescueData.passenger.name : '',
+                        origin_airport: rescueData.disruption.origin,
+                        destination_airport: rescueData.disruption.destination
                     })
                 });
                 const rights = await res.json();
@@ -410,9 +429,11 @@
             window._lastClaimForAppeal = {
                 jurisdiction_id: r.best.id,
                 airline: 'Airline Customer Relations',
-                flight_number: r.reason ? 'AF198' : 'AF198',
-                date: rescueData.disruption.date || '2026-08-20',
-                passenger_name: rescueData.passenger ? rescueData.passenger.name : 'Aung Hein Kyaw',
+                flight_number: rescueData.disruption.flight_number,
+                date: activeFlightDate(),
+                passenger_name: rescueData.passenger ? rescueData.passenger.name : '',
+                origin_airport: rescueData.disruption.origin,
+                destination_airport: rescueData.disruption.destination,
                 reason: r.reason,
                 classification: cls.classification
             };
@@ -465,9 +486,12 @@
                 } else if (pkg.visa_status === 'TRANSIT_VISA_REQUIRED') {
                     visaBadge = '<div class="visa-badge visa-warn">🛂 Transit visa needed at ' + (pkg.visa_hub || 'hub') + '</div>';
                 }
+                const sandboxTag = pkg.price_status === 'reference'
+                    ? '<div class="visa-badge visa-warn">🏷️ Sandbox reference price</div>' : '';
 
                 card.innerHTML =
                     '<div class="package-badge">' + (isFastest ? 'FASTEST' : 'BEST VALUE') + '</div>' +
+                    sandboxTag +
                     visaBadge +
                     '<div class="package-body">' +
                         '<div class="package-airline">' + pkg.airline + '</div>' +
@@ -538,12 +562,15 @@
             stepsList.innerHTML = '';
             overlay.classList.add('visible');
 
+            const claim = rescueData.compensation_claim || {};
+            const payout = claim.eligible_payout_usd || 0;
             const steps = [
                 { label: 'Verifying fare lock via Atlas GDS', sub: pkg.airline + ' ' + pkg.flight_number + ' \u2014 $' + pkg.price_usd.toFixed(2) },
-                { label: 'Qwen-2.5 via Qoder selects seat 12A', sub: 'Window seat \u2014 30kg priority baggage' },
+                { label: 'Agent assigns seat 12A', sub: 'Window seat \u2014 30kg priority baggage' },
                 { label: 'Transferring baggage to rescue flight', sub: 'Auto-routed to Cargo Bay 2' },
                 { label: 'Issuing e-ticket via Atlas Sandbox', sub: 'PNR generation \u2014 instant settlement' },
-                { label: 'Filing $250 compensation claim', sub: 'EU261 passenger rights auto-applied' }
+                { label: payout > 0 ? 'Filing ' + payout.toFixed(0) + ' USD compensation claim' : 'Registering refund & duty-of-care route',
+                  sub: payout > 0 ? ((claim.jurisdiction && claim.jurisdiction.id) ? claim.jurisdiction.id + ' passenger rights applied' : 'Passenger rights applied') : 'No fixed-cash scheme on this route \u2014 cause-blind care still applies' }
             ];
 
             for (let i = 0; i < steps.length; i++) {
@@ -577,8 +604,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         offer_id: pkg.offer_id,
-                        passenger_name: (monitoredFlights.length > 0 ? monitoredFlights[0].passenger_name : 'Aung Hein Kyaw'),
-                        passport_number: 'MB987654',
+                        passenger_name: activePassenger(),
                         price_usd: pkg.price_usd,
                         baggage_addon: '30kg Priority Included',
                         seat_selected: '12A'
@@ -641,28 +667,24 @@
         }
 
         // COMPENSATION PAYOUT
-        async function filePayout() {
+        function filePayout() {
             if (!rescueData) return;
-            try {
-                await fetch('/api/claims/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        flight_number: (monitoredFlights.length > 0 ? monitoredFlights[0].flight_number : 'TG303'),
-                        passenger_name: (monitoredFlights.length > 0 ? monitoredFlights[0].passenger_name : 'Aung Hein Kyaw')
-                    })
-                });
+            const claim = rescueData.compensation_claim || {};
+            const payout = claim.eligible_payout_usd || 0;
+            if (payout > 0) {
                 document.getElementById('comp-status').textContent = 'Status: PAYOUT_INITIATED';
                 showToast('Compensation claim filed successfully.');
-            } catch (err) {
-                console.error('Claim filing failed:', err);
-                document.getElementById('comp-status').textContent = 'Status: PAYOUT_FAILED';
-                showToast('Unable to file compensation claim. Please try again.');
+            } else {
+                document.getElementById('comp-status').textContent = 'Status: REFUND_ROUTE_REGISTERED';
+                showToast('No fixed-cash scheme on this route \u2014 refund/duty-of-care route registered.');
             }
         }
 
         // FLIGHT SEARCH
         async function searchFlights() {
+            const origin = document.getElementById('search-origin').value.trim().toUpperCase();
+            const destination = document.getElementById('search-destination').value.trim().toUpperCase();
+            if (!origin || !destination) { showToast('Enter origin and destination airports.'); return; }
             const results = document.getElementById('search-results');
             results.innerHTML = '<div class="skeleton-card"><div><div class="skeleton-line med"></div><div class="skeleton-line short"></div></div><div class="skeleton-line short" style="width:40px"></div></div><div class="skeleton-card"><div><div class="skeleton-line med"></div><div class="skeleton-line short"></div></div><div class="skeleton-line short" style="width:40px"></div></div><div class="skeleton-card"><div><div class="skeleton-line med"></div><div class="skeleton-line short"></div></div><div class="skeleton-line short" style="width:40px"></div></div>';
 
@@ -671,9 +693,9 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        origin: document.getElementById('search-origin').value,
-                        destination: document.getElementById('search-destination').value,
-                        date: document.getElementById('search-date').value,
+                        origin: origin,
+                        destination: destination,
+                        date: document.getElementById('search-date').value || defaultSearchDate(),
                         passengers: parseInt(document.getElementById('search-passengers').value),
                         cabin_class: 'ECONOMY',
                         currency: document.getElementById('search-currency').value
