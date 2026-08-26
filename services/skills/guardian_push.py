@@ -7,7 +7,7 @@ delivery_status=skipped_not_failed + simulated=True (graceful skip, never
 an error, never a fabricated send).
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from config import settings
 from services.skills.base import SkillBase
@@ -17,17 +17,22 @@ _FORBIDDEN_PAYLOAD_KEYS = {"passport_no", "passport_number", "passport",
                            "passport_no_raw", "national_id", "document_number"}
 
 
+def _sanitize_value(value: Any) -> Any:
+    """Recursively drop forbidden identity fields through dicts AND
+    lists/tuples (G2-DA fix: [{"passport_no": ...}] used to survive)."""
+    if isinstance(value, dict):
+        return {key: _sanitize_value(item) for key, item in value.items()
+                if str(key).lower() not in _FORBIDDEN_PAYLOAD_KEYS}
+    if isinstance(value, list):
+        return [_sanitize_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_value(item) for item in value)
+    return value
+
+
 def sanitize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Drop forbidden identity fields; recurse into nested dicts."""
-    clean: Dict[str, Any] = {}
-    for key, value in (payload or {}).items():
-        if str(key).lower() in _FORBIDDEN_PAYLOAD_KEYS:
-            continue
-        if isinstance(value, dict):
-            clean[key] = sanitize_payload(value)
-        else:
-            clean[key] = value
-    return clean
+    """Drop forbidden identity fields; recurse into nested dicts/lists/tuples."""
+    return _sanitize_value(payload or {})
 
 
 class GuardianPushSkill(SkillBase):

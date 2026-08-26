@@ -289,6 +289,10 @@ class ApprovalRequest(BaseModel):
     options: List[Any] = []
     created_at: str
     resolved_value: Optional[Any] = None
+    # G2-DA fix: optional expiry (ISO timestamp). None = never expires
+    # (backward compatible); resolve_approval rejects expired approvals with
+    # a recoverable approval_expired error.
+    expires_at: Optional[str] = None
 
 
 from services.state_graph import GraphNodeState  # noqa: E402  (extends legacy model)

@@ -5,11 +5,17 @@ import-only). Owner correction (C) enforced here:
 
 - fares are REFRESHED and REVERIFIED (verify_fare) IMMEDIATELY before the
   booking order — never booked on stale search data;
-- idempotency map option_id -> PNR: a retry returns the same PNR and never
-  double-books;
+- idempotency map (trip_id, option_id) -> PNR: the lookup runs AFTER every
+  safety gate (visa freshness, passport known, no baseline block, fare
+  re-verification), so a replay can never skip a gate, and the key is scoped
+  per trip — another trip reusing an option_id books its own PNR instead of
+  replaying a foreign one (G2-DA fix);
 - international bookings are REFUSED with a recoverable error when the
   visa/entry data in context is missing, stale, degraded, or unverified —
-  never silently permitted.
+  never silently permitted;
+- unknown passports (passport_unknown) and baseline-blocked routes
+  (visa_blocked, e.g. BLOCKED_RISK hubs) are refused outright — a blocked
+  route has NO user override.
 """
 
 from datetime import datetime, timezone
@@ -38,7 +44,9 @@ class FlightBookSkill(SkillBase):
 
     def __init__(self, atlas: Optional[Any] = None) -> None:
         self._atlas = atlas or AtlasClient()
-        self._booked: Dict[str, Dict[str, Any]] = {}  # option_id -> result
+        # (trip_id, option_id) -> result; per-trip scoping means cross-trip
+        # option reuse can never replay a foreign trip's PNR (G2-DA fix)
+        self._booked: Dict[tuple, Dict[str, Any]] = {}
 
     async def run(self, payload: Dict[str, Any],
                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -47,17 +55,12 @@ class FlightBookSkill(SkillBase):
             raise SkillError("missing_option",
                              "flight booking requires option_id", recoverable=True)
 
-        # idempotent retry: same option_id -> same PNR, zero extra sandbox calls
-        if option_id in self._booked:
-            replay = dict(self._booked[option_id])
-            replay["idempotent_replay"] = True
-            return replay
-
         origin = str(payload.get("origin") or "").upper()
         destination = str(payload.get("destination") or "").upper()
         context = context or {}
+        trip_id = str(payload.get("trip_id") or context.get("trip_id") or "")
 
-        # --- safety gate (C): stale/unverified visa data BLOCKS booking -----
+        # --- safety gates (C) run BEFORE any idempotency replay ---------------
         if _is_international(origin, destination):
             visa = context.get("visa_check")
             if not visa:
@@ -65,6 +68,19 @@ class FlightBookSkill(SkillBase):
                     "visa_check_missing",
                     "international booking refused: no visa/entry check ran "
                     "for this route", recoverable=True)
+            if visa.get("visa_blocked"):
+                raise SkillError(
+                    "visa_route_blocked",
+                    "booking refused: baseline visa rules BLOCK this route "
+                    f"({' | '.join(visa.get('block_reasons') or []) or 'see visa check'}); "
+                    "there is no override for a blocked route",
+                    recoverable=False)
+            if visa.get("passport_unknown"):
+                raise SkillError(
+                    "passport_unknown",
+                    "international booking refused: passport country is "
+                    "missing or unknown — capture it in the profile before "
+                    "booking", recoverable=True)
             freshness = visa.get("freshness_state", "unknown")
             if visa.get("degraded") or visa.get("baseline_only") \
                     or freshness in ("stale", "unknown"):
@@ -81,6 +97,15 @@ class FlightBookSkill(SkillBase):
             raise SkillError("fare_unverified",
                              f"fare '{option_id}' failed re-verification; "
                              "booking refused", recoverable=True)
+
+        # --- idempotent retry: SAME trip + SAME option -> same PNR, zero extra
+        # booking calls. Lookup sits AFTER every safety gate (G2-DA fix): a
+        # replay can never skip visa/passport/fare checks.
+        idempotency_key = (trip_id, option_id)
+        if idempotency_key in self._booked:
+            replay = dict(self._booked[idempotency_key])
+            replay["idempotent_replay"] = True
+            return replay
 
         passenger = payload.get("passenger") or {}
         order = await self._atlas.create_booking_order(
@@ -111,5 +136,5 @@ class FlightBookSkill(SkillBase):
             "idempotent_replay": False,
             "provenance": "sandbox",
         }
-        self._booked[option_id] = result
+        self._booked[idempotency_key] = result
         return result

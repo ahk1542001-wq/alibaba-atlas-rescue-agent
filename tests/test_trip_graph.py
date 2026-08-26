@@ -20,6 +20,7 @@ from services.skills.base import SkillBase
 from services.trip_graph import (
     GraphApprovalError,
     GraphCapabilityViolation,
+    GraphError,
     NodeSpec,
     TripGraphExecutor,
     mask_volatile,
@@ -71,7 +72,10 @@ class LLMDeclaredSkill(SkillBase):
 
 
 def _executor(registry=None):
-    ex = TripGraphExecutor(registry=registry or [])
+    # allow_unmanifested_skills=True: test fakes ship without SKILL.md
+    # manifests; the production default stays FAIL-CLOSED (G2-DA fix 4)
+    ex = TripGraphExecutor(registry=registry or [],
+                           allow_unmanifested_skills=True)
     ex.register_skill("echo", EchoSkill({"ok": True}))
     ex.register_skill("strict", StrictSkill())
     ex.register_skill("overprivileged", LLMDeclaredSkill())
@@ -386,3 +390,155 @@ def test_resolve_scope_choice_maps_all_three_options():
                 "hotel", "activities", "local_transport"))
     with pytest.raises(ValueError):
         resolve_scope_choice(base, "luxury_yacht_package")
+
+
+# --- G2-DA remediation: run() status guards (finding 3) -------------------------
+
+def test_rerun_of_awaiting_approval_trip_is_refused():
+    """Re-running a paused trip must not duplicate approvals or re-execute."""
+    ex = _executor()
+    ex.start_trip("tg-rerun", _gate_nodes(), context={})
+    _run(ex.run("tg-rerun"))
+    trip = ex.get("tg-rerun")
+    assert trip.status == "awaiting_approval"
+    before_approvals = len(trip.pending_approvals)
+    before_trace = len(trip.trace)
+    with pytest.raises(GraphApprovalError) as ei:
+        _run(ex.run("tg-rerun"))
+    assert ei.value.recoverable is True
+    trip = ex.get("tg-rerun")
+    assert trip.status == "awaiting_approval"       # still paused, untouched
+    assert len(trip.pending_approvals) == before_approvals  # no duplicate approval
+    assert len(trip.trace) == before_trace          # graph not re-executed
+
+
+def test_rerun_of_completed_trip_is_refused_non_recoverable():
+    ex = _executor()
+    ex.start_trip("tdone", _nodes_linear(), context={})
+    _run(ex.run("tdone"))
+    trace_len = len(ex.get("tdone").trace)
+    with pytest.raises(GraphError) as ei:
+        _run(ex.run("tdone"))
+    assert ei.value.recoverable is False
+    assert ex.get("tdone").status == "completed"
+    assert len(ex.get("tdone").trace) == trace_len  # side effects not re-fired
+
+
+def test_rerun_of_failed_trip_is_refused_non_recoverable():
+    nodes = [NodeSpec(name="bad", skill_ref="strict",
+                      input_map={"count": "raw_count"}, edges=[])]
+    ex = _executor()
+    ex.start_trip("tfail", nodes, context={"raw_count": "not-an-int"})
+    _run(ex.run("tfail"))
+    assert ex.get("tfail").status == "failed"
+    trace_len = len(ex.get("tfail").trace)
+    with pytest.raises(GraphError) as ei:
+        _run(ex.run("tfail"))
+    assert ei.value.recoverable is False
+    assert len(ex.get("tfail").trace) == trace_len
+
+
+# --- G2-DA remediation: capability check fails CLOSED (finding 4) ----------------
+
+def test_missing_manifest_entry_fails_closed_by_default():
+    """No manifest entry for skill_ref -> capability_violation, not a silent pass."""
+    ex = TripGraphExecutor(registry=[])  # empty registry: nothing is manifested
+    ex.register_skill("overprivileged", LLMDeclaredSkill())
+    ex.start_trip("cap-closed",
+                  [NodeSpec(name="x", skill_ref="overprivileged", edges=[])],
+                  context={})
+    with pytest.raises(GraphCapabilityViolation):
+        _run(ex.run("cap-closed"))
+    rec = ex.get("cap-closed").trace[-1]
+    assert rec.status == "FAILED"
+    assert rec.details["error_code"] == "capability_violation"
+    assert ex.get("cap-closed").status == "failed"
+
+
+def test_unmanifested_skill_runs_only_with_explicit_opt_in():
+    ex = TripGraphExecutor(registry=[], allow_unmanifested_skills=True)
+    ex.register_skill("overprivileged", LLMDeclaredSkill())
+    ex.start_trip("cap-open",
+                  [NodeSpec(name="x", skill_ref="overprivileged", edges=[])],
+                  context={})
+    _run(ex.run("cap-open"))
+    assert ex.get("cap-open").status == "completed"
+
+
+# --- G2-DA remediation: unexpected exceptions record FAILED (finding 8) ----------
+
+class BoomSkill(SkillBase):
+    name = "boom"
+    when_to_use = "test fake that explodes with a non-SkillError"
+    capabilities = frozenset()
+
+    async def run(self, payload, context=None):
+        raise RuntimeError("unexpected internal error")
+
+
+def test_non_skill_error_records_failed_and_sets_failed_status():
+    ex = _executor()
+    ex.register_skill("boom", BoomSkill())
+    ex.start_trip("tboom", [NodeSpec(name="x", skill_ref="boom", edges=[])],
+                  context={})
+    with pytest.raises(RuntimeError):  # original error still surfaces
+        _run(ex.run("tboom"))
+    trip = ex.get("tboom")
+    assert trip.status == "failed"          # not stuck at "running"
+    rec = trip.trace[-1]
+    assert rec.name == "x"
+    assert rec.status == "FAILED"
+    assert rec.details["error_code"] == "internal_error"
+    assert rec.details["recoverable"] is False
+
+
+def test_non_skill_error_inside_resume_is_also_recorded():
+    ex = _executor()
+    ex.register_skill("boom", BoomSkill())
+    nodes = [
+        NodeSpec(name="approve", skill_ref="approval_gate", gate=True,
+                 edges=[{"when": _ALWAYS, "to": "boom_node"}]),
+        NodeSpec(name="boom_node", skill_ref="boom", edges=[]),
+    ]
+    ex.start_trip("tboom2", nodes, context={})
+    _run(ex.run("tboom2"))
+    req = ex.get("tboom2").pending_approvals[0]
+    with pytest.raises(RuntimeError):
+        _run(ex.resolve_approval("tboom2", req.approval_id, {"approved": True}))
+    trip = ex.get("tboom2")
+    assert trip.status == "failed"
+    assert trip.trace[-1].details["error_code"] == "internal_error"
+
+
+# --- G2-DA remediation: ApprovalRequest expiry (finding 10) -----------------------
+
+def test_approval_request_expires_at_defaults_none():
+    from models.schemas import ApprovalRequest
+    assert "expires_at" in ApprovalRequest.model_fields
+    req = ApprovalRequest(approval_id="a", node_name="n", created_at="t")
+    assert req.expires_at is None  # backward compatible
+
+
+def test_expired_approval_is_rejected_recoverably():
+    ex = _executor()
+    ex.start_trip("texp", _gate_nodes(), context={})
+    _run(ex.run("texp"))
+    req = ex.get("texp").pending_approvals[0]
+    req.expires_at = "2026-08-25T00:00:00+00:00"  # in the past
+    with pytest.raises(GraphApprovalError) as ei:
+        _run(ex.resolve_approval("texp", req.approval_id, {"approved": True}))
+    assert ei.value.code == "approval_expired"
+    assert ei.value.recoverable is True
+    trip = ex.get("texp")
+    assert trip.status == "awaiting_approval"  # no downstream execution
+    assert [n.name for n in trip.trace][-1] != "commit"
+
+
+def test_future_expiry_and_no_expiry_both_resolve():
+    ex = _executor()
+    ex.start_trip("tok", _gate_nodes(), context={})
+    _run(ex.run("tok"))
+    req = ex.get("tok").pending_approvals[0]
+    req.expires_at = "2099-01-01T00:00:00+00:00"  # far future
+    _run(ex.resolve_approval("tok", req.approval_id, {"approved": True}))
+    assert ex.get("tok").status == "completed"

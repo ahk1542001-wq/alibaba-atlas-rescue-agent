@@ -147,13 +147,20 @@ def mask_volatile(trace: List[GraphNodeStateV2]) -> List[Dict[str, Any]]:
 
 
 class TripGraphExecutor:
-    """In-memory trip registry keyed by trip_id with cross-trip isolation."""
+    """In-memory trip registry keyed by trip_id with cross-trip isolation.
 
-    def __init__(self, registry: Optional[List[Dict[str, Any]]] = None) -> None:
+    Security default (G2-DA fix): capability enforcement FAILS CLOSED when a
+    skill_ref has no manifest entry — test harnesses and embedded helpers
+    must opt in explicitly via allow_unmanifested_skills=True.
+    """
+
+    def __init__(self, registry: Optional[List[Dict[str, Any]]] = None,
+                 allow_unmanifested_skills: bool = False) -> None:
         if registry is None:
             from services.skills import load_skill_registry
             registry = load_skill_registry()
         self._registry_by_name = {entry["name"]: entry for entry in registry}
+        self._allow_unmanifested_skills = allow_unmanifested_skills
         self._skills: Dict[str, Any] = {}
         self._trips: Dict[str, Trip] = {}
 
@@ -195,9 +202,43 @@ class TripGraphExecutor:
     async def run(self, trip_id: str) -> str:
         trip = self.get(trip_id)
         async with trip.lock:
+            # --- status guards (G2-DA fix): never re-enter a live trip -------
+            if trip.status == "awaiting_approval":
+                raise GraphApprovalError(
+                    "pending_approval",
+                    f"trip '{trip_id}' is awaiting approval; resolve the "
+                    "pending approval via resolve_approval() / "
+                    "POST /api/trip/{id}/approvals — re-running would "
+                    "duplicate approvals and re-execute the graph")
+            if trip.status in ("completed", "failed"):
+                raise GraphError(
+                    "trip_terminal",
+                    f"trip '{trip_id}' already reached terminal status "
+                    f"'{trip.status}'; re-running would re-fire side effects "
+                    "— start a fresh trip_id instead", recoverable=False)
             entry = trip.nodes[0].name if trip.nodes else None
-            await self._advance(trip, entry)
+            try:
+                await self._advance(trip, entry)
+            except Exception as exc:  # noqa: BLE001 — record, then re-raise
+                self._record_unexpected_failure(trip, exc)
+                raise
             return trip.status
+
+    def _record_unexpected_failure(self, trip: Trip, exc: Exception) -> None:
+        """Any non-SkillError escape leaves a FAILED record + failed status
+        (G2-DA fix) instead of a trip stuck at 'running'. Paths that already
+        recorded a FAILED node (capability violation, non-recoverable
+        SkillError) are left untouched."""
+        if trip.status == "failed":
+            return
+        spec = trip.nodes_by_name.get(trip.current) if trip.current else None
+        if spec is not None:
+            self._record(trip, spec, "FAILED", 0.0, {
+                "error_code": "internal_error",
+                "message": f"{type(exc).__name__}: {exc}"[:400],
+                "recoverable": False,
+            })
+        trip.status = "failed"
 
     async def _advance(self, trip: Trip, name: Optional[str]) -> None:
         while name:
@@ -244,11 +285,28 @@ class TripGraphExecutor:
 
     def _enforce_capabilities(self, trip: Trip, spec: NodeSpec, skill: Any) -> None:
         """Manifest (SKILL.md) is the source of truth for granted flags; a
-        class declaring more than its manifest allows is refused (§14.4)."""
+        class declaring more than its manifest allows is refused (§14.4).
+
+        FAIL CLOSED (G2-DA fix): a skill_ref with NO manifest entry is
+        refused with capability_violation unless the executor was built with
+        the explicit allow_unmanifested_skills opt-in (default False).
+        """
         declared = set(getattr(skill, "capabilities", frozenset()))
         entry = self._registry_by_name.get(spec.skill_ref)
         if entry is None:
-            return  # runtime-registered helper skill without a manifest
+            if self._allow_unmanifested_skills:
+                return  # explicit opt-in (test harnesses / embedded helpers)
+            self._record(trip, spec, "FAILED", 0.0, {
+                "error_code": "capability_violation",
+                "message": f"skill '{spec.skill_ref}' has no manifest entry; "
+                           "executor fails closed (allow_unmanifested_skills "
+                           "opt-in required)",
+                "recoverable": False,
+            })
+            trip.status = "failed"
+            raise GraphCapabilityViolation(
+                f"skill '{spec.skill_ref}' has no manifest entry — "
+                "execution refused (fail-closed)")
         allowed = set(entry.get("allowed_tools", []))
         exceeding = declared - allowed
         if exceeding:
@@ -348,6 +406,20 @@ class TripGraphExecutor:
                 raise GraphApprovalError(
                     "unknown_approval",
                     f"approval '{approval_id}' not found for trip '{trip_id}'")
+            # --- expiry gate (G2-DA fix): expired approvals never resume -----
+            if request.expires_at:
+                try:
+                    expiry = datetime.fromisoformat(request.expires_at)
+                except ValueError:
+                    expiry = None
+                if expiry is not None:
+                    if expiry.tzinfo is None:
+                        expiry = expiry.replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) >= expiry:
+                        raise GraphApprovalError(
+                            "approval_expired",
+                            f"approval '{approval_id}' expired at "
+                            f"{request.expires_at}; request a fresh approval")
             request.resolved_value = value
             trip.pending_approvals.remove(request)
             spec = trip.nodes_by_name[request.node_name]
@@ -356,7 +428,12 @@ class TripGraphExecutor:
             self._record(trip, spec, "COMPLETED", 0.0,
                          {"approval_id": approval_id, "resolved_value": value})
             trip.status = "running"
-            await self._advance(trip, self._next_name(spec, output, trip.context))
+            try:
+                await self._advance(trip, self._next_name(spec, output,
+                                                          trip.context))
+            except Exception as exc:  # noqa: BLE001 — record, then re-raise
+                self._record_unexpected_failure(trip, exc)
+                raise
             return trip.status
 
     # ---- ON_DISRUPTION_EVENT --------------------------------------------------------
@@ -478,7 +555,18 @@ def plan_trip(intent: TripIntent) -> Plan:
                               input_map={
                                   "passport_country": "profile.passport_country",
                                   "route": _route_from_goal,
-                              }))
+                              },
+                              edges=[
+                                  # §3.1 replan edge: a baseline BLOCKED_RISK
+                                  # (visa_blocked) reroutes back to
+                                  # flight_search — a blocked route can never
+                                  # reach the approval gate or booking
+                                  NodeEdge(when=lambda out, ctx: bool(
+                                      (out or {}).get("visa_blocked")),
+                                      to="flight_search"),
+                                  NodeEdge(when=lambda out, ctx: True,
+                                           to="approve_booking"),
+                              ]))
 
     nodes.append(NodeSpec(
         name="approve_booking", skill_ref="approval_gate", gate=True,

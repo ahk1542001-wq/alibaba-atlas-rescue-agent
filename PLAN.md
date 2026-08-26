@@ -137,5 +137,22 @@ Fresh evidence is captured per gate commit; pointers below stay durable.
 | §15.2 itinerary provider chain + honesty chips | `services/skills/itinerary.py` | `tests/test_skills_behavior.py` S8 cases | G2 gate commit pytest output |
 | Owner correction (C) bounded research | `services/research_coordinator.py` | `tests/test_skills_behavior.py` coordinator cases | G2 gate commit pytest output |
 | G1 DA-review defect regressions (masking bypass, short-passport leak, loader pairing, dup names, user_id traversal, capability drift, YAML list tools) | `services/profile_store.py`, `models/schemas.py`, `services/skills/__init__.py` | `tests/test_profile_store.py`, `tests/test_skills_manifest.py` | G2 gate commit pytest output |
+| G2 DA-review remediation (per-trip idempotency after gates, citation date honesty, run() status guards, fail-closed capabilities, unknown-passport + BLOCKED_RISK booking refusal, list-aware sanitization, per-trip disruption watches, internal-error FAILED records, real-timestamp freshness, approval expiry, §3.1 blocked-route replan edge) | `services/skills/flight_book.py`, `services/web_intel_client.py`, `services/trip_graph.py`, `services/skills/visa_check.py`, `services/skills/guardian_push.py`, `services/skills/disruption_monitor.py`, `models/schemas.py` (ApprovalRequest only) | `tests/test_trip_graph.py`, `tests/test_skills_behavior.py`, `tests/test_web_intel.py` G2-DA sections | G2-DA remediation pytest output below |
 | §12 demo fixture placeholder | `data/mock_victor.json` (gitignored) | `[mockdata]`-tagged suites at G7; graceful skip while owner absent | G7 report section |
 | §0/§9.7 gate process artifacts | `PLAN.md`, `DECISIONS.tsv`, `BLOCKERS.md` | `tests/test_docs_integrity.py` conventions (durable-docs hygiene) | gate commit pytest output |
+
+## G2 Devil's Advocate Remediation (against gate commit 2a3715a)
+
+All 10 DA findings were reproduced first with probe scripts, then fixed
+TDD-style: failing regression test added per finding, root cause fixed,
+test green. Leader addendum (BLOCKED_RISK routes refuse booking with no
+override + §3.1 replan edge) implemented alongside. Decisions logged in
+`DECISIONS.tsv` under prefix `G2-DA-fix` (+ two `AUTO-` collateral rows).
+
+Remediation evidence (`.venv/bin/python -m pytest tests/ -q`):
+
+```
+before (gate commit 2a3715a):  145 passed in 0.49s
+red phase (27 new regressions): 27 failed, 75 passed  (in the 3 touched files)
+after fixes:                    173 passed in 0.43s
+```

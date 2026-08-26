@@ -16,7 +16,7 @@ Atlas/LLM/web-intel are fakes injected through constructors — no network.
 import asyncio
 import json
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -29,7 +29,7 @@ from services.skills.disruption_monitor import DisruptionMonitorSkill
 from services.skills.flight_book import FlightBookSkill
 from services.skills.flight_search import FlightSearchSkill
 from services.skills.goal_intake import GoalIntakeSkill
-from services.skills.guardian_push import GuardianPushSkill
+from services.skills.guardian_push import GuardianPushSkill, sanitize_payload
 from services.skills.itinerary import ItinerarySkill
 from services.skills.profile_capture import ProfileCaptureSkill
 from services.skills.rights_check import RightsCheckSkill
@@ -428,6 +428,47 @@ def test_s6_stale_citation_marks_stale():
     assert out["freshness_state"] == "stale"
 
 
+# --- G2-DA remediation: sub-day freshness aging on real timestamps (finding 9) ----
+
+def test_s6_yesterday_date_only_citation_is_stale_under_24h_policy():
+    """Day-granular aging treated yesterday as fresh; real aging must not."""
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    skill = VisaCheckSkill(web_intel=FakeWebIntel(retrieved=yesterday),
+                           max_age_hours=24)
+    out = _run(skill.run({"passport_country": "MM", "route": ["BKK", "SIN"]}))
+    assert out["freshness_state"] == "stale"
+
+
+class StampedWebIntel:
+    """Citations carrying a real sub-day fetched_at timestamp."""
+
+    def __init__(self, fetched_at):
+        self.fetched_at = fetched_at
+
+    async def fetch(self, query):
+        return {"provider": "ddg_lite", "degraded": False, "offline": False,
+                "answers": ["ok"],
+                "citations": [{"url": "https://iata.example",
+                               "title": "t",
+                               "retrieved_date": date.today().isoformat(),
+                               "fetched_at": self.fetched_at,
+                               "snippet_max280": "s"}]}
+
+
+def test_s6_freshness_honors_subday_fetched_at():
+    now = datetime.now(timezone.utc)
+    fresh_skill = VisaCheckSkill(
+        web_intel=StampedWebIntel((now - timedelta(hours=2)).isoformat()),
+        max_age_hours=24)
+    out = _run(fresh_skill.run({"passport_country": "MM", "route": ["BKK", "SIN"]}))
+    assert out["freshness_state"] == "fresh"     # 2h old < 24h policy
+    stale_skill = VisaCheckSkill(
+        web_intel=StampedWebIntel((now - timedelta(hours=25)).isoformat()),
+        max_age_hours=24)
+    out = _run(stale_skill.run({"passport_country": "MM", "route": ["BKK", "SIN"]}))
+    assert out["freshness_state"] == "stale"     # 25h old > 24h policy, same day
+
+
 def test_s6_baseline_latency_under_50ms():
     skill = VisaCheckSkill(web_intel=FakeWebIntel(degraded=True))
     start = time.perf_counter()
@@ -571,7 +612,7 @@ def test_s10_payload_never_carries_passport_number(monkeypatch):
 # --- S11 disruption_monitor ---------------------------------------------------------------------------
 
 def test_s11_arms_watch_and_simulated_hook_mounts_subgraph_within_2s():
-    ex = TripGraphExecutor(registry=[])
+    ex = TripGraphExecutor(registry=[], allow_unmanifested_skills=True)
     from services.trip_graph import NodeSpec
     from tests.test_trip_graph import EchoSkill
     ex.register_skill("echo", EchoSkill())
@@ -667,7 +708,9 @@ def _journey_executor(tmp_path):
     from services.skills.goal_intake import GoalIntakeSkill
     from services.trip_graph import NodeSpec  # noqa: F401
     atlas = FakeAtlas()
-    ex = TripGraphExecutor(registry=[])
+    # allow_unmanifested_skills=True: journey harness registers real skills
+    # against an empty test registry; production default stays fail-closed
+    ex = TripGraphExecutor(registry=[], allow_unmanifested_skills=True)
     ex.register_skill("goal_intake", GoalIntakeSkill(llm_chat=_no_llm))
     ex.register_skill("clarify_loop", ClarifyLoopSkill(ProfileStore(root=tmp_path)))
     ex.register_skill("flight_search", FlightSearchSkill(atlas=atlas))
@@ -748,3 +791,204 @@ def test_full_journey_stale_visa_blocks_booking_recoverably(tmp_path):
     assert failed.details["error_code"] == "visa_data_stale_or_unverified"
     assert failed.details["recoverable"] is True
     assert "create" not in atlas.calls  # never silently permitted
+
+
+# --- G2-DA remediation: per-trip idempotency AFTER safety gates (finding 1) ------
+
+class SequencedAtlas(FakeAtlas):
+    """Issues a DISTINCT PNR per create call so foreign-PNR replay is visible."""
+
+    def __init__(self):
+        super().__init__()
+        self._n = 0
+
+    async def create_booking_order(self, offer_id, passenger, **kwargs):
+        self._n += 1
+        self.calls.append("create")
+        return {"order_id": f"ORD-{self._n}", "pnr": f"PNR-{self._n}",
+                "status": "CONFIRMED", "offer_id": offer_id,
+                "booking_timestamp": "2026-08-26T12:00:00+00:00"}
+
+
+def test_flight_book_cross_trip_reuse_with_stale_visa_hits_gate_not_replay():
+    atlas = SequencedAtlas()
+    skill = FlightBookSkill(atlas=atlas)
+    _run(skill.run(_book_payload(),
+                   context={**_fresh_visa_ctx(), "trip_id": "trip-A"}))
+    stale = {"visa_check": {"freshness_state": "stale", "degraded": False,
+                            "baseline_only": False, "requirements": []},
+             "trip_id": "trip-B"}
+    with pytest.raises(SkillError) as ei:
+        _run(skill.run(_book_payload(), context=stale))
+    assert ei.value.code == "visa_data_stale_or_unverified"
+    assert atlas.calls.count("create") == 1  # trip B never replayed trip A's PNR
+
+
+def test_flight_book_cross_trip_reuse_books_own_pnr_not_foreign():
+    atlas = SequencedAtlas()
+    skill = FlightBookSkill(atlas=atlas)
+    first = _run(skill.run(_book_payload(),
+                           context={**_fresh_visa_ctx(), "trip_id": "trip-A"}))
+    second = _run(skill.run(_book_payload(),
+                            context={**_fresh_visa_ctx(), "trip_id": "trip-B"}))
+    assert first["pnr"] == "PNR-1"
+    assert second["pnr"] == "PNR-2"           # own booking, never trip A's PNR
+    assert second["idempotent_replay"] is False
+    assert atlas.calls.count("create") == 2
+
+
+def test_flight_book_same_trip_retry_still_idempotent():
+    atlas = SequencedAtlas()
+    skill = FlightBookSkill(atlas=atlas)
+    first = _run(skill.run(_book_payload(),
+                           context={**_fresh_visa_ctx(), "trip_id": "trip-A"}))
+    retry = _run(skill.run(_book_payload(),
+                           context={**_fresh_visa_ctx(), "trip_id": "trip-A"}))
+    assert retry["pnr"] == first["pnr"] == "PNR-1"
+    assert retry["idempotent_replay"] is True
+    assert atlas.calls.count("create") == 1
+
+
+# --- G2-DA remediation: unknown passport blocks booking (finding 5) --------------
+
+def test_visa_check_empty_passport_is_blocking_unknown():
+    skill = VisaCheckSkill(web_intel=FakeWebIntel())  # FRESH citations on purpose
+    out = _run(skill.run({"passport_country": "", "route": ["BKK", "SIN"]}))
+    assert out["passport_unknown"] is True
+    assert out["freshness_state"] == "unknown"  # freshness cannot rescue it
+
+
+def test_visa_check_unrecognized_passport_marks_unknown():
+    skill = VisaCheckSkill(web_intel=FakeWebIntel())
+    out = _run(skill.run({"passport_country": "XX", "route": ["BKK", "SIN"]}))
+    assert out["passport_unknown"] is True
+
+
+def test_unknown_passport_with_fresh_citations_never_books():
+    atlas = SequencedAtlas()
+    skill = FlightBookSkill(atlas=atlas)
+    visa = {"freshness_state": "fresh", "degraded": False, "baseline_only": False,
+            "passport_unknown": True, "requirements": []}
+    with pytest.raises(SkillError) as ei:
+        _run(skill.run(_book_payload(), context={"visa_check": visa,
+                                                 "trip_id": "t"}))
+    assert ei.value.code == "passport_unknown"
+    assert ei.value.recoverable is True
+    assert atlas.calls == []  # nothing verified, nothing booked
+
+
+# --- LEADER ADDENDUM: visa BLOCKED_RISK refuses booking, no override --------------
+
+def test_visa_check_blocked_route_returns_blocking_state_with_provenance():
+    skill = VisaCheckSkill(web_intel=FakeWebIntel())
+    out = _run(skill.run({"passport_country": "MM", "route": ["BKK", "FRA"]}))
+    assert out["visa_blocked"] is True
+    assert out["block_reasons"]           # block visible with reasons
+    assert out["citations"]               # provenance still attached
+
+
+def test_blocked_route_never_books_even_with_fresh_citations():
+    atlas = SequencedAtlas()
+    skill = FlightBookSkill(atlas=atlas)
+    visa = {"freshness_state": "fresh", "degraded": False, "baseline_only": False,
+            "passport_unknown": False, "visa_blocked": True,
+            "block_reasons": ["FRA BLOCKED_RISK: Schengen ATV"], "requirements": []}
+    with pytest.raises(SkillError) as ei:
+        _run(skill.run(_book_payload(), context={"visa_check": visa,
+                                                 "trip_id": "t"}))
+    assert ei.value.code == "visa_route_blocked"
+    assert ei.value.recoverable is False  # no user override of a hard block
+    assert atlas.calls == []
+
+
+def test_blocked_route_journey_reroutes_and_never_completes_booking(tmp_path):
+    """§3.1 replan edge: VisaCheck ✗ -> back to FlightSearch; booking never fires."""
+    ex, atlas = _journey_executor(tmp_path)
+    phrase = "Fly me from BKK to Frankfurt on September 28, 2026."
+    intent = TripIntent(
+        intent_id="i3", raw_text=phrase,
+        goal=TripGoal(goal_id="g3", raw_text=phrase, origin_city="BKK",
+                      dest_city="FRA",
+                      date_window={"start": "2026-09-28", "end": "2026-09-30"},
+                      passengers=1),
+        requested_services=RequestedServices(
+            flight_search="requested", flight_booking="requested",
+            visa_check="requested", hotel="not_requested",
+            activities="not_requested", local_transport="not_requested"),
+        scope_clarified=True)
+    plan = plan_trip(intent)
+    names = [n.name for n in plan.nodes]
+    assert "flight_book" in names  # the plan still offers the chain...
+    visa_node = next(n for n in plan.nodes if n.name == "visa_check")
+    assert any(e.to == "flight_search" for e in visa_node.edges)  # ...with replan edge
+    ex.start_trip("blocked-route", plan.nodes, context={
+        "raw_text": intent.raw_text, "user_id": "victor",
+        "profile": {"passport_country": "MM"},
+        "requested_services": intent.requested_services.model_dump(),
+    })
+    _run(ex.run("blocked-route"))
+    trip = ex.get("blocked-route")
+    trace_names = [n.name for n in trip.trace]
+    assert trace_names.count("flight_search") >= 2   # reroute back to search visible
+    assert "flight_book" not in trace_names           # booking node never executed
+    assert not trip.pending_approvals                 # no approval offered on block
+    assert trip.status == "failed"                    # block visible, not "completed"
+    assert trip.context.get("visa_check", {}).get("visa_blocked") is True
+    assert "create" not in atlas.calls
+
+
+# --- G2-DA remediation: sanitize recurses into lists (finding 6) ------------------
+
+def test_sanitize_payload_recurses_into_lists_and_tuples():
+    safe = sanitize_payload({
+        "pnr": "ABC123",
+        "passengers": [{"passport_no": "MD1234567", "name": "Victor"},
+                       {"passport_number": "MD7654321", "name": "Vera"}],
+        "docs": ({"national_id": "N-42"}, "plain"),
+        "deep": {"rows": [{"nested": [{"document_number": "D-1"}]}]},
+    })
+    dumped = json.dumps(safe, default=str)
+    for secret in ("MD1234567", "MD7654321", "N-42", "D-1"):
+        assert secret not in dumped
+    assert safe["passengers"][0]["name"] == "Victor"  # innocent fields survive
+    assert safe["pnr"] == "ABC123"
+
+
+# --- G2-DA remediation: per-trip disruption watches (finding 7) -------------------
+
+def test_s11_arming_trip_b_does_not_overwrite_trip_a_watch():
+    ex = TripGraphExecutor(registry=[], allow_unmanifested_skills=True)
+    from services.trip_graph import NodeSpec
+    from tests.test_trip_graph import EchoSkill
+    ex.register_skill("echo", EchoSkill())
+    for tid in ("tripA", "tripB"):
+        ex.start_trip(tid, [NodeSpec(name="n", skill_ref="echo", edges=[])], {})
+        _run(ex.run(tid))
+    skill = DisruptionMonitorSkill(trip_registry=ex)
+    _run(skill.run({"pnr": "P1", "flight_ids": ["f1"], "trip_id": "tripA"}))
+    _run(skill.run({"pnr": "P2", "flight_ids": ["f2"], "trip_id": "tripB"}))
+    before_a = len(ex.get("tripA").trace)
+    before_b = len(ex.get("tripB").trace)
+    out = _run(skill.simulate_disruption({"status": "CANCELLED"}, trip_id="tripA"))
+    assert out["mounted"] is True
+    assert out["trip_id"] == "tripA"
+    assert len(ex.get("tripA").trace) == before_a + 1   # routed to A...
+    assert len(ex.get("tripB").trace) == before_b       # ...never to B
+
+
+def test_s11_simulate_disruption_validates_target_trip():
+    ex = TripGraphExecutor(registry=[], allow_unmanifested_skills=True)
+    from services.trip_graph import NodeSpec
+    from tests.test_trip_graph import EchoSkill
+    ex.register_skill("echo", EchoSkill())
+    ex.start_trip("tripA", [NodeSpec(name="n", skill_ref="echo", edges=[])], {})
+    _run(ex.run("tripA"))
+    skill = DisruptionMonitorSkill(trip_registry=ex)
+    _run(skill.run({"pnr": "P1", "flight_ids": ["f1"], "trip_id": "tripA"}))
+    ghost = _run(skill.simulate_disruption({"status": "DELAYED"}, trip_id="ghost"))
+    assert ghost["mounted"] is False            # unknown target refused
+    _run(skill.run({"pnr": "P2", "flight_ids": ["f2"], "trip_id": "tripA"}))
+    _run(skill.run({"pnr": "P3", "flight_ids": ["f3"], "trip_id": "tripA"}))
+    # still a single trip armed -> implicit targeting remains deterministic
+    out = _run(skill.simulate_disruption({"status": "CANCELLED"}))
+    assert out["mounted"] is True and out["trip_id"] == "tripA"

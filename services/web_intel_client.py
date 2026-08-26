@@ -13,7 +13,7 @@ null result ({degraded, offline}) — never an exception to the caller.
 """
 
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 PROVIDER_CHAIN = ("tavily", "serper", "ddg_lite", "static_fallback")
@@ -24,8 +24,34 @@ KEYLESS_PROVIDERS = {"ddg_lite", "static_fallback"}
 DDGFetcher = Callable[[str], Awaitable[Optional[Dict[str, Any]]]]
 
 
-def _tolerant_citations(raw: Any) -> List[Dict[str, Any]]:
-    """Normalize hostile/messy citation payloads; drop anything unusable."""
+def _valid_citation_date(raw: Any) -> Optional[str]:
+    """An ISO-parseable citation date string, or None. Dates are never invented:
+    a missing/unparseable provenance date is a missing fact, not today()."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        date.fromisoformat(raw.strip()[:10])
+    except ValueError:
+        return None
+    return raw.strip()
+
+
+def _has_source_url(item: Any) -> bool:
+    return (isinstance(item, dict) and isinstance(item.get("url"), str)
+            and bool(item.get("url").strip()))
+
+
+def _tolerant_citations(raw: Any,
+                        fetched_at: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Normalize hostile/messy citation payloads; drop anything unusable.
+
+    HONESTY RULE (G2-DA fix): citations without a parseable retrieved_date are
+    DROPPED — stamping date.today() onto them laundered missing provenance
+    into "fresh" and let stale-gated bookings through. If no dated citation
+    survives, downstream freshness resolves to "unknown" and the booking gate
+    refuses. fetched_at (real fetch timestamp) is attached when known so
+    freshness can age sub-day precision against a real clock.
+    """
     out: List[Dict[str, Any]] = []
     if not isinstance(raw, list):
         return out
@@ -35,20 +61,23 @@ def _tolerant_citations(raw: Any) -> List[Dict[str, Any]]:
         url = item.get("url")
         if not isinstance(url, str) or not url.strip():
             continue  # citation without a source link is worthless — drop, don't invent
+        retrieved = _valid_citation_date(item.get("retrieved_date"))
+        if retrieved is None:
+            continue  # undated citation: drop, never backdate (G2-DA fix)
         snippet = item.get("snippet") or item.get("snippet_max280") or ""
         if not isinstance(snippet, str):
             snippet = ""
-        retrieved = item.get("retrieved_date")
-        if not isinstance(retrieved, str) or not retrieved:
-            retrieved = date.today().isoformat()
-        out.append(
-            {
-                "url": url.strip(),
-                "title": item.get("title") if isinstance(item.get("title"), str) else "",
-                "retrieved_date": retrieved,
-                "snippet_max280": snippet[:280],
-            }
-        )
+        entry: Dict[str, Any] = {
+            "url": url.strip(),
+            "title": item.get("title") if isinstance(item.get("title"), str) else "",
+            "retrieved_date": retrieved,
+            "snippet_max280": snippet[:280],
+        }
+        stamp = item.get("fetched_at")
+        stamp = stamp if isinstance(stamp, str) and stamp else fetched_at
+        if stamp:
+            entry["fetched_at"] = stamp
+        out.append(entry)
     return out
 
 
@@ -117,12 +146,21 @@ class WebIntelClient:
         raw = await self._ddg_fetcher(query)
         if not isinstance(raw, dict):
             raise ValueError("ddg_lite returned non-mapping envelope")
+        fetched_at = datetime.now(timezone.utc).isoformat()  # real clock
+        raw_citations = raw.get("citations")
+        citations = _tolerant_citations(raw_citations, fetched_at=fetched_at)
+        undated_dropped = sum(
+            1 for item in (raw_citations if isinstance(raw_citations, list) else [])
+            if _has_source_url(item)
+            and _valid_citation_date(item.get("retrieved_date")) is None)
         return {
             "provider": "ddg_lite",
             "degraded": False,
             "offline": False,
+            "fetched_at": fetched_at,
+            "undated_citations_dropped": undated_dropped,
             "answers": _tolerant_answers(raw.get("answers")),
-            "citations": _tolerant_citations(raw.get("citations")),
+            "citations": citations,
         }
 
     def _static_fallback(self, offline: bool) -> Dict[str, Any]:
@@ -164,5 +202,8 @@ class WebIntelClient:
                 continue
         if result is None:
             result = self._static_fallback(offline=offline)
+        # honest aging: the envelope carries the REAL fetch timestamp; cached
+        # hits keep the original stamp so age never resets on cache reads
+        result.setdefault("fetched_at", datetime.now(timezone.utc).isoformat())
         self._cache_put(query, result)
         return result
