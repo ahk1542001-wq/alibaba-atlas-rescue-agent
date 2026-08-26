@@ -24,5 +24,9 @@ class Settings(BaseModel):
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "8050"))
+    # TravelCare v2 optional keys (empty default; active only when set in .env)
+    tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
+    serper_api_key: str = os.getenv("SERPER_API_KEY", "")
+    amadeus_api_key: str = os.getenv("AMADEUS_API_KEY", "")
 
 settings = Settings()

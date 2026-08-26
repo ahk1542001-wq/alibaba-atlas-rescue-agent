@@ -1,0 +1,27 @@
+{
+  "entities": [
+    {"id": "PassportMM", "type": "Passport", "props": {"country": "MM", "label": "Myanmar passport"}},
+    {"id": "AirportRGN", "type": "Airport", "props": {"iata": "RGN", "city": "Yangon", "country": "MM"}},
+    {"id": "AirportBKK", "type": "Airport", "props": {"iata": "BKK", "city": "Bangkok", "country": "TH"}},
+    {"id": "AirportSIN", "type": "Airport", "props": {"iata": "SIN", "city": "Singapore", "country": "SG"}},
+    {"id": "AirportFRA", "type": "Airport", "props": {"iata": "FRA", "city": "Frankfurt", "country": "DE"}},
+    {"id": "CountrySG", "type": "Country", "props": {"code": "SG", "name": "Singapore"}},
+    {"id": "CountryMM", "type": "Country", "props": {"code": "MM", "name": "Myanmar"}},
+    {"id": "CountryTH", "type": "Country", "props": {"code": "TH", "name": "Thailand"}},
+    {"id": "CountryDE", "type": "Country", "props": {"code": "DE", "name": "Germany"}},
+    {"id": "EventWiT2026", "type": "Event", "props": {"name": "WiT Singapore 2026", "venue": "Marina Bay Sands", "dates": "Sep29-30", "country": "SG"}},
+    {"id": "RouteBKK-SIN", "type": "Route", "props": {"origin": "BKK", "destination": "SIN"}},
+    {"id": "VisaRuleMM-SG", "type": "VisaRule", "props": {"passport": "MM", "destination": "SG", "rule": "visa-free", "duration_days": 30, "as_of": "2026-08-26", "source": "https://www.iatatravelcentre.com/ (placeholder — refresh via WebIntel)"}}
+  ],
+  "edges": [
+    {"src": "PassportMM", "rel": "issued_by", "dst": "CountryMM", "props": {}},
+    {"src": "AirportRGN", "rel": "located_in", "dst": "CountryMM", "props": {}},
+    {"src": "AirportBKK", "rel": "located_in", "dst": "CountryTH", "props": {}},
+    {"src": "AirportSIN", "rel": "located_in", "dst": "CountrySG", "props": {}},
+    {"src": "AirportFRA", "rel": "located_in", "dst": "CountryDE", "props": {}},
+    {"src": "RouteBKK-SIN", "rel": "departs_from", "dst": "AirportBKK", "props": {}},
+    {"src": "RouteBKK-SIN", "rel": "arrives_at", "dst": "AirportSIN", "props": {}},
+    {"src": "EventWiT2026", "rel": "held_at", "dst": "CountrySG", "props": {"venue": "Marina Bay Sands"}},
+    {"src": "VisaRuleMM-SG", "rel": "governs", "dst": "CountrySG", "props": {"for_passport": "MM"}}
+  ]
+}

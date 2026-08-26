@@ -1,0 +1,12 @@
+timestamp	area	decision	reason
+2026-08-26T14:30:00Z	layout	AUTO- routes placed in routers/v1/ per repo convention instead of package routes/ directory	16 rule c: stay inside existing repo conventions; main.py already registers every router from routers/v1
+2026-08-26T14:30:00Z	config	AUTO- env var names preserved as existing ATRIP_*/ALIBABA_MODEL_API_KEY	package 10 mandates preserving existing env names; no rename churn
+2026-08-26T14:30:00Z	models	AUTO- GraphNodeStateV2 appended to models/schemas.py (single models convention)	repo keeps one schemas module; avoid scattering pydantic models across services
+2026-08-26T14:30:00Z	skills	AUTO- pyyaml used for SKILL.md frontmatter parsing	pyyaml is on the dependency allowlist; frontmatter is yaml by standard
+2026-08-26T14:30:00Z	frontend	AUTO- frontend trip logic in new static/trip.js with app.js untouched	subtract-before-add; keep the proven rescue UI stable while trip UI layers beside it
+2026-08-26T14:30:00Z	services	AUTO- guardian called via asyncio.to_thread wrapper with guardian.py unmodified	guardian.py is frozen-adjacent KEEP inventory; wrapping preserves sync code without edits
+2026-08-26T14:30:00Z	tests	AUTO- G3 integration tests use httpx not requests	httpx is on the allowlist and already a declared dependency; requests only remains for legacy paths
+2026-08-26T14:30:00Z	tests	AUTO- tests/e2e_full_journey.py kept as regression canary (frozen)	existing tests must never be modified; it pins the legacy journey end to end
+2026-08-26T14:30:00Z	ci	AUTO- CI repaired at G6 to run the tests/ suite	CI work belongs to the cleanup/report gate so earlier gates stay focused
+2026-08-26T14:30:00Z	mock-data	AUTO- G7 mock_victor.json placeholders get graceful skip plus honest limitation while owner absent	owner is away; placeholder structure ships now, real values arrive with owner at final QA pass
+2026-08-26T14:32:00Z	architecture	intent-first RequestedServices routing + bounded ResearchCoordinator + no hardcoded profile values; victor-demo profile is opt-in fixture only	owner correction mid-build, applied before G2

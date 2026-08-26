@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
+from datetime import date
 
 class FlightOffer(BaseModel):
     offer_id: str
@@ -156,3 +157,164 @@ class AgentTelemetry(BaseModel):
     average_reasoning_tokens: int
     inference_latency_ms: float
     framework: str
+
+
+# ---------------------------------------------------------------------------
+# TravelCare v2 contracts (MASTER_BUILD_PACKAGE.md §5) — append-only block.
+# Existing models above stay untouched.
+# ---------------------------------------------------------------------------
+
+def mask_passport(passport_no: str) -> str:
+    """Mask a passport number keeping first 2 + last 2 characters.
+
+    mask_passport("MD1234567") -> "MD*****67". Inputs of 4 chars or fewer
+    are returned unchanged (nothing meaningful left to mask).
+    """
+    if len(passport_no) <= 4:
+        return passport_no
+    return f"{passport_no[:2]}{'*' * (len(passport_no) - 4)}{passport_no[-2:]}"
+
+
+class DateWindow(BaseModel):
+    start: date
+    end: date
+
+
+class TripGoal(BaseModel):
+    goal_id: str
+    raw_text: str
+    origin_city: Optional[str] = None
+    dest_city: Optional[str] = None
+    date_window: Optional[DateWindow] = None
+    passengers: int = Field(1, ge=1)
+    budget_hint: Optional[str] = None
+    purpose: Optional[str] = None
+
+
+class FlightEndpoint(BaseModel):
+    airport: str
+    time: str
+
+
+class Money(BaseModel):
+    amount: float
+    currency: str
+
+
+class FlightOption(BaseModel):
+    id: str
+    carrier: str
+    flight_no: str
+    dep: FlightEndpoint
+    arr: FlightEndpoint
+    duration_min: int
+    price: Money
+    sandbox_provenance: Literal[True] = True
+
+
+class BookingRecord(BaseModel):
+    pnr: str
+    option: FlightOption
+    status: str
+    booked_at: str
+    monitor_armed: bool
+
+
+class VisaSource(BaseModel):
+    url: str
+    retrieved_date: date
+
+
+class VisaRequirement(BaseModel):
+    country: str
+    kind: Literal["entry", "transit"]
+    name: str
+    risk_level: Literal["info", "warn", "block"]
+    source: VisaSource
+    as_of: date
+
+
+class WebIntelCitation(BaseModel):
+    url: str
+    title: str
+    retrieved_date: date
+    snippet_max280: str = Field(..., max_length=280)
+
+
+class ProfileIdentity(BaseModel):
+    """Identity block — every field optional so new profiles start empty."""
+    passport_country: Optional[str] = None
+    passport_no_masked: Optional[str] = None
+    expiry: Optional[date] = None
+    home_city: Optional[str] = None
+
+
+class ProfilePrefs(BaseModel):
+    cabin: Optional[str] = None
+    airlines_like: List[str] = []
+    diet: Optional[str] = None
+    budget_range: Optional[str] = None
+
+
+class ProfileFieldValue(BaseModel):
+    value: Any
+    source: Literal["user", "ai_inferred"]
+    updated_at: str
+
+
+class ProfileConsent(BaseModel):
+    store_local: bool = False
+
+
+class Profile(BaseModel):
+    user_id: str
+    identity: ProfileIdentity = ProfileIdentity()
+    prefs: ProfilePrefs = ProfilePrefs()
+    fields: Dict[str, ProfileFieldValue] = {}
+    consent: ProfileConsent = ProfileConsent()
+
+
+class ConfirmationChip(BaseModel):
+    field: str
+    proposed_value: Any
+    message: str
+    state: Literal["pending", "confirmed", "rejected"] = "pending"
+
+
+class ApprovalRequest(BaseModel):
+    approval_id: str
+    node_name: str
+    options: List[Any] = []
+    created_at: str
+    resolved_value: Optional[Any] = None
+
+
+from services.state_graph import GraphNodeState  # noqa: E402  (extends legacy model)
+
+
+class GraphNodeStateV2(GraphNodeState):
+    skill_ref: str
+    citations: List[WebIntelCitation] = []
+
+
+# --- Intent-first service scoping (owner correction, pre-G2) ---------------
+
+ServiceScope = Literal["requested", "not_requested", "unknown"]
+
+
+class RequestedServices(BaseModel):
+    """Per-service scope; every service defaults to unknown (never pre-requested)."""
+    flight_search: ServiceScope = "unknown"
+    flight_booking: ServiceScope = "unknown"
+    visa_check: ServiceScope = "unknown"
+    hotel: ServiceScope = "unknown"
+    activities: ServiceScope = "unknown"
+    local_transport: ServiceScope = "unknown"
+
+
+class TripIntent(BaseModel):
+    intent_id: str
+    raw_text: str
+    goal: TripGoal
+    requested_services: RequestedServices = RequestedServices()
+    scope_clarified: bool = False
