@@ -7,8 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from routers.v1 import flights, disruptions, bookings, concierge, claims, telemetry, hotels, radar
+from routers.v1 import trip, profile, skills
+from routers.v1.profile import TripApiError
 from services.radar import get_radar
 from services import llm
+from services.trip_graph import GraphError
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,6 +55,35 @@ app.include_router(claims.router)
 app.include_router(telemetry.router)
 app.include_router(hotels.router)
 app.include_router(radar.router)
+app.include_router(trip.router)
+app.include_router(profile.router)
+app.include_router(skills.router)
+
+
+# --- shared §6 error contract for the trip/profile/skills routes ----------------
+# {error:{code,message,recoverable}} — recoverable errors carry an actionable
+# hint. Scoped to the v2 exception types: existing routes never raise these.
+
+@app.exception_handler(TripApiError)
+async def trip_api_error_handler(request, exc: TripApiError):
+    from fastapi.responses import JSONResponse
+    error = {"code": exc.code, "message": exc.message,
+             "recoverable": exc.recoverable}
+    if exc.hint:
+        error["hint"] = exc.hint
+    return JSONResponse(status_code=exc.status_code,
+                        content={"error": error})
+
+
+@app.exception_handler(GraphError)
+async def graph_error_handler(request, exc: GraphError):
+    from fastapi.responses import JSONResponse
+    code_status = {"unknown_approval": 404, "already_resolved": 409,
+                   "approval_expired": 410}
+    status = code_status.get(exc.code, 422 if exc.recoverable else 500)
+    return JSONResponse(status_code=status, content={"error": {
+        "code": exc.code, "message": exc.message,
+        "recoverable": exc.recoverable}})
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():

@@ -62,9 +62,12 @@ and G1-defect regression vectors folded into test_profile_store /
 test_skills_manifest).
 
 ### G3 Integration Gate
-- [ ] generic journey script (httpx): start→clarify(stub LLM)→search(live sandbox)→visa(baseline)→approve→book→monitor arm
-- [ ] E2E happy path + visa-block reroute + disruption path
-- Evidence: journey script output; PNR-shaped object provenance-flagged sandbox.
+- [x] generic journey runs over the §6 HTTP API: start→clarify(stub LLM)→search(live sandbox)→visa(baseline+fresh citations)→approve→book→monitor arm (`tests/test_e2e_trip_journey.py::test_happy_full_trip_no_personal_data_live_sandbox`)
+- [x] E2E happy path + visa-block reroute + disruption path + stale-visa refusal + ambiguous-scope 3-choice pause + flight-only scoping
+- [x] trip/profile/skills routers registered in `main.py` under the shared §6 error contract `{error:{code,message,recoverable,hint}}`
+- [x] adversarial mappings: unknown trip/approval → 404, already_resolved → 409, approval_expired → 410 recoverable; concurrent approvals → single winner; provider failures degrade, never fabricate
+- [x] `data/mock_hotels_sg.json` verified (valid JSON, 22 hotels + 12 activities, sourced entries) and committed with the gate
+- Evidence: G3 gate commit pytest output below; PNR-shaped object provenance-flagged sandbox; live Atlas CLI offers asserted non-canned.
 
 ### G4 UI Gate
 - [ ] Playwright flows B1–B6 green; `data-testid` on interactive elements
@@ -139,6 +142,11 @@ Fresh evidence is captured per gate commit; pointers below stay durable.
 | G1 DA-review defect regressions (masking bypass, short-passport leak, loader pairing, dup names, user_id traversal, capability drift, YAML list tools) | `services/profile_store.py`, `models/schemas.py`, `services/skills/__init__.py` | `tests/test_profile_store.py`, `tests/test_skills_manifest.py` | G2 gate commit pytest output |
 | G2 DA-review remediation (per-trip idempotency after gates, citation date honesty, run() status guards, fail-closed capabilities, unknown-passport + BLOCKED_RISK booking refusal, list-aware sanitization, per-trip disruption watches, internal-error FAILED records, real-timestamp freshness, approval expiry, §3.1 blocked-route replan edge) | `services/skills/flight_book.py`, `services/web_intel_client.py`, `services/trip_graph.py`, `services/skills/visa_check.py`, `services/skills/guardian_push.py`, `services/skills/disruption_monitor.py`, `models/schemas.py` (ApprovalRequest only) | `tests/test_trip_graph.py`, `tests/test_skills_behavior.py`, `tests/test_web_intel.py` G2-DA sections | G2-DA remediation pytest output below |
 | §12 demo fixture placeholder | `data/mock_victor.json` (gitignored) | `[mockdata]`-tagged suites at G7; graceful skip while owner absent | G7 report section |
+| §6 trip API (start/state/stream/approvals/simulate-disruption) + orchestration glue | `routers/v1/trip.py` | `tests/test_e2e_trip_journey.py` (happy, flight-only, scope pause, visa-block reroute, stale-visa refusal, disruption, adversarial ids, concurrency, provider failure) | G3 gate commit pytest output |
+| §6 profile API (masked GET, source-enforced PUT, DELETE, consent) | `routers/v1/profile.py` | `tests/test_e2e_trip_journey.py::test_profile_api_contract_masks_and_enforces_source` | G3 gate commit pytest output |
+| §6/F12 skills manifest API | `routers/v1/skills.py` | `tests/test_e2e_trip_journey.py::test_skills_manifest_listing` | G3 gate commit pytest output |
+| §6 shared error contract handlers (TripApiError / GraphError) | `main.py` (registration + 2 handlers only) | `tests/test_e2e_trip_journey.py` error-shape assertions | G3 gate commit pytest output |
+| §15.1 researched Singapore hotels/activities dataset | `data/mock_hotels_sg.json` | `tests/test_skills_behavior.py` S8 itinerary cases + G3 verification (valid JSON, 22 hotels + 12 activities, sourced entries) | G3 gate commit |
 | §0/§9.7 gate process artifacts | `PLAN.md`, `DECISIONS.tsv`, `BLOCKERS.md` | `tests/test_docs_integrity.py` conventions (durable-docs hygiene) | gate commit pytest output |
 
 ## G2 Devil's Advocate Remediation (against gate commit 2a3715a)
@@ -156,3 +164,50 @@ before (gate commit 2a3715a):  145 passed in 0.49s
 red phase (27 new regressions): 27 failed, 75 passed  (in the 3 touched files)
 after fixes:                    173 passed in 0.43s
 ```
+
+## G3 Integration Gate (trip/profile/skills APIs)
+
+Scope (per leader directive): routers/, main.py registration,
+`tests/test_e2e_trip_journey.py`, and committing `data/mock_hotels_sg.json`.
+Frozen/G2 services are imported, never edited; the orchestrator is built
+against the post-remediation executor contract (462fab1).
+
+Delivered:
+
+- `routers/v1/trip.py` — §6 trip endpoints + orchestration glue
+  (stage-1 goal_intake/clarify_loop run skill-direct and recorded into the
+  trace; the stripped `plan_trip` node list mounts as the graph; ambiguous
+  scope pauses with exactly three choices before any irreversible work;
+  defensive GraphError mapping by `code`; `_run_guarded` degrades provider
+  failures into recorded recoverable FAILED states).
+- `routers/v1/profile.py` — masked GET, PUT with `source` ENFORCED to "user"
+  server-side, DELETE field, consent gate.
+- `routers/v1/skills.py` — live manifest listing from the boot registry.
+- `main.py` — registers the three routers and the shared §6 error contract
+  handlers (`TripApiError`, `GraphError`); existing routes/lifespan untouched.
+- `data/mock_hotels_sg.json` — verified valid JSON: 22 hotels + 12
+  activities, every item carries name/type/price_range_sgd/source_url/
+  researched_as_of/researched:true (7 activities carry explicit
+  `price_range_sgd: null` — the sources gave no price; omitted honestly per
+  §15.1, see BLOCKERS.md).
+- `tests/test_e2e_trip_journey.py` — 15 E2E tests: happy full trip on the
+  LIVE Atlas sandbox (provenance asserted non-canned; unreachable-sandbox
+  fallback records BLOCKERS.md honestly instead of faking), flight-only
+  scoping, ambiguous 3-choice pause, visa-block reroute (block surfaced,
+  reroute visible, booking structurally impossible — no override),
+  stale/offline visa refusal (recoverable), disruption simulation
+  (?allow_sim=1, trip_id validated), visa baseline ≤50ms, adversarial
+  ids (404/409/410-recoverable), concurrent single-winner approvals,
+  provider-failure degrade, profile privacy contract, skills manifest.
+
+Gate evidence (`.venv/bin/python -m pytest tests/ -q`):
+
+```
+before (remediation commit 462fab1): 173 passed in 0.47s
+new E2E suite alone:                 15 passed in 31.21s
+after (full suite):                  188 passed in 31.71s
+```
+
+Live-sandbox note: the atlas-flight CLI probe returned real offers for
+BKK→SIN at gate time; happy-path option ids were asserted disjoint from the
+curated fallback set.

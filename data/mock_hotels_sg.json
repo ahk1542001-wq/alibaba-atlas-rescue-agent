@@ -1,0 +1,481 @@
+{
+  "metadata": {
+    "dataset": "TravelCare AI v2 researched-mock Singapore inventory (hotels + activities around Marina Bay Sands)",
+    "protocol": "docs/MASTER_BUILD_PACKAGE.md section 15.1 RESEARCHED-MOCK generation protocol",
+    "generated_as_of": "2026-08-26",
+    "queries": [
+      {
+        "query": "hotels near Marina Bay Sands Singapore",
+        "retrieved_date": "2026-08-26"
+      },
+      {
+        "query": "budget hotels Singapore Clarke Quay prices per night",
+        "retrieved_date": "2026-08-26"
+      },
+      {
+        "query": "Singapore hotel average price September",
+        "retrieved_date": "2026-08-26"
+      },
+      {
+        "query": "Marina Bay Sands nearby attractions walking distance",
+        "retrieved_date": "2026-08-26"
+      },
+      {
+        "query": "USD to SGD exchange rate today",
+        "retrieved_date": "2026-08-26",
+        "note": "enrichment query: KAYAK prices were observed in USD; Xe mid-market rate 1 USD = 1.27 SGD (S$1.2713) used for approximate conversion, source https://www.xe.com/currencyconverter/convert/?Amount=1&From=USD&To=SGD"
+      }
+    ],
+    "sources_fetched": [
+      "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "https://www.kayak.com/Singapore-Hotels_Clarke-Quay.L8028.20828.hotel.ksp",
+      "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "https://www.mysingaporestay.com/after-peak-before-festive-why-september-is-singapores-smartest-hotel-booking-window"
+    ],
+    "research_log": [
+      "2026-08-26 TripAdvisor hotels-near-MBS page returned HTTP 403 on fetch; its search snippet still supplied hotel name candidates (The Fullerton Hotel Singapore, The Fullerton Bay Hotel Singapore, PARKROYAL COLLECTION Marina Bay) which were then re-verified with prices/distances on the KAYAK MBS landmark page.",
+      "2026-08-26 Agoda Singapore country page fetch returned empty content; Agoda search-snippet averages (USD 150 avg 4-star, USD 335 avg 5-star) were NOT used for any entry.",
+      "2026-08-26 Star ratings: only Marina Bay Sands stars=5 is directly sourced (marinabaysands.com official title 'Iconic Luxury 5-star Hotel'). All other star ratings were omitted because observed pages only gave review scores, not official star classes. KAYAK category buckets ('2 stars and below', '4 stars and above') were recorded in notes but not converted to numeric stars.",
+      "2026-08-26 Prices: KAYAK figures are 'from' prices for Sep 2-9 observed in USD and converted to SGD at 1.27 (Xe, 2026-08-26). Where only one price point was observed, price_range_sgd has min=max. Only Marina Bay Sands has a real range ($786 and $1047+ both observed). Free attractions carry [0,0] because their sources state 'FREE' or 'no admission charge'. Activity ticket prices were omitted entirely because no observed page stated them.",
+      "2026-08-26 Distances: hotel distances were observed on KAYAK in miles from Marina Bay Sands and converted to km (x1.609), rounded to 0.1. Budget hotels listed only in KAYAK popularity tables (Wink @ Mosque Street, Hotel 81 Chinatown, Butternut Tree Hotel, Swissotel The Stamford) and all activities carry rough geographic estimates, labeled approximate by the field name.",
+      "2026-08-26 Dropped candidates (lacking observed sources): The Fullerton Bay Hotel Singapore, Ascott Raffles Place, Mandarin Oriental Singapore, Royal Plaza On Scotts, YOTEL Singapore, One Farrer Hotel, 21 Carpenter, Hilton Garden Inn details from MakeMyTrip INR prices, Traveloka USD 21.66 Clarke Quay figure (no hotel name attached), HotelsCombined $50/$240 Clarke Quay averages (area-level only), Oxford Hotel and Met A Space Pod (price without verifiable distance), Spectra/SkyPark/Gardens admission prices, Singapore Flyer ticket price, River Cruise ticket price. September pricing context retained in metadata only: KAYAK.sg avg double room S$435/night; TripAdvisor Sep-Nov high-season avg $276 / low-season $207; STB data via Reddit: S$283.47/night in Sep 2022."
+    ],
+    "september_price_context": {
+      "kayak_sg_avg_double_room_sgd": 435,
+      "kayak_sg_source_url": "https://www.kayak.sg/Singapore-Hotels.20828.hotel.ksp",
+      "tripadvisor_sep_nov_high_season_avg_usd": 276,
+      "tripadvisor_sep_nov_low_season_avg_usd": 207,
+      "tripadvisor_source_url": "https://www.tripadvisor.com/Hotels-g294265-Singapore-Hotels.html",
+      "stb_sep_2022_avg_room_rate_sgd": 283.47,
+      "stb_source_url": "https://www.reddit.com/r/singapore/comments/zhm4n7/average_hotel_room_rates_in_singapore_hit_14year/",
+      "qualitative": "September is a shoulder month: average rates sit below October Grand Prix peaks, especially midweek and early September (mysingaporestay.com, retrieved 2026-08-26)",
+      "retrieved_date": "2026-08-26"
+    },
+    "caveats": "Researched-mock data. Prices are observed 'from' rates converted approximately to SGD and fluctuate daily; distances are approximations. Live providers plug into the same interface (MASTER_BUILD_PACKAGE.md section 15.2)."
+  },
+  "items": [
+    {
+      "name": "Marina Bay Sands",
+      "type": "hotel",
+      "price_range_sgd": [
+        998,
+        1330
+      ],
+      "stars": 5,
+      "distance_to_mbs_km_approx": 0.2,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "stars_source_url": "https://www.marinabaysands.com/",
+      "price_notes": "USD 786/night (most popular) and USD 1047+ (Sep 2-9 listing) observed on KAYAK, converted at 1.27",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "The Fullerton Hotel Singapore",
+      "type": "hotel",
+      "price_range_sgd": [
+        573,
+        573
+      ],
+      "distance_to_mbs_km_approx": 0.8,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 451+ observed for Sep 2-9; 0.5 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "PARKROYAL COLLECTION Marina Bay, Singapore",
+      "type": "hotel",
+      "price_range_sgd": [
+        456,
+        456
+      ],
+      "distance_to_mbs_km_approx": 1.0,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 359+ observed for Sep 2-9; 0.6 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Pan Pacific Singapore",
+      "type": "hotel",
+      "price_range_sgd": [
+        502,
+        502
+      ],
+      "distance_to_mbs_km_approx": 1.0,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 395+ observed for Sep 2-9; 0.6 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Conrad Singapore Marina Bay",
+      "type": "hotel",
+      "price_range_sgd": [
+        497,
+        497
+      ],
+      "distance_to_mbs_km_approx": 1.1,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 391+ observed for Sep 2-9; 0.7 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Andaz Singapore - a concept by Hyatt",
+      "type": "hotel",
+      "price_range_sgd": [
+        434,
+        434
+      ],
+      "distance_to_mbs_km_approx": 1.8,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 342+ observed for Sep 2-9; 1.1 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Wyndham Singapore Hotel",
+      "type": "hotel",
+      "price_range_sgd": [
+        297,
+        297
+      ],
+      "distance_to_mbs_km_approx": 1.4,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 234+ observed for Sep 2-9; 0.9 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Grand Park City Hall",
+      "type": "hotel",
+      "price_range_sgd": [
+        302,
+        302
+      ],
+      "distance_to_mbs_km_approx": 1.4,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 238+ observed for Sep 2-9; 0.9 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Carlton Hotel Singapore, WorldHotels Elite",
+      "type": "hotel",
+      "price_range_sgd": [
+        290,
+        290
+      ],
+      "distance_to_mbs_km_approx": 1.6,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 228+ observed for Sep 2-9; 1.0 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Paradox Singapore",
+      "type": "hotel",
+      "price_range_sgd": [
+        283,
+        283
+      ],
+      "distance_to_mbs_km_approx": 1.6,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 223+ observed for Sep 2-9; 1.0 mi from MBS observed; property page slug indicates former Swissotel Merchant Court",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Naumi Hotel Singapore",
+      "type": "hotel",
+      "price_range_sgd": [
+        279,
+        279
+      ],
+      "distance_to_mbs_km_approx": 1.4,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 220+ observed for Sep 2-9; 0.9 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Holiday Inn Express Singapore Clarke Quay By IHG",
+      "type": "hotel",
+      "price_range_sgd": [
+        263,
+        263
+      ],
+      "distance_to_mbs_km_approx": 1.9,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Clarke-Quay.L8028.20828.hotel.ksp",
+      "price_notes": "USD 207+ observed for Sep 2-9; 1.2 mi from MBS observed on KAYAK MBS page; 0.2 mi from Clarke Quay observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Intercontinental Hotels Singapore Robertson Quay By IHG",
+      "type": "hotel",
+      "price_range_sgd": [
+        442,
+        442
+      ],
+      "distance_to_mbs_km_approx": 2.4,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 348+ observed for Sep 2-9; 1.5 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Hilton Garden Inn Singapore Serangoon",
+      "type": "hotel",
+      "price_range_sgd": [
+        225,
+        225
+      ],
+      "distance_to_mbs_km_approx": 2.9,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 177+ observed for Sep 2-9; 1.8 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Mercure Icon Singapore City Centre",
+      "type": "hotel",
+      "price_range_sgd": [
+        221,
+        221
+      ],
+      "distance_to_mbs_km_approx": 1.4,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 174+ observed for Sep 2-9; 0.9 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "V Hotel Lavender",
+      "type": "hotel",
+      "price_range_sgd": [
+        160,
+        160
+      ],
+      "distance_to_mbs_km_approx": 2.7,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 126+ observed for Sep 2-9; 1.7 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "V Hotel Bencoolen",
+      "type": "hotel",
+      "price_range_sgd": [
+        155,
+        155
+      ],
+      "distance_to_mbs_km_approx": 1.9,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 122+ observed for Sep 2-9; 1.2 mi from MBS observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Hotel Boss",
+      "type": "hotel",
+      "price_range_sgd": [
+        147,
+        147
+      ],
+      "distance_to_mbs_km_approx": 2.4,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 116+ observed for Sep 2-9; 1.5 mi from MBS observed; also described as budget option near Lavender MRT by mysingaporestay.com",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Swissotel The Stamford Singapore",
+      "type": "hotel",
+      "price_range_sgd": [
+        363,
+        363
+      ],
+      "distance_to_mbs_km_approx": 1.1,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Marina-Bay-Sands.L110866.20828.hotel.ksp",
+      "price_notes": "USD 286/night observed in KAYAK '4 stars and above' popularity table; distance is a rough geographic estimate (no observed distance)",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Wink @ Mosque Street",
+      "type": "hotel",
+      "price_range_sgd": [
+        52,
+        52
+      ],
+      "distance_to_mbs_km_approx": 1.8,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Clarke-Quay.L8028.20828.hotel.ksp",
+      "price_notes": "USD 41/night observed in KAYAK '2 stars and below' popularity table; distance is a rough geographic estimate (no observed distance)",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Butternut Tree Hotel",
+      "type": "hotel",
+      "price_range_sgd": [
+        61,
+        61
+      ],
+      "distance_to_mbs_km_approx": 2.9,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Clarke-Quay.L8028.20828.hotel.ksp",
+      "price_notes": "USD 48/night observed in KAYAK '2 stars and below' popularity table; distance is a rough geographic estimate (no observed distance)",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Hotel 81 Chinatown",
+      "type": "hotel",
+      "price_range_sgd": [
+        95,
+        95
+      ],
+      "distance_to_mbs_km_approx": 1.9,
+      "source_url": "https://www.kayak.com/Singapore-Hotels_Clarke-Quay.L8028.20828.hotel.ksp",
+      "price_notes": "USD 75/night observed in KAYAK '2 stars and below' popularity table; distance is a rough geographic estimate (no observed distance)",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Sands SkyPark Observation Deck",
+      "type": "activity",
+      "price_range_sgd": null,
+      "distance_to_mbs_km_approx": 0.1,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "ticketed for non-hotel-guests but observed pages stated no price, so price omitted rather than invented",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "ArtScience Museum",
+      "type": "activity",
+      "price_range_sgd": null,
+      "distance_to_mbs_km_approx": 0.2,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "admission price not stated on observed pages; price omitted",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Gardens by the Bay",
+      "type": "activity",
+      "price_range_sgd": null,
+      "distance_to_mbs_km_approx": 0.4,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "source states 'many equally beautiful parts of the park have no admission charge'; conservatory ticket prices not observed, so no price range recorded",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Spectra - Light & Water Show",
+      "type": "activity",
+      "price_range_sgd": [
+        0,
+        0
+      ],
+      "distance_to_mbs_km_approx": 0.1,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "source states the nightly show in front of the MBS Shoppes is FREE",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Singapore River Cruise",
+      "type": "activity",
+      "price_range_sgd": null,
+      "distance_to_mbs_km_approx": 0.1,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "40-minute boat ride to Clarke Quay, ticketed per source but price not stated; price omitted",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Marina Bay Waterfront Promenade",
+      "type": "activity",
+      "price_range_sgd": [
+        0,
+        0
+      ],
+      "distance_to_mbs_km_approx": 0.1,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "public 3.5 km promenade walk, free",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Helix Bridge",
+      "type": "activity",
+      "price_range_sgd": [
+        0,
+        0
+      ],
+      "distance_to_mbs_km_approx": 0.6,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "public pedestrian bridge, free",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Esplanade - Theatres on the Bay",
+      "type": "activity",
+      "price_range_sgd": null,
+      "distance_to_mbs_km_approx": 1.2,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "source states free art installations, exhibitions and occasional live performances; concert-hall shows are ticketed but prices not observed",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Singapore Flyer",
+      "type": "activity",
+      "price_range_sgd": null,
+      "distance_to_mbs_km_approx": 0.9,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "165 m observation wheel, 30-minute ride per source; ticket price not stated on observed pages; price omitted",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Merlion Park",
+      "type": "activity",
+      "price_range_sgd": [
+        0,
+        0
+      ],
+      "distance_to_mbs_km_approx": 1.3,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "public park, open 24h per source, free",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "The Shoppes at Marina Bay Sands (incl. sampan canal ride)",
+      "type": "activity",
+      "price_range_sgd": null,
+      "distance_to_mbs_km_approx": 0.0,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "mall entry free; sampan ride ticketed but price not stated on observed pages; price omitted",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "War Memorial Park",
+      "type": "activity",
+      "price_range_sgd": [
+        0,
+        0
+      ],
+      "distance_to_mbs_km_approx": 1.5,
+      "source_url": "https://alovelettertoasia.com/best-things-to-do-marina-bay-sands-singapore/",
+      "price_notes": "public memorial park (61 m memorial, unveiled 1967), free",
+      "researched": true,
+      "researched_as_of": "2026-08-26"
+    }
+  ]
+}
