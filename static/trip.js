@@ -150,6 +150,7 @@
             }));
             invalidatePolls();          // any in-flight poll is for the old trip
             Trip.tripId = data.trip_id;
+            window.__tripId = data.trip_id; // test/diagnostic hook
             Trip.pnrShown = false;
             Trip.terminal = false;
             Trip.renderedNodeCount = -1;
@@ -391,11 +392,11 @@
     var PROFILE_CHIP_FIELDS = ['passport_country', 'home_city', 'expiry'];
 
     // G4-DA-fix F9: server-supplied field names may carry quotes/brackets —
-    // never build a selector from them unescaped.
+    // never build a selector from them. CSS.escape is NOT the answer inside
+    // a quoted attribute selector (wrong escaping context; a value that
+    // contains a double quote still terminates the string) — scan children
+    // by attribute instead (G4-DA-fix-2).
     function chipByField(wrap, field) {
-        if (window.CSS && CSS.escape) {
-            return wrap.querySelector('[data-chip-field="' + CSS.escape(field) + '"]');
-        }
         var kids = wrap.children;
         for (var i = 0; i < kids.length; i++) {
             if (kids[i].getAttribute('data-chip-field') === field) return kids[i];
@@ -462,7 +463,11 @@
                 addChat('agent', field + ': ' + value + ' \u2014 confirmed.');
             }
             refreshProfile();
-            pollState();
+            // a chip answer can resume a terminal (failed) trip — the watcher
+            // was stopped on the terminal render, so restart it; otherwise a
+            // single poll picks the change up
+            if (Trip.terminal) { Trip.terminal = false; startWatching(); }
+            else { pollState(); }
         } catch (err) {
             btn.disabled = false;
             btn.textContent = 'Retry';
@@ -598,7 +603,7 @@
             card.setAttribute('data-testid', 'trip-option-card');
             var top = el('div', 'trip-option-top');
             var carrierName = CARRIER_NAMES[o.carrier] || o.carrier || '?';
-            var carrierLabel = carrierName + (CARRIER_NAMES[o.carrier] ? ' (' + o.carrier + ')');
+            var carrierLabel = carrierName + (CARRIER_NAMES[o.carrier] ? ' (' + o.carrier + ')' : '');
             top.appendChild(el('span', 'trip-option-carrier', carrierLabel));
             top.appendChild(el('span', 'trip-option-flight', o.flight_no));
             top.appendChild(chip('Atlas Sandbox data', 'trip-chip-sandbox'));

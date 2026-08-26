@@ -579,7 +579,9 @@ def test_f1_polling_stops_on_terminal_and_view_exit(tracked_page, install_orch):
     }""")
 
     start_goal(page, AMBIGUOUS_GOAL)
-    expect(page.locator('[data-testid="trip-chip-passport_country"]')) \
+    # passport is pre-set via API, so the pause surfaces scope + date/home
+    # chips — the scope block is the stable pause signal here
+    expect(page.locator('[data-testid="scope-choice-flight_only"]')) \
         .to_be_visible(timeout=20000)
     page.click('[data-testid="scope-choice-flight_only"]')
     expect(page.locator('[data-testid="trip-status-pill"]')) \
@@ -671,21 +673,38 @@ def test_f3_error_banner_clears_on_recovery(app_server, ui_browser,
         page.goto(BASE)
         page.click('[data-testid="nav-trip"]')
         expect(page.locator("#view-trip")).to_be_visible()
+        # deterministic ordering: HOLD the immediate first poll, let the next
+        # poll fail with 500 (banner appears), then HOLD every further poll
+        # so nothing can hide the banner until the test releases one REAL
+        # response — the recovery is what clears it.
         page.evaluate("""() => {
-            window.__failOnce = true;
-            const orig = window.fetch;
+            window.__origFetch = window.fetch.bind(window);
+            window.__f3phase = 0;
             window.fetch = function (input, opts) {
                 const url = typeof input === 'string' ? input : String(input.url);
-                if (url.indexOf('/state') !== -1 && window.__failOnce) {
-                    window.__failOnce = false;
+                if (url.indexOf('/state') === -1) {
+                    return window.__origFetch(input, opts);
+                }
+                if (window.__f3phase === 0) {
+                    window.__f3phase = 1;
+                    return new Promise(() => {}); // held forever
+                }
+                if (window.__f3phase === 1) {
+                    window.__f3phase = 2;
                     return Promise.resolve(new Response('boom', {status: 500}));
                 }
-                return orig.apply(this, arguments);
+                return new Promise((resolve) => { window.__f3rel = resolve; });
             };
         }""")
         start_goal(page, AMBIGUOUS_GOAL)
         expect(page.locator("#trip-error")).to_be_visible(timeout=20000)
-        # the next successful poll recovers — banner hides
+        # release one REAL /state response — the recovery render clears it
+        page.evaluate("""async () => {
+            const res = await window.__origFetch(
+                '/api/trip/' + window.__tripId + '/state');
+            window.__f3rel(res);
+        }""")
+        # the successful poll recovers — banner hides
         expect(page.locator("#trip-error")).to_be_hidden(timeout=15000)
         expect(page.locator('[data-testid="trip-chip-passport_country"]')) \
             .to_be_visible(timeout=20000)
@@ -705,6 +724,9 @@ def test_f4_origin_city_chip_persists_and_trip_resumes(tracked_page,
     start_goal(page, "I need to get to Singapore on 2026-09-29.")
     expect(page.locator('[data-testid="trip-chip-origin_city"]')) \
         .to_be_visible(timeout=20000)
+    # the trip pauses at scope first; choosing flight_only then fails
+    # missing_route — the state the chip answer must recover from
+    page.click('[data-testid="scope-choice-flight_only"]')
     expect(page.locator('[data-testid="trip-status-pill"]')) \
         .to_have_text("failed", timeout=20000)
 
@@ -817,14 +839,19 @@ def test_f10_new_trip_clears_stale_panels(tracked_page, install_orch):
     expect(page.locator('[data-testid="trip-itin-item"]').first) \
         .to_be_visible(timeout=20000)
 
-    # trip B: paused at scope clarification — flight_search never ran
+    # trip B: paused at scope clarification — flight_search never ran.
+    # Wait for B's own echo in the chat (chat is cleared on new-trip start,
+    # so this also proves the per-trip reset ran) — asserting earlier would
+    # observe trip A's still-rendered DOM.
     page.fill('[data-testid="trip-goal-input"]', AMBIGUOUS_GOAL)
     page.click('[data-testid="trip-goal-submit"]')
+    expect(page.locator('[data-testid="trip-chat"]')) \
+        .to_contain_text(AMBIGUOUS_GOAL, timeout=20000)
     expect(page.locator('[data-testid="trip-dag-node"]').first) \
         .to_be_visible(timeout=20000)
     # stale option cards cleared — empty placeholder restored
-    assert page.locator('[data-testid="trip-option-card"]').count() == 0, \
-        "stale option cards leaked into the new trip"
+    expect(page.locator('[data-testid="trip-option-card"]')) \
+        .to_have_count(0, timeout=10000)
     expect(page.locator('[data-testid="trip-options-empty"]')).to_be_visible()
     expect(page.locator('[data-testid="trip-itinerary-empty"]')).to_be_visible()
     expect(page.locator("#trip-pnr-block")).to_be_hidden()

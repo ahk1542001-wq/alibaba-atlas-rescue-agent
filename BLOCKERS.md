@@ -40,6 +40,9 @@ Entry template:
 - Hypothesis: the independent validation session keeps its server alive
   until its own workflow finishes.
 - Alternative chosen: all non-UI evidence captured (201 passed, TZ=UTC);
-  the 8 new Playwright regressions collect cleanly (18 UI flows total) and
-  await the rerun; leader schedules it once the validation session ends.
-- Status: OPEN
+  the 8 new Playwright regressions collect cleanly (18 UI flows total)
+  and await the rerun.
+- Resolution (2026-08-27, G4-DA-fix-2): the validation session ended and
+  the port freed; the stale occupant was killed and the full UI suite ran
+  twice green — `18 passed in 41.94s` and `18 passed in 46.27s` (TZ=UTC).
+- Status: RESOLVED

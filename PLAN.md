@@ -402,7 +402,49 @@ after  remediation (non-UI):  201 passed in 32.38s (+4 e2e regressions)
 ```
 
 UI suite (`tests/test_ui_trip.py`, +8 regressions, 18 flows total): runs
-against its own uvicorn on 127.0.0.1:8050 — RERUN PENDING: the live
-validation session kept the port for the full 15-minute retry window
-(never killed per scope isolation); the rerun is recorded in BLOCKERS.md
-and scheduled by the leader once the validation session ends.
+against its own uvicorn on 127.0.0.1:8050 — rerun completed under
+G4-DA-fix-2 below (port freed; 18/18 passed twice).
+
+### G4-DA-fix-2 — trip.js syntax regression + JS syntax gate
+
+Root cause: remediation commit eb0b2b7 dropped the else-branch of the
+carrier-label ternary in `renderOptions` (static/trip.js ~line 601):
+`carrierName + (CARRIER_NAMES[o.carrier] ? ' (' + o.carrier + ')');` →
+SyntaxError at parse time → the entire trip.js module died on every page
+load (no init, native GET form reload, whole trip UI dead; the "suite
+hang" was 18 tests burning expect-timeouts). Independent debugger
+verified with live probes.
+
+Fixes:
+
+1. One-line restore: `var carrierLabel = carrierName +
+   (CARRIER_NAMES[o.carrier] ? ' (' + o.carrier + ')' : '');`
+2. Durable guard: NEW `tests/test_static_js_syntax.py` runs
+   `node --check` over every `static/*.js` (parametrized per file);
+   `pytest.skipif(shutil.which("node") is None, ...)` skips with a note
+   when node is absent. 2 tests (app.js, trip.js) — node v26.7.0 present
+   on this host.
+3. Debugger secondary observation: `chipByField` dropped the
+   CSS.escape-inside-quoted-attribute-selector branch (wrong escaping
+   context — a value containing a double quote still terminates the
+   string) and keeps only the attribute-scan fallback.
+4. Collateral UI-suite repairs surfaced while re-verifying (same commit):
+   confirmChip restarts the watcher when a chip answer resumes a terminal
+   (failed) trip (`Trip.terminal` had stopped polling); f1/f4 wait on the
+   scope-choice block before asserting passport/failed states; f10 waits
+   for the new trip's goal echo in chat before asserting stale-panel
+   clearing; f3 rewritten as a deterministic phase-machine (hold first
+   /state poll → fail second with 500 → hold all further polls until the
+   test releases one real response) so the banner-clear window can no
+   longer race the poll/SSE cadence.
+
+Gate evidence (TZ=UTC, port 8050 free):
+
+```
+node --check static/trip.js:                     exit 0
+node --check static/app.js:                      exit 0
+UI suite  (tests/test_ui_trip.py, run 1):        18 passed in 41.94s
+UI suite  (tests/test_ui_trip.py, run 2):        18 passed in 46.27s
+non-UI    (tests/ --ignore=test_ui_trip.py):     203 passed in 32.67s
+                                                 (201 prior + 2 syntax gate)
+```
