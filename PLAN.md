@@ -37,11 +37,29 @@ completion/smoke/stop). Rules of engagement from spec §0 apply to every gate.
 - Evidence: pytest output, `git diff --name-only` excludes frozen files.
 
 ### G2 Core Gate
-- [ ] TripGraph executor with NodeSpec/conditional edges/ApprovalGate pause-resume
-- [ ] GraphNodeStateV2 appended on every node execution
-- [ ] ClarifyLoop + ProfileStore unit suites green (silent-save impossible; delete clears field)
-- [ ] WebIntel TTL cache counted; offline degrade proven
-- Evidence: per-skill unit test output.
+- [x] TripGraph executor with NodeSpec/conditional edges/ApprovalGate pause-resume (`services/trip_graph.py`)
+- [x] GraphNodeStateV2 appended on every node execution (POST_NODE_RECORD unconditional)
+- [x] CONDITIONAL MOUNTING by `TripIntent.requested_services`; visa safety dep always mounted for international bookings; scope clarification = exactly 3 choices
+- [x] GATE_PAUSE: per-trip lock, single winner on concurrent approvals, rejection terminates
+- [x] ON_DISRUPTION_EVENT mounts frozen `DisruptionRecoveryDAG` (import-only) <2s
+- [x] Deterministic replay proven via `mask_volatile(trace)`; cross-trip isolation proven
+- [x] All 11 skill behaviors implemented + unit suites green (goal_intake 11 golden phrasings, clarify_loop, profile_capture silent-save-impossible, flight_search, flight_book idempotency+reverify+visa-block, visa_check baseline ≤50ms + freshness states, web_intel cache counted, itinerary provider chain with honesty chips, rights_check honest NONE, guardian_push skipped_not_failed + passport excluded, disruption_monitor)
+- [x] Bounded `ResearchCoordinator` (owner correction C): domains from RequestedServices, provenance/freshness on every result, fares refreshed+reverified before booking
+- [x] G1 DA-review defects fixed regression-test-first (see DECISIONS.tsv rows; this gate commit carries the fixes)
+- Evidence: full-suite pytest output below; `git diff --name-only` excludes frozen files.
+
+```
+$ .venv/bin/python -m pytest tests/ -q
+........................................................................ [ 49%]
+........................................................................ [ 99%]
+.                                                                        [100%]
+145 passed in 0.49s
+```
+
+Suite composition: pre-existing 31 (docs integrity, rights/visa, legacy E2E
+canary) + G1 contracts 31 + G2 new 83 (trip_graph, skills behavior, web-intel,
+and G1-defect regression vectors folded into test_profile_store /
+test_skills_manifest).
 
 ### G3 Integration Gate
 - [ ] generic journey script (httpx): start→clarify(stub LLM)→search(live sandbox)→visa(baseline)→approve→book→monitor arm
@@ -112,7 +130,12 @@ Fresh evidence is captured per gate commit; pointers below stay durable.
 | §4.0 SkillBase + closed capability vocabulary | `services/skills/base.py` | `tests/test_skills_manifest.py` vocabulary cases | gate commit pytest output |
 | §4.0/F12 boot-time manifest loader | `services/skills/__init__.py` | `tests/test_skills_manifest.py` (count, add/remove, malformed frontmatter, unknown flags, reload) | gate commit pytest output |
 | §4 11 skill pairs | `services/skills/<name>.py` + `<name>.SKILL.md` | `tests/test_skills_manifest.py` registry cases | gate commit pytest output |
-| §4 S7 / §14.4 web-intel skeleton | `services/web_intel_client.py` | provider-chain wiring exercised at G2 (`tests/test_web_intel.py` lands with G2 behavior) | G2 gate evidence |
-| §5/§7 KG seed | `services/kg_seed.json` | loaded by visa_check at G2; JSON shape validated in G2 units | G2 gate evidence |
+| §4 S7 / §14.4 web-intel skeleton | `services/web_intel_client.py` | `tests/test_web_intel.py` (cache counted, TTL expiry, offline degrade, tolerant parse) | G2 gate commit pytest output |
+| §5/§7 KG seed | `services/kg_seed.json` | `tests/test_skills_behavior.py` visa baseline cases | G2 gate commit pytest output |
+| §3.1/§14.2 generic TripGraph executor | `services/trip_graph.py` | `tests/test_trip_graph.py` | G2 gate commit pytest output |
+| §4 S1–S11 skill behaviors (owner corrections A/B/C) | `services/skills/*.py` | `tests/test_skills_behavior.py` | G2 gate commit pytest output |
+| §15.2 itinerary provider chain + honesty chips | `services/skills/itinerary.py` | `tests/test_skills_behavior.py` S8 cases | G2 gate commit pytest output |
+| Owner correction (C) bounded research | `services/research_coordinator.py` | `tests/test_skills_behavior.py` coordinator cases | G2 gate commit pytest output |
+| G1 DA-review defect regressions (masking bypass, short-passport leak, loader pairing, dup names, user_id traversal, capability drift, YAML list tools) | `services/profile_store.py`, `models/schemas.py`, `services/skills/__init__.py` | `tests/test_profile_store.py`, `tests/test_skills_manifest.py` | G2 gate commit pytest output |
 | §12 demo fixture placeholder | `data/mock_victor.json` (gitignored) | `[mockdata]`-tagged suites at G7; graceful skip while owner absent | G7 report section |
 | §0/§9.7 gate process artifacts | `PLAN.md`, `DECISIONS.tsv`, `BLOCKERS.md` | `tests/test_docs_integrity.py` conventions (durable-docs hygiene) | gate commit pytest output |

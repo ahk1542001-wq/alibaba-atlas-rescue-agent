@@ -71,6 +71,15 @@ def test_closed_vocabulary_is_exactly_spec_set():
 
 
 def test_adding_skill_file_changes_listing(skills_copy: Path):
+    # §4.0 rule 1 pairing: SKILL.md registers only with its paired <stem>.py
+    (skills_copy / "hotel_finder.py").write_text(
+        "from services.skills.base import SkillBase\n\n"
+        "class HotelFinderSkill(SkillBase):\n"
+        "    name = \"hotel_finder\"\n"
+        "    when_to_use = \"when lodging is requested\"\n"
+        "    capabilities = frozenset({\"network_read\"})\n",
+        encoding="utf-8",
+    )
     extra = skills_copy / "hotel_finder.SKILL.md"
     extra.write_text(
         "---\n"
@@ -97,6 +106,7 @@ def test_removing_skill_file_changes_listing(skills_copy: Path):
 
 def test_unknown_capability_flag_rejected(skills_copy: Path):
     rogue = skills_copy / "rogue.SKILL.md"
+    (skills_copy / "rogue.py").write_text("# paired module\n", encoding="utf-8")
     rogue.write_text(
         "---\n"
         "name: rogue\n"
@@ -112,6 +122,7 @@ def test_unknown_capability_flag_rejected(skills_copy: Path):
 
 def test_missing_required_frontmatter_rejected(skills_copy: Path):
     broken = skills_copy / "broken.SKILL.md"
+    (skills_copy / "broken.py").write_text("# paired module\n", encoding="utf-8")
     broken.write_text(
         "---\nname: broken\n---\n# Procedure\n1. no description\n",
         encoding="utf-8",
@@ -122,6 +133,7 @@ def test_missing_required_frontmatter_rejected(skills_copy: Path):
 
 def test_unclosed_frontmatter_rejected(skills_copy: Path):
     broken = skills_copy / "unclosed.SKILL.md"
+    (skills_copy / "unclosed.py").write_text("# paired module\n", encoding="utf-8")
     broken.write_text(
         "---\nname: unclosed\ndescription: never closed. Use when testing.\n",
         encoding="utf-8",
@@ -155,8 +167,11 @@ def test_reload_reflects_filesystem_changes(skills_copy: Path):
     assert len(load_skill_registry(skills_copy)) == 11
 
 
-def test_duplicate_skill_names_detected_via_count(skills_copy: Path):
+def test_duplicate_skill_name_rejected(skills_copy: Path):
+    """DA-review fix: duplicate names raise instead of relying on caller dedupe."""
     dup = skills_copy / "visa_check_copy.SKILL.md"
+    (skills_copy / "visa_check_copy.py").write_text(
+        "# paired module\n", encoding="utf-8")
     dup.write_text(
         "---\n"
         "name: visa_check\n"
@@ -166,5 +181,89 @@ def test_duplicate_skill_names_detected_via_count(skills_copy: Path):
         "# Procedure\n1. n/a\n",
         encoding="utf-8",
     )
-    names = [e["name"] for e in load_skill_registry(skills_copy)]
-    assert names.count("visa_check") == 2  # loader surfaces both; caller dedupes
+    with pytest.raises(SkillManifestError):
+        load_skill_registry(skills_copy)
+
+
+# --- DA-review regressions: §4.0 rule 1 pairing + drift ------------------------
+
+def test_orphan_skill_md_without_paired_module_rejected(skills_copy: Path):
+    orphan = skills_copy / "hotel_finder.SKILL.md"
+    orphan.write_text(
+        "---\n"
+        "name: hotel_finder\n"
+        "description: Orphan manifest. Use when testing pairing.\n"
+        "allowed-tools: network_read\n"
+        "---\n"
+        "# Procedure\n1. n/a\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SkillManifestError):
+        load_skill_registry(skills_copy)
+
+
+def test_name_mismatch_with_file_stem_rejected(skills_copy: Path):
+    (skills_copy / "mismatch.py").write_text("# paired module\n", encoding="utf-8")
+    (skills_copy / "mismatch.SKILL.md").write_text(
+        "---\n"
+        "name: totally_different\n"
+        "description: Name differs from stem. Use when testing pairing.\n"
+        "allowed-tools: network_read\n"
+        "---\n"
+        "# Procedure\n1. n/a\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SkillManifestError):
+        load_skill_registry(skills_copy)
+
+
+def test_unsafe_name_charset_rejected(skills_copy: Path):
+    (skills_copy / "Bad-Name.SKILL.md").write_text(
+        "---\n"
+        "name: Bad-Name\n"
+        "description: Unsafe charset. Use when testing name validation.\n"
+        "allowed-tools: network_read\n"
+        "---\n"
+        "# Procedure\n1. n/a\n",
+        encoding="utf-8",
+    )
+    (skills_copy / "Bad-Name.py").write_text("# paired module\n", encoding="utf-8")
+    with pytest.raises(SkillManifestError):
+        load_skill_registry(skills_copy)
+
+
+def test_yaml_list_form_allowed_tools_accepted(skills_copy: Path):
+    (skills_copy / "listy.py").write_text("# paired module\n", encoding="utf-8")
+    (skills_copy / "listy.SKILL.md").write_text(
+        "---\n"
+        "name: listy\n"
+        "description: List-form flags. Use when testing yaml list parsing.\n"
+        "allowed-tools:\n"
+        "  - network_read\n"
+        "---\n"
+        "# Procedure\n1. n/a\n",
+        encoding="utf-8",
+    )
+    entry = next(e for e in load_skill_registry(skills_copy)
+                 if e["name"] == "listy")
+    assert entry["allowed_tools"] == ["network_read"]
+
+
+def test_manifest_flags_match_class_capabilities():
+    """DA-review fix: no drift between SKILL.md allowed-tools and the class."""
+    import importlib
+
+    from services.skills.base import SkillBase
+
+    for entry in load_skill_registry():
+        module = importlib.import_module(entry["module_path"])
+        classes = [
+            obj for obj in vars(module).values()
+            if isinstance(obj, type) and issubclass(obj, SkillBase)
+            and obj is not SkillBase and getattr(obj, "name", "") == entry["name"]
+        ]
+        assert classes, f"{entry['name']}: no SkillBase subclass in module"
+        assert set(entry["allowed_tools"]) == set(classes[0].capabilities), (
+            f"{entry['name']}: manifest {sorted(entry['allowed_tools'])} != "
+            f"class {sorted(classes[0].capabilities)}"
+        )

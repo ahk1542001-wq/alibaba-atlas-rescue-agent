@@ -22,15 +22,19 @@ def test_mask_passport_standard_vector():
     assert mask_passport("MD1234567") == "MD*****67"
 
 
-def test_mask_passport_keeps_first2_last2():
-    assert mask_passport("AB1234") == "AB**34"
-    assert mask_passport("ABCDE") == "AB*DE"
+def test_mask_passport_keeps_first2_last2_for_long_inputs():
+    # fixed-shape redaction: first2+last2 only when >=8 chars survive masking
+    assert mask_passport("MD123456") == "MD****56"
     assert mask_passport("N12345678901") == "N1********01"
 
 
-def test_mask_passport_short_input_graceful():
-    assert mask_passport("X1") == "X1"
-    assert mask_passport("AB12") == "AB12"
+def test_mask_passport_short_input_fully_redacted():
+    # DA-review fix: short inputs must NEVER echo raw characters
+    assert mask_passport("X1") == "**"
+    assert mask_passport("AB12") == "****"
+    assert mask_passport("ABCDE") == "*****"      # 5 chars: zero raw chars survive
+    assert mask_passport("AB1234") == "******"    # 6 chars: zero raw chars survive
+    assert mask_passport("MD12345") == "*******"
     assert mask_passport("") == ""
 
 
@@ -195,3 +199,39 @@ def test_display_export_masks_passport(store: ProfileStore):
     exported = store.display("victor")
     assert exported["identity"]["passport_no_masked"] == "MD*****67"
     assert "MD1234567" not in str(exported)
+
+
+# --- DA-review regressions ---------------------------------------------------
+
+def test_generic_field_path_masks_passport_shaped_fields(store: ProfileStore,
+                                                         tmp_path: Path):
+    """Raw passport must not bypass masking via the generic set_field path."""
+    store.get_or_create("victor")
+    store.set_consent("victor", store_local=True)
+    store.set_field("victor", "passport_no", "MD1234567", source="ai_inferred")
+    raw = (tmp_path / "victor.json").read_text(encoding="utf-8")
+    assert "MD1234567" not in raw  # raw value never hits disk
+    assert "MD1234567" not in str(store.display("victor"))
+    saved = store.get_or_create("victor").fields["passport_no"].value
+    assert saved == "MD*****67"
+
+
+def test_generic_field_path_masks_passport_number_alias(store: ProfileStore):
+    store.get_or_create("victor")
+    store.set_field("victor", "passport_number", "MD7654321", source="user")
+    assert store.get_or_create("victor").fields["passport_number"].value == "MD*****21"
+
+
+def test_user_id_path_traversal_alias_rejected(store: ProfileStore):
+    """'vic/tor' must not alias onto victor.json (cross-user overwrite)."""
+    with pytest.raises(ValueError):
+        store.get_or_create("vic/tor")
+    with pytest.raises(ValueError):
+        store.get_or_create("../etc")
+    with pytest.raises(ValueError):
+        store.get_or_create("")
+
+
+def test_safe_user_id_charset_accepted(store: ProfileStore):
+    profile = store.get_or_create("vic-tor_2")
+    assert profile.user_id == "vic-tor_2"

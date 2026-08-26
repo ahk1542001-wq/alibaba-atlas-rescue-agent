@@ -23,6 +23,20 @@ CAPABILITY_VOCABULARY: FrozenSet[str] = frozenset(
 )
 
 
+class SkillError(Exception):
+    """Structured skill failure the executor records and surfaces.
+
+    recoverable=True means the trip can continue after the user/agent fixes
+    the underlying condition (e.g. stale visa data, missing confirmation).
+    """
+
+    def __init__(self, code: str, message: str, recoverable: bool = True) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.recoverable = recoverable
+
+
 class SkillBase:
     """Base class every skill extends. Subclasses set class-level metadata."""
 
@@ -40,7 +54,8 @@ class SkillBase:
                 f"skill {cls.__name__} declares unknown capabilities: {sorted(unknown)}"
             )
 
-    async def run(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, payload: Dict[str, Any],
+                  context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Contract-phase stub: minimal structured result (behavior at G2)."""
         return {
             "skill": self.name,

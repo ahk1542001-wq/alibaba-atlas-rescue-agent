@@ -165,13 +165,15 @@ class AgentTelemetry(BaseModel):
 # ---------------------------------------------------------------------------
 
 def mask_passport(passport_no: str) -> str:
-    """Mask a passport number keeping first 2 + last 2 characters.
+    """Mask a passport number; never echoes raw characters for short inputs.
 
-    mask_passport("MD1234567") -> "MD*****67". Inputs of 4 chars or fewer
-    are returned unchanged (nothing meaningful left to mask).
+    mask_passport("MD1234567") -> "MD*****67" (first2+last2 only when the
+    input is >=8 chars, where that reveals less than half). Inputs shorter
+    than 8 chars are fully redacted to a fixed-shape star string — a 5-char
+    secret must not survive as 4 visible characters (DA-review fix).
     """
-    if len(passport_no) <= 4:
-        return passport_no
+    if len(passport_no) < 8:
+        return "*" * len(passport_no)
     return f"{passport_no[:2]}{'*' * (len(passport_no) - 4)}{passport_no[-2:]}"
 
 
@@ -318,3 +320,55 @@ class TripIntent(BaseModel):
     goal: TripGoal
     requested_services: RequestedServices = RequestedServices()
     scope_clarified: bool = False
+
+
+# --- G2 runtime output contracts ------------------------------------------------
+
+class WebIntelResult(BaseModel):
+    provider: str
+    degraded: bool = False
+    offline: bool = False
+    answers: List[str] = []
+    citations: List[WebIntelCitation] = []
+
+
+class RightsOpinion(BaseModel):
+    regime: str  # EU261 | UK261 | TURKEY_SHY | US_DOT | NONE
+    amount: Optional[float] = None
+    currency: Optional[str] = None
+    legal_citation: str = ""
+    distance_km: int = 0
+    note: str = ""
+
+
+class ItemProvenance(BaseModel):
+    source_url: Optional[str] = None
+    retrieved_date: Optional[date] = None
+    researched_as_of: Optional[date] = None
+    degraded: bool = False
+
+
+class ItineraryItem(BaseModel):
+    name: str
+    kind: str  # flight | hotel | activity | local_transport
+    source: str  # atlas_real | organizer | amadeus | osm | researched_mock | llm_suggestion
+    honesty_label: str  # §15.2 chip text
+    price_range_sgd: Optional[List[float]] = None
+    details: Dict[str, Any] = {}
+    provenance: ItemProvenance = ItemProvenance()
+
+
+class ScopeClarificationRequest(BaseModel):
+    prompt: str
+    choices: List[str]  # exactly: flight_only | flight_plus_booking | complete_trip
+
+
+class ResearchRecord(BaseModel):
+    """Every research result carries provenance + freshness (owner correction C)."""
+    domain: str  # flight | visa | hotel | activities | local_transport
+    provenance: str
+    source_url: Optional[str] = None
+    retrieved_date: date
+    freshness_state: Literal["fresh", "stale", "unknown"] = "unknown"
+    degraded: bool = False
+    data: Dict[str, Any] = {}

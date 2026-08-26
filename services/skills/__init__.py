@@ -6,6 +6,7 @@ into an in-memory registry at boot. No hand-maintained skills.yaml
 the listing.
 """
 
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -46,15 +47,27 @@ def _parse_frontmatter(path: Path) -> Dict[str, Any]:
     return meta
 
 
+def _allowed_tools(meta: Dict[str, Any], path: Path) -> List[str]:
+    """Parse allowed-tools as comma string OR yaml list (AUTO- decision)."""
+    raw = meta.get("allowed-tools")
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return [str(t).strip() for t in raw if str(t).strip()]
+    return [t.strip() for t in str(raw).split(",") if t.strip()]
+
+
 def load_skill_registry(skills_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
     """Parse every *.SKILL.md under skills_dir into registry entries.
 
     Entry shape: {name, description, allowed_tools, module_path, path}.
-    Raises SkillManifestError on missing required keys or unknown capability
-    flags (closed vocabulary, §4.0 rule 4).
+    Raises SkillManifestError on missing required keys, unknown capability
+    flags (closed vocabulary, §4.0 rule 4), unpaired manifests, name/stem
+    mismatch, unsafe name charset, or duplicate names (§4.0 rule 1).
     """
     base = Path(skills_dir) if skills_dir is not None else SKILLS_DIR
     registry: List[Dict[str, Any]] = []
+    seen: set = set()
     for path in sorted(base.glob("*.SKILL.md")):
         meta = _parse_frontmatter(path)
         name = str(meta.get("name") or "").strip()
@@ -63,8 +76,25 @@ def load_skill_registry(skills_dir: Optional[Path] = None) -> List[Dict[str, Any
             raise SkillManifestError(f"{path.name}: 'name' is required")
         if not description:
             raise SkillManifestError(f"{path.name}: 'description' is required")
-        raw_tools = meta.get("allowed-tools") or ""
-        tools = [t.strip() for t in str(raw_tools).split(",") if t.strip()]
+        stem = path.name[: -len(".SKILL.md")]
+        if name != stem:
+            raise SkillManifestError(
+                f"{path.name}: name '{name}' must equal file stem '{stem}' (§4.0 rule 1)"
+            )
+        if not re.fullmatch(r"[a-z0-9_]+", name):
+            raise SkillManifestError(
+                f"{path.name}: unsafe skill name '{name}' "
+                "(allowed charset: a-z 0-9 _)"
+            )
+        if not (path.parent / f"{stem}.py").exists():
+            raise SkillManifestError(
+                f"{path.name}: orphan manifest — paired module '{stem}.py' missing "
+                "(§4.0 rule 1: both required, neither optional)"
+            )
+        if name in seen:
+            raise SkillManifestError(f"{path.name}: duplicate skill name '{name}'")
+        seen.add(name)
+        tools = _allowed_tools(meta, path)
         unknown = set(tools) - CAPABILITY_VOCABULARY
         if unknown:
             raise SkillManifestError(

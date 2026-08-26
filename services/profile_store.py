@@ -13,6 +13,7 @@ Contract (MASTER_BUILD_PACKAGE.md §5/F5):
 
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,13 @@ from typing import Any, Dict, Optional
 from models.schemas import Profile, ProfileFieldValue, mask_passport
 
 DEFAULT_ROOT = Path(__file__).resolve().parent.parent / "data" / "profiles"
+
+# DA-review fix: reject user_ids that could alias onto another user's file
+_USER_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
+
+# DA-review fix: passport-shaped fields are masked on the GENERIC field path
+# too, so set_field("user", "passport_no", raw) can never persist raw bytes.
+_PASSPORT_FIELDS = {"passport_no", "passport_number", "passport"}
 
 
 class ProfileStore:
@@ -31,10 +39,12 @@ class ProfileStore:
     # -- paths ---------------------------------------------------------------
 
     def _path(self, user_id: str) -> Path:
-        safe = "".join(c for c in user_id if c.isalnum() or c in "-_")
-        if not safe:
-            raise ValueError("user_id must contain alphanumeric characters")
-        return self.root / f"{safe}.json"
+        if not re.fullmatch(_USER_ID_RE, user_id):
+            raise ValueError(
+                "user_id must match [A-Za-z0-9_-]+ — refusing potentially "
+                "aliasing/traversing identifier"
+            )
+        return self.root / f"{user_id}.json"
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -87,6 +97,10 @@ class ProfileStore:
 
     def set_field(self, user_id: str, name: str, value: Any, source: str) -> Profile:
         profile = self.get_or_create(user_id)
+        # DA-review fix: passport-shaped values are masked at the boundary so
+        # the generic path can never store/export a raw passport number.
+        if name in _PASSPORT_FIELDS and isinstance(value, str):
+            value = mask_passport(value)
         # ProfileFieldValue validates source against the closed set; raises ValueError
         field = ProfileFieldValue(
             value=value,
