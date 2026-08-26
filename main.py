@@ -1,8 +1,10 @@
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
@@ -84,6 +86,43 @@ async def graph_error_handler(request, exc: GraphError):
     return JSONResponse(status_code=status, content={"error": {
         "code": exc.code, "message": exc.message,
         "recoverable": exc.recoverable}})
+
+
+# --- §6 envelope for malformed request bodies (G3-DA fix F4) ---------------------
+# Scoped by path prefix to the v2 surface (/api/trip, /api/profile,
+# /api/skills) where the §6 error contract applies; every other route keeps
+# FastAPI's default {"detail": [...]} shape untouched (decision logged in
+# DECISIONS.tsv as G3-DA-fix/AUTO-).
+
+_ENVELOPE_PATH_PREFIXES = ("/api/trip", "/api/profile", "/api/skills")
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_envelope(request,
+                                      exc: RequestValidationError):
+    path = request.url.path
+    if not path.startswith(_ENVELOPE_PATH_PREFIXES):
+        # legacy v1 routes are outside §6 scope — default behavior preserved
+        return await request_validation_exception_handler(request, exc)
+    errors = exc.errors() or [{}]
+    first = errors[0]
+    field = ".".join(str(p) for p in first.get("loc", ())
+                     if str(p) != "body") or "request body"
+    etype = str(first.get("type", ""))
+    if etype == "json_invalid":
+        status, message = 400, "request body is not valid JSON"
+    elif etype == "missing":
+        status, message = 422, f"missing required field: {field}"
+    elif etype == "string_too_long":
+        status, message = 422, f"field '{field}' exceeds the maximum length"
+    else:
+        status, message = 422, f"invalid value for: {field}"
+    return JSONResponse(status_code=status, content={"error": {
+        "code": "invalid_request",
+        "message": message,
+        "recoverable": True,
+        "hint": "check the request body — required fields: goal_text and "
+                "user_id for trip start, value for profile field writes"}})
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():

@@ -34,7 +34,8 @@ from routers.v1.profile import set_profile_store
 from routers.v1.trip import TripOrchestrator, set_trip_orchestrator
 from services.profile_store import ProfileStore
 from services.skills.visa_check import VisaCheckSkill
-from services.trip_graph import SCOPE_CHOICES, GraphApprovalError
+from services.trip_graph import (SCOPE_CHOICES, GraphApprovalError,
+                                 GraphCapabilityViolation)
 from services.web_intel_client import WebIntelClient
 
 HAPPY_GOAL = ("I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30 "
@@ -681,5 +682,270 @@ def test_start_validation_and_hostile_payloads(harness):
                 json={"goal_text": AMBIGUOUS_GOAL, "user_id": "..%2Fevil"})
             # FastAPI decodes the path/body value; the store rejects it
             assert traversal.status_code in (400, 422)
+
+    _run(flow())
+
+
+# --- G3 Devil's Advocate remediation regressions (findings 1-7) -------------------
+
+
+def test_put_values_are_validated_before_assignment_and_persist(harness):
+    """F1: PUT must rebuild the pydantic models before assigning, so hostile
+    values (int cabin, non-date expiry) are refused with the §6 envelope and
+    can never corrupt the profile on disk."""
+    orch = harness()
+    store_root = Path(orch.store.root)
+
+    async def flow():
+        async with _client() as client:
+            bad_cabin = await client.put("/api/profile/val_user/cabin",
+                                         json={"value": 123})
+            assert bad_cabin.status_code == 400
+            err = bad_cabin.json()["error"]
+            assert err["code"] == "invalid_profile_request"
+            assert err["recoverable"] is True
+
+            bad_expiry = await client.put("/api/profile/val_user/expiry",
+                                          json={"value": "not-a-date"})
+            assert bad_expiry.status_code == 400
+            assert bad_expiry.json()["error"]["code"] == \
+                "invalid_profile_request"
+
+            # valid values keep working (incl. ISO date coercion)
+            ok = await client.put("/api/profile/val_user/cabin",
+                                  json={"value": "business"})
+            assert ok.status_code == 200
+            ok2 = await client.put("/api/profile/val_user/expiry",
+                                   json={"value": "2027-01-01"})
+            assert ok2.status_code == 200
+
+            # corruption must be impossible: consent + persist, attempt an
+            # invalid write, then a FRESH store must load without error
+            await client.post("/api/profile/val_user/consent",
+                              json={"store_local": True})
+            await client.put("/api/profile/val_user/diet",
+                             json={"value": "vegetarian"})
+            refused = await client.put("/api/profile/val_user/cabin",
+                                       json={"value": 123})
+            assert refused.status_code == 400
+            fresh = ProfileStore(root=store_root)
+            profile = fresh.get_or_create("val_user")  # raises if corrupt
+            assert profile.prefs.cabin == "business"
+            assert profile.prefs.diet == "vegetarian"
+
+    _run(flow())
+
+
+def test_corrupt_on_disk_profile_degrades_to_recoverable_envelope(harness):
+    """F1: a profile file that cannot parse must degrade to a recoverable
+    §6 envelope — never a bare 500, never a mislabeled invalid_user_id."""
+    orch = harness()
+    root = Path(orch.store.root)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "corrupt_user.json").write_text(
+        json.dumps({"user_id": "corrupt_user", "prefs": {"cabin": 123}}),
+        encoding="utf-8")
+
+    async def flow():
+        async with _client() as client:
+            resp = await client.get("/api/profile/corrupt_user")
+            assert resp.status_code == 400
+            err = resp.json()["error"]
+            assert err["code"] == "profile_unreadable"
+            assert err["recoverable"] is True
+            assert err.get("hint")
+            # the same degradation applies on the trip boundary
+            start = await client.post(
+                "/api/trip/start",
+                json={"goal_text": AMBIGUOUS_GOAL,
+                      "user_id": "corrupt_user"})
+            assert start.status_code == 400
+            assert start.json()["error"]["code"] == "profile_unreadable"
+
+    _run(flow())
+
+
+def test_put_passport_no_non_string_refused_with_envelope(harness):
+    """F2: a non-string passport number must hit a boundary type guard
+    (§6 envelope), never mask_passport's len() TypeError -> bare 500."""
+    harness()
+
+    async def flow():
+        async with _client() as client:
+            resp = await client.put("/api/profile/pass_user/passport_no",
+                                    json={"value": 12345678})
+            assert resp.status_code == 400
+            err = resp.json()["error"]
+            assert err["code"] == "invalid_profile_request"
+            assert err["recoverable"] is True
+            # same guard covers the other identity-shaped fields
+            for field, value in (("passport_country", 99),
+                                 ("home_city", ["Bangkok"])):
+                bad = await client.put(f"/api/profile/pass_user/{field}",
+                                       json={"value": value})
+                assert bad.status_code == 400, field
+                assert bad.json()["error"]["code"] == "invalid_profile_request"
+
+    _run(flow())
+
+
+def test_hostile_goal_maps_to_invalid_goal_not_user_id(harness):
+    """F3: goal-construction failures return 422 invalid_goal with a
+    sanitized message; invalid_user_id is reserved for the user_id check and
+    runs first."""
+    harness()
+
+    async def flow():
+        async with _client() as client:
+            resp = await client.post(
+                "/api/trip/start",
+                json={"goal_text": "fly BKK to Singapore Sep 31",
+                      "user_id": "hostile_user"})
+            assert resp.status_code == 422
+            err = resp.json()["error"]
+            assert err["code"] == "invalid_goal"
+            assert err["recoverable"] is True
+            blob = json.dumps(err).lower()
+            assert "pydantic" not in blob
+            assert "errors.pydantic.dev" not in blob
+
+            bad_user = await client.post(
+                "/api/trip/start",
+                json={"goal_text": AMBIGUOUS_GOAL, "user_id": "bad user!"})
+            assert bad_user.status_code == 400
+            assert bad_user.json()["error"]["code"] == "invalid_user_id"
+
+    _run(flow())
+
+
+def test_malformed_request_bodies_use_section6_envelope(harness):
+    """F4: malformed/missing bodies on the trip/profile/skills surface return
+    the §6 envelope (code invalid_request), while legacy routes outside the
+    scope keep FastAPI's default detail shape."""
+    harness()
+
+    async def flow():
+        async with _client() as client:
+            missing = await client.post("/api/trip/start",
+                                        json={"goal_text": "trip please"})
+            assert missing.status_code == 422
+            err = missing.json()["error"]
+            assert err["code"] == "invalid_request"
+            assert err["recoverable"] is True
+            assert "user_id" in err["message"]
+            assert "loc" not in json.dumps(missing.json())
+
+            wrong_type = await client.post(
+                "/api/profile/env_user/consent",
+                json={"store_local": "maybe"})
+            assert wrong_type.status_code == 422
+            assert wrong_type.json()["error"]["code"] == "invalid_request"
+
+            bad_json = await client.post(
+                "/api/trip/start", content=b"{not json",
+                headers={"Content-Type": "application/json"})
+            assert bad_json.status_code in (400, 422)
+            assert bad_json.json()["error"]["code"] == "invalid_request"
+
+            # out-of-scope legacy route: default FastAPI detail preserved
+            legacy = await client.post("/api/rescue/book", json={})
+            assert legacy.status_code == 422
+            assert "detail" in legacy.json()
+            assert "error" not in legacy.json()
+
+    _run(flow())
+
+
+def test_oversize_goal_text_rejected_with_envelope(harness):
+    """F6: goal_text is bounded (max 4000 chars); oversize payloads are
+    refused at the boundary with the §6 envelope."""
+    harness()
+
+    async def flow():
+        async with _client() as client:
+            resp = await client.post("/api/trip/start",
+                                     json={"goal_text": "x" * 4001,
+                                           "user_id": "size_user"})
+            assert resp.status_code == 422
+            err = resp.json()["error"]
+            assert err["code"] == "invalid_request"
+            assert err["recoverable"] is True
+
+    _run(flow())
+
+
+def test_production_executor_is_fail_closed_with_documented_exemption(harness):
+    """F5: the production executor is constructed fail-closed; the three
+    research adapters are registered as explicitly capability-empty manifest
+    entries (documented exemption), and a boot assertion refuses any
+    unmanifested skill that declares write capabilities."""
+    from routers.v1.trip import _assert_manifest_governance
+
+    orch = harness()
+    ex = orch.executor
+    assert ex._allow_unmanifested_skills is False
+    for domain in ("hotel", "activities", "local_transport"):
+        entry = ex._registry_by_name[f"{domain}_research"]
+        assert entry["allowed_tools"] == []  # capability-empty exemption
+
+    # every write/network-capable registered skill must be manifested
+    _assert_manifest_governance(ex._skills, ex._registry_by_name)
+
+    class RogueSkill:
+        capabilities = frozenset({"profile_write"})
+
+    with pytest.raises(RuntimeError):
+        _assert_manifest_governance({"rogue": RogueSkill()},
+                                    ex._registry_by_name)
+
+    class EmptyHelper:
+        capabilities = frozenset()
+
+    # capability-empty helpers are the documented exemption
+    _assert_manifest_governance({"helper": EmptyHelper()},
+                                ex._registry_by_name)
+
+
+def test_stage1_skills_run_through_capability_enforcement(harness):
+    """F5: stage-1 goal_intake/clarify_loop must not bypass capability
+    enforcement — stripping a manifest entry refuses execution fail-closed."""
+    orch = harness()
+
+    async def flow():
+        orch.executor._registry_by_name.pop("goal_intake")
+        with pytest.raises(GraphCapabilityViolation):
+            await orch.start(AMBIGUOUS_GOAL, "cap_user")
+
+    _run(flow())
+
+
+def test_stream_terminates_on_idle_timeout_for_unresolved_trip(
+        harness, monkeypatch):
+    """F7: a trip whose approval is never resolved must not keep the SSE
+    stream open forever — it emits a final status event and terminates; the
+    trip itself stays paused."""
+    import routers.v1.trip as trip_mod
+    monkeypatch.setattr(trip_mod, "STREAM_IDLE_TIMEOUT_SECONDS", 0.6)
+    monkeypatch.setattr(trip_mod, "STREAM_MAX_LIFETIME_SECONDS", 5.0)
+    harness()
+
+    async def flow():
+        async with _client() as client:
+            trip_id = await _start(client, AMBIGUOUS_GOAL, "sse_user")
+            events = ""
+            t0 = time.perf_counter()
+            async with client.stream(
+                    "GET", f"/api/trip/{trip_id}/stream") as stream:
+                assert stream.status_code == 200
+                async for chunk in stream.aiter_text():
+                    events += chunk
+            elapsed = time.perf_counter() - t0
+            assert elapsed < 4.5, f"stream kept open {elapsed:.1f}s"
+            assert "event: status" in events
+            assert "stream_timeout" in events
+            # the stream gave up; the trip did not
+            state = (await client.get(
+                f"/api/trip/{trip_id}/state")).json()
+            assert state["status"] == "awaiting_approval"
 
     _run(flow())

@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 
 from models.schemas import (
     ApprovalRequest,
@@ -44,6 +44,7 @@ from models.schemas import (
 from routers.v1.profile import TripApiError, get_profile_store
 from services.atlas_client import AtlasClient
 from services.research_coordinator import ResearchCoordinator
+from services.skills import load_skill_registry
 from services.skills.base import SkillBase
 from services.skills.clarify_loop import ClarifyLoopSkill
 from services.skills.disruption_monitor import DisruptionMonitorSkill
@@ -54,6 +55,7 @@ from services.skills.itinerary import ItinerarySkill
 from services.skills.visa_check import VisaCheckSkill
 from services.trip_graph import (
     SCOPE_CHOICES,
+    GraphCapabilityViolation,
     GraphError,
     TripGraphExecutor,
     plan_trip,
@@ -63,6 +65,22 @@ from services.web_intel_client import WebIntelClient
 from services import llm as llm_service
 
 router = APIRouter(prefix="/api/trip", tags=["Trip"])
+
+# SSE stream bounds (G3-DA fix F7): a never-resolved approval must not keep
+# the stream open forever — idle (no new events) and absolute lifetime caps
+# emit a final status event and terminate; the trip itself stays paused.
+STREAM_IDLE_TIMEOUT_SECONDS = 90.0
+STREAM_MAX_LIFETIME_SECONDS = 600.0
+
+# user_id boundary check (§9.3): identical charset to ProfileStore._path so
+# invalid ids are refused BEFORE any goal parsing touches them (G3-DA fix F3)
+_USER_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
+
+# research adapter domains + the write-capability vocabulary that boot-time
+# manifest governance refuses to run unmanifested (G3-DA fix F5, §14.4)
+_RESEARCH_DOMAINS = ("hotel", "activities", "local_transport")
+_WRITE_CAPABILITIES = frozenset(
+    {"profile_write", "telegram_send", "atlas_call", "network_read"})
 
 _SCOPE_LABELS = {
     "flight_only": "Search flights only (no booking, no hotels/activities)",
@@ -156,7 +174,13 @@ async def ddg_lite_fetch(query: str) -> Optional[Dict[str, Any]]:
 
 class DomainResearchSkill(SkillBase):
     """Runtime-registered helper wrapping ResearchCoordinator.run_domain;
-    mounted only for explicitly requested leisure domains."""
+    mounted only for explicitly requested leisure domains.
+
+    Capability governance (G3-DA fix F5): these adapters are EXPLICITLY
+    capability-empty and are registered in the executor's manifest registry
+    as capability-empty entries at boot — the documented exemption that lets
+    the production executor stay fail-closed (allow_unmanifested_skills=False).
+    """
 
     capabilities = frozenset()
 
@@ -180,6 +204,26 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _assert_manifest_governance(skills: Dict[str, Any],
+                                registry_by_name: Dict[str, Dict[str, Any]]
+                                ) -> None:
+    """Boot-time governance assertion (§14.4, G3-DA fix F5): any registered
+    skill declaring a write/network capability MUST have a manifest entry.
+    Unmanifested skills are tolerated ONLY when explicitly capability-empty
+    (embedded helpers, e.g. the research adapters). Refusing at boot beats a
+    per-request fail-closed trip failure for a configuration error."""
+    for name, skill in skills.items():
+        declared = set(getattr(skill, "capabilities", frozenset()))
+        if not (declared & _WRITE_CAPABILITIES):
+            continue
+        if name not in registry_by_name:
+            raise RuntimeError(
+                f"manifest governance violation: skill '{name}' declares "
+                f"write/network capabilities {sorted(declared & _WRITE_CAPABILITIES)} "
+                "but has no manifest entry — manifest it or strip the "
+                "capabilities")
+
+
 class TripOrchestrator:
     """Wires the frozen/G2 services onto the §6 trip API. All state lives in
     the TripGraphExecutor registry (cross-trip isolation is proven there)."""
@@ -187,10 +231,21 @@ class TripOrchestrator:
     def __init__(self, profile_store=None, atlas=None, web_intel=None,
                  llm_chat=None) -> None:
         self.store = profile_store or get_profile_store()
-        # explicit opt-in for the three runtime-registered research adapters
-        # (DomainResearchSkill instances have no *.SKILL.md by design; every
-        # manifested skill is still capability-checked against its manifest)
-        self.executor = TripGraphExecutor(allow_unmanifested_skills=True)
+        # FAIL-CLOSED executor (G3-DA fix F5): the three runtime-registered
+        # research adapters become explicit capability-empty registry entries
+        # (documented exemption, §14.4), so allow_unmanifested_skills stays
+        # False in production — every execution is manifest-governed.
+        registry = load_skill_registry() + [
+            {"name": f"{domain}_research",
+             "description": (f"bounded {domain} research delegated to the "
+                             "ResearchCoordinator (capability-empty embedded "
+                             "helper; documented fail-closed exemption)"),
+             "allowed_tools": [],
+             "module_path": "routers.v1.trip",
+             "path": ""}
+            for domain in _RESEARCH_DOMAINS
+        ]
+        self.executor = TripGraphExecutor(registry=registry)
         atlas_client = atlas or AtlasClient()
         self.web_intel = web_intel or WebIntelClient(
             ddg_fetcher=ddg_lite_fetch,
@@ -212,6 +267,8 @@ class TripOrchestrator:
             ex.register_skill(f"{domain}_research",
                               DomainResearchSkill(domain, self.coordinator))
         self.skills = {"goal_intake": gi, "clarify_loop": cl}
+        # boot governance: no write-capable skill may run unmanifested
+        _assert_manifest_governance(ex._skills, ex._registry_by_name)
         # trip_id -> intent seed for scope-clarification resume
         self._seeds: Dict[str, Dict[str, Any]] = {}
 
@@ -299,13 +356,43 @@ class TripOrchestrator:
 
     # -- lifecycle ---------------------------------------------------------------
 
+    def _enforce_stage1_capabilities(self, skill_ref: str) -> None:
+        """Same fail-closed contract as the executor's _enforce_capabilities,
+        applied to the stage-1 skills that run skill-direct — enforcement is
+        never skipped on the direct-run path (G3-DA fix F5)."""
+        skill = self.skills[skill_ref]
+        declared = set(getattr(skill, "capabilities", frozenset()))
+        entry = self.executor._registry_by_name.get(skill_ref)
+        if entry is None:
+            raise GraphCapabilityViolation(
+                f"skill '{skill_ref}' has no manifest entry — stage-1 "
+                "execution refused (fail-closed)")
+        exceeding = declared - set(entry.get("allowed_tools", []))
+        if exceeding:
+            raise GraphCapabilityViolation(
+                f"skill '{skill_ref}' exceeds declared capabilities: "
+                f"{sorted(exceeding)}")
+
     async def start(self, goal_text: str, user_id: str) -> str:
-        profile = self.store.get_or_create(user_id)  # ValueError -> router
+        try:
+            profile = self.store.get_or_create(user_id)
+        except ValidationError:
+            # unreadable-on-disk profile degrades to a recoverable envelope
+            # (never a bare 500, never mislabeled; G3-DA fix F1)
+            raise TripApiError(
+                400, "profile_unreadable",
+                f"the stored profile for '{user_id}' could not be read",
+                recoverable=True,
+                hint="the stored profile is unreadable — contact support or "
+                     "start fresh with a different user_id")
         trip_id = f"trip_{uuid.uuid4().hex[:12]}"
         ctx = {"raw_text": goal_text, "user_id": user_id,
                "profile": self._profile_ctx(profile)}
 
-        # stage 1 runs skill-direct so the graph mounts exactly one plan
+        # stage 1 runs skill-direct so the graph mounts exactly one plan —
+        # but capability enforcement still applies (G3-DA fix F5)
+        self._enforce_stage1_capabilities("goal_intake")
+        self._enforce_stage1_capabilities("clarify_loop")
         t0 = time.perf_counter()
         goal_out = await self.skills["goal_intake"].run(
             {"free_text": goal_text}, ctx)
@@ -525,8 +612,10 @@ def set_trip_orchestrator(orch: Optional[TripOrchestrator]) -> None:
 
 
 class TripStartRequest(BaseModel):
-    goal_text: str
-    user_id: str
+    # G3-DA fix F6: bounded input at the boundary — a 5MB goal is refused
+    # before allocation/retention (max_length -> invalid_request envelope)
+    goal_text: str = Field(..., max_length=4000)
+    user_id: str = Field(..., max_length=128)
 
 
 class ApprovalDecision(BaseModel):
@@ -536,6 +625,14 @@ class ApprovalDecision(BaseModel):
 
 @router.post("/start")
 async def trip_start(body: TripStartRequest):
+    # explicit user_id validation FIRST (G3-DA fix F3): invalid_user_id is
+    # reserved for the identifier check and can never mask goal-parse errors
+    if not _USER_ID_RE.fullmatch(body.user_id):
+        raise TripApiError(
+            400, "invalid_user_id",
+            f"user_id '{body.user_id[:50]}' contains unsupported characters",
+            recoverable=True,
+            hint="use only letters, digits, '_' or '-' in user_id")
     if not body.goal_text.strip():
         raise TripApiError(422, "empty_goal",
                            "goal_text must carry the travel goal",
@@ -545,6 +642,16 @@ async def trip_start(body: TripStartRequest):
     orch = get_trip_orchestrator()
     try:
         trip_id = await orch.start(body.goal_text, body.user_id)
+    except ValidationError:
+        # hostile goal text (e.g. an impossible calendar date) fails goal
+        # construction: 422 invalid_goal with a SANITIZED message — no raw
+        # pydantic detail, no errors.pydantic.dev URLs (G3-DA fix F3)
+        raise TripApiError(
+            422, "invalid_goal",
+            "the goal text could not be parsed into a valid travel goal",
+            recoverable=True,
+            hint="check the dates and locations — use a real calendar date, "
+                 "e.g. 'Sep 28-30' or 2026-09-28")
     except ValueError as exc:
         raise TripApiError(400, "invalid_user_id", str(exc), recoverable=True,
                            hint="use only letters, digits, '_' or '-' in "
@@ -603,26 +710,44 @@ async def trip_simulate_disruption(trip_id: str, allow_sim: str = ""):
 
 @router.get("/{trip_id}/stream")
 async def trip_stream(trip_id: str):
-    """SSE step events: node records, pending approvals, terminal status."""
+    """SSE step events: node records, pending approvals, terminal status.
+
+    Bounded lifetime (G3-DA fix F7): when no new events arrive within the
+    idle window — or the absolute lifetime is exceeded — a final status
+    event with reason 'stream_timeout' is emitted and the stream closes;
+    the trip itself keeps its status untouched."""
     orch = get_trip_orchestrator()
     orch._trip_or_404(trip_id)
 
     async def event_gen():
         sent_nodes = 0
         sent_approvals = 0
+        started = time.monotonic()
+        last_progress = started
         while True:
             trip = orch.executor.get(trip_id)
+            new_events = False
             for rec in trip.trace[sent_nodes:]:
                 yield ("event: node\n"
                        f"data: {json.dumps(rec.model_dump(mode='json'))}\n\n")
+                new_events = True
             sent_nodes = len(trip.trace)
             for approval in trip.pending_approvals[sent_approvals:]:
                 yield ("event: approval\n"
                        f"data: {json.dumps(approval.model_dump(mode='json'))}\n\n")
+                new_events = True
             sent_approvals = len(trip.pending_approvals)
+            if new_events:
+                last_progress = time.monotonic()
             if trip.status in ("completed", "failed"):
                 yield ("event: status\n"
                        f"data: {json.dumps({'status': trip.status})}\n\n")
+                return
+            now = time.monotonic()
+            if (now - last_progress > STREAM_IDLE_TIMEOUT_SECONDS
+                    or now - started > STREAM_MAX_LIFETIME_SECONDS):
+                yield ("event: status\n"
+                       f"data: {json.dumps({'status': trip.status, 'reason': 'stream_timeout'})}\n\n")
                 return
             await asyncio.sleep(0.4)
 

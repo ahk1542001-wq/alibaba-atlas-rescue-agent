@@ -211,3 +211,69 @@ after (full suite):                  188 passed in 31.71s
 Live-sandbox note: the atlas-flight CLI probe returned real offers for
 BKK→SIN at gate time; happy-path option ids were asserted disjoint from the
 curated fallback set.
+
+## G3 Devil's Advocate Remediation (against gate commit a8bb94a)
+
+All 7 DA findings were reproduced first (probe scripts + red regression
+tests), then fixed TDD-style: failing regression test added per finding in
+`tests/test_e2e_trip_journey.py`, root cause fixed, test green. Scope
+isolation held: `static/`, `tests/test_ui_trip.py` and every `services/`
+module untouched; fixes live in `routers/v1/profile.py`, `routers/v1/trip.py`
+and `main.py` only (no schema change needed — `TripStartRequest` already
+lives in `routers/v1/trip.py`). Decisions logged in `DECISIONS.tsv` under
+prefix `G3-DA-fix` (+ `AUTO-` rows).
+
+Per-finding status:
+
+1. HIGH profile PUT validation bypass — REPRODUCED (cabin=123 and
+   expiry='not-a-date' persisted 200; a fresh `ProfileStore` then failed
+   `model_validate_json`) → FIXED: validate-before-assignment via model
+   reconstruction (prefs + identity, with normalization) → 400
+   `invalid_profile_request`. Deviation vs the claim: the reload failure was
+   already trapped by the `ValueError` catch (ValidationError subclasses
+   ValueError), so it surfaced as a mislabeled `invalid_user_id` with raw
+   pydantic detail rather than a bare 500; `_guard_user_id` now catches
+   `ValidationError` explicitly → 400 `profile_unreadable` recoverable.
+2. HIGH passport_no non-string — REPRODUCED (TypeError in `mask_passport` →
+   bare 500) → FIXED: boundary type guard on all identity-shaped fields →
+   400 envelope.
+3. MED blanket ValueError in trip_start — REPRODUCED ('fly BKK to Singapore
+   Sep 31' → code `invalid_user_id` with errors.pydantic.dev URLs) → FIXED:
+   explicit user_id regex check first; goal-construction `ValidationError` →
+   422 `invalid_goal`, sanitized.
+4. MED malformed bodies — REPRODUCED (FastAPI `{"detail":[...]}`) → FIXED:
+   `RequestValidationError` handler in `main.py` scoped by path prefix
+   (/api/trip, /api/profile, /api/skills) → `invalid_request` envelope;
+   legacy routes keep the default shape (pinned by regression).
+5. MED manifest governance dead in production — REPRODUCED (executor built
+   with allow_unmanifested_skills=True; stage-1 ran skill-direct bypassing
+   enforcement) → FIXED fail-closed: adapters registered as explicit
+   capability-empty exemption entries (real *.SKILL.md manifests impossible
+   without paired .py modules, which scope isolation forbids — see
+   DECISIONS.tsv), boot assertion refuses unmanifested write-capable skills,
+   stage-1 direct runs pass `_enforce_stage1_capabilities`.
+6. LOW unbounded goal_text — REPRODUCED (5MB accepted) → FIXED:
+   `max_length=4000` (+ user_id 128) → `invalid_request` envelope.
+7. LOW endless SSE polling — REPRODUCED (stream still open >4s on a
+   never-resolved approval, bounded probe killed) → FIXED: idle (90s) +
+   lifetime (600s) caps emit a final `status` event (reason
+   `stream_timeout`) and close; the trip stays paused.
+
+Remediation evidence (`.venv/bin/python -m pytest tests/ -q`, TZ=UTC — the
+pre-existing `test_s6_yesterday_date_only…` test is clock-dependent in
+non-UTC locales because it compares local dates against a conservative UTC
+start-of-day; under TZ=UTC it is deterministic):
+
+```
+before (gate commit a8bb94a):  188 passed in 31.01s (TZ=UTC)
+red phase (9 new regressions): 8 failed instantly + 1 (SSE) hangs pre-fix,
+                               confirmed via bounded 4s stream probe
+after fixes:                   197 passed in 31.62s (incl. concurrent
+                               agent's test_ui_trip.py: 207 passed in 51.78s)
+```
+
+No pre-existing test was weakened or deleted; frozen services and the
+README demo flow untouched (`git diff --name-only` in the remediation commit
+lists only routers/v1/profile.py, routers/v1/trip.py, main.py,
+tests/test_e2e_trip_journey.py, DECISIONS.tsv, PLAN.md).
+
