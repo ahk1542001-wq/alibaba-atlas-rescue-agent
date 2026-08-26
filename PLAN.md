@@ -70,9 +70,9 @@ test_skills_manifest).
 - Evidence: G3 gate commit pytest output below; PNR-shaped object provenance-flagged sandbox; live Atlas CLI offers asserted non-canned.
 
 ### G4 UI Gate
-- [ ] Playwright flows B1–B6 green; `data-testid` on interactive elements
-- [ ] screenshots saved to `screenshots/` (gitignored)
-- [ ] UI completeness sweep: every interactive element asserted or listed out-of-demo-scope
+- [x] Playwright flows B1–B6 green; `data-testid` on interactive elements
+- [x] screenshots saved to `screenshots/` (gitignored)
+- [x] UI completeness sweep: every interactive element asserted or listed out-of-demo-scope
 - Evidence: PNGs + browser console capture with zero errors.
 
 ### G5 Security & Audit Gate
@@ -147,6 +147,9 @@ Fresh evidence is captured per gate commit; pointers below stay durable.
 | §6/F12 skills manifest API | `routers/v1/skills.py` | `tests/test_e2e_trip_journey.py::test_skills_manifest_listing` | G3 gate commit pytest output |
 | §6 shared error contract handlers (TripApiError / GraphError) | `main.py` (registration + 2 handlers only) | `tests/test_e2e_trip_journey.py` error-shape assertions | G3 gate commit pytest output |
 | §15.1 researched Singapore hotels/activities dataset | `data/mock_hotels_sg.json` | `tests/test_skills_behavior.py` S8 itinerary cases + G3 verification (valid JSON, 22 hotels + 12 activities, sourced entries) | G3 gate commit |
+| §5 trip UI (goal chat, clarify chips, 3-choice scope, sandbox option cards, approval modal, PNR screen, honesty itinerary, live DAG, profile editor, two-run greeting) | `static/index.html` (#view-trip, additive), `static/trip.js` (new; strict createElement/textContent), `static/styles.css` (append-only) | `tests/test_ui_trip.py` B1–B6 + scope/flight-only/degraded+stale/XSS/mobile 375px/console-error-zero suites | G4 gate commit pytest output + `screenshots/*.png` |
+| §9.2 data-testid on every interactive element | `static/index.html` backfill (existing ids/classes untouched) | `tests/test_ui_trip.py::test_ui_completeness_sweep_testids` + per-flow clicks | G4 sweep table below |
+| Legacy rescue UI unbroken by the additive trip view | frozen `static/app.js` untouched | canary `tests/e2e_full_journey.py` against booted app: 14/14 PASS | G4 canary run log |
 | §0/§9.7 gate process artifacts | `PLAN.md`, `DECISIONS.tsv`, `BLOCKERS.md` | `tests/test_docs_integrity.py` conventions (durable-docs hygiene) | gate commit pytest output |
 
 ## G2 Devil's Advocate Remediation (against gate commit 2a3715a)
@@ -276,4 +279,95 @@ No pre-existing test was weakened or deleted; frozen services and the
 README demo flow untouched (`git diff --name-only` in the remediation commit
 lists only routers/v1/profile.py, routers/v1/trip.py, main.py,
 tests/test_e2e_trip_journey.py, DECISIONS.tsv, PLAN.md).
+
+## G4 UI Gate (trip view with Playwright evidence)
+
+Scope (per leader directive): additive `static/index.html` changes,
+NEW `static/trip.js`, append-only `static/styles.css`,
+`tests/test_ui_trip.py`. Frozen: `static/app.js`, `services/*`,
+pre-existing tests, AGENTS.md, README demo-flow, .env — all untouched.
+
+Delivered:
+
+- `static/index.html` — fifth view `#view-trip` + nav entries (desktop
+  sidebar + mobile bottom nav, existing patterns); goal chat, clarify-chip
+  area, 3-choice scope block, visa panel, approval banner + modal, option
+  cards with "Atlas Sandbox data" chip, PNR screen, honesty itinerary, live
+  DAG rail, profile editor with consent toggle; `data-testid` backfilled on
+  EVERY interactive element without changing any pre-existing id/class.
+- `static/trip.js` — all trip-view logic; strict createElement/textContent
+  (zero innerHTML with data); 1s `setInterval` polling of
+  `GET /api/trip/{id}/state` + SSE `/api/trip/{id}/stream` (node/approval
+  events trigger immediate polls; ES closed on terminal status); approve/
+  reject flows; profile editor via `/api/profile/*` (source enforced user);
+  provenance/freshness chips + visible degraded/stale warnings; empty,
+  loading, and error states on every async surface.
+- `static/styles.css` — append-only within Warm Travel tokens (chips,
+  cards, modal, DAG timeline, profile rows, responsive 980px/768px/375px).
+- `tests/test_ui_trip.py` — 10 headless-chromium flows on 127.0.0.1:8050
+  (session uvicorn thread; per-test fresh ProfileStore + TripOrchestrator
+  per the G3 harness pattern; every flow captures console and fails on ANY
+  console error/pageerror, filtering only third-party Google Fonts resource
+  failures from the pre-existing frozen `<link>` tags).
+
+Flow results (all PASS, fresh run at gate time):
+
+| Flow | Test | Result | Screenshot |
+|---|---|---|---|
+| B1 goal chat → clarify chips → confirm | `test_b1_goal_chat_clarify_chips_confirm` | PASS | `screenshots/g4_b1_clarify_chips.png` |
+| B2 sandbox option cards (carrier text, SGD/THB, provenance) | `test_b2_b3_sandbox_options_approval_pnr` | PASS | `screenshots/g4_b2_option_cards.png` |
+| B3 approval modal → confirm → PNR screen | same test (single trip lifecycle) | PASS | `screenshots/g4_b3_pnr_screen.png` |
+| B4 DAG node growth within 1s cadence | `test_b4_dag_panel_node_growth_within_1s` | PASS | `screenshots/g4_b4_dag_panel.png` |
+| B5 profile editor + masked passport `MD*****67` | `test_b5_profile_editor_and_masked_passport` | PASS | `screenshots/g4_b5_profile_editor.png` |
+| B6 two-run memory greeting (remembered home_city) | `test_b6_two_run_memory_greeting` | PASS | `screenshots/g4_b6_remembered_greeting.png` |
+| Scope 3-choice + flight-only (no hotel/activities) | `test_scope_three_choice_flow_and_flight_only` | PASS | `screenshots/g4_scope_flight_only.png` |
+| Degraded + stale visa warnings visible | `test_degraded_and_stale_visa_warnings` | PASS | `screenshots/g4_visa_degraded.png`, `screenshots/g4_visa_stale.png` |
+| XSS goal payload renders inert | `test_xss_goal_payload_renders_inert` | PASS | — |
+| Mobile 375px, no horizontal overflow | `test_mobile_375_trip_view_no_overflow` | PASS | `screenshots/g4_mobile_375_trip.png` |
+| Completeness sweep (every interactive element carries a testid) | `test_ui_completeness_sweep_testids` | PASS | — |
+
+B2+B3 share one test function on purpose: the UI tracks only trips started
+in its own page session (trip_id is JS state, lost on reload), and each
+test installs a fresh store/orchestrator.
+
+Canary (legacy rescue UI unbroken): `python main.py` booted on :8050,
+`tests/e2e_full_journey.py` run against it — **14/14 PASS**, including
+live-Qwen concierge, radar scan, EU261 positive case, mobile sanity.
+
+Gate evidence (`TZ=UTC .venv/bin/python -m pytest tests/ -q`, run fresh
+against remediation commit 1fed80d):
+
+```
+before (G3 gate a8bb94a):          188 passed
+after G3-DA remediation (1fed80d): 197 passed (+9 regressions)
+after G4 UI suites (full suite):   207 passed in 48.30s (+10 UI flows)
+UI suite alone:                    10 passed in 17.19s
+```
+
+Honesty notes:
+
+- The suite must run under `TZ=UTC`: `test_s6_yesterday_date_only_citation
+  _is_stale_under_24h_policy` (pre-existing, frozen) computes "yesterday"
+  from LOCAL `date.today()` but ages against UTC midnight — after local
+  midnight in UTC+ zones the two disagree and the test flakes. Not a G4
+  regression; reported to the leader.
+- UI flows use FakeAtlas (deterministic sandbox stand-in, same pattern as
+  the G3 unit suites); live-sandbox behavior is covered by the G3 E2E
+  suite. Provenance labels ("Atlas Sandbox data") are asserted in both.
+
+### G4 UI completeness sweep (§8)
+
+Static inventory: 70 interactive elements carry a `data-testid`; the sweep
+enumerates `button, input, select, textarea, a[href], summary, .nav-icon,
+.bottom-nav-item` and fails if any lacks one.
+
+| Area | Elements (data-testid) | Covered by |
+|---|---|---|
+| Trip view (new) | trip-goal-input/submit/form/loading, trip-chat, trip-clarify-chips, trip-scope-choices, trip-visa-panel, trip-approval-banner/overlay/options/note, approval-approve/reject, trip-options(-empty), sandbox-provenance, trip-pnr-screen, trip-itinerary(-empty), trip-dag-panel/list/live/empty, trip-status-strip/pill, trip-latency, trip-error, trip-greeting, trip-profile-editor/rows/empty, profile-consent | B1–B6 + edge-flow assertions in `tests/test_ui_trip.py` (chip inputs/confirms, scope choices, approval buttons, profile edit/save/delete rows are dynamic and carry testids at render time) |
+| Navigation | nav-rescue/search/concierge/radar/trip, mnav-rescue/search/concierge/radar/trip | `goto_trip`/`mnav-trip` clicks in UI suite + canary view switches |
+| Rescue (legacy) | btn-add-flight, btn-af-cancel/add, input-flight-number/date/passenger-name/nationality/currency, btn-simulate, btn-payout, btn-appeal, btn-done, claim-letter-summary, appeal-summary, chip-vegetarian/gate/baggage/claim | canary `tests/e2e_full_journey.py` (clicks + expects, 14/14) |
+| Concierge (legacy) | chat-input, btn-send | canary live-Qwen reply flow |
+| Search (legacy) | search-origin/destination/date/passengers/currency, btn-search | canary flight-search flow |
+| Radar (legacy) | btn-radar-scan | canary radar flow |
+| Out-of-demo-scope (reason) | `.btn-rebook`, `.btn-radar-accept` — created at runtime by FROZEN `static/app.js`; data-testid cannot be added without editing it | covered behaviorally by canary clicks in `tests/e2e_full_journey.py` |
 
