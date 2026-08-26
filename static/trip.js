@@ -12,9 +12,10 @@
 
     var USER_ID = 'victor'; // §16.1 single-user demo id
     var POLL_MS = 1000;     // F9: DAG updates within 1s cadence
-    // §16.1 currency display: SGD primary, THB secondary (per 1 USD)
+    // §16.1 honesty (G4-DA-fix F6): conversions are LABELED indicative
+    // estimates, never presented as the fare itself.
     var RATE_SGD = 1.34;
-    var RATE_THB = 35.4;
+    var RATE_THB = 35.4; // per 1 USD; only used for labeled SGD→THB hints
     // Atlas Sandbox carrier display names (sandbox data only — never
     // presented as live airline inventory).
     var CARRIER_NAMES = {
@@ -32,12 +33,19 @@
         es: null,
         answeredChips: {},
         renderedNodeCount: -1,
-        renderedOptionIds: '',
+        renderedDagSig: '',
+        renderedOptionIds: null,
         renderedItineraryCount: -1,
         approval: null,          // current approve_booking approval object
         selectedOptionId: null,
         pnrShown: false,
-        busy: false
+        busy: false,
+        // G4-DA-fix F1/F2: race-safety + lifecycle
+        epoch: 0,                // bumped whenever in-flight polls go stale
+        pollSeq: 0,              // monotonic request sequence
+        appliedSeq: 0,           // newest response actually rendered
+        pollAbort: null,         // AbortController of the in-flight poll
+        terminal: false
     };
 
     // --- strict DOM helpers (never innerHTML with data) -------------------
@@ -55,11 +63,22 @@
 
     function byId(id) { return document.getElementById(id); }
 
-    function money(usd) {
-        return 'S$' + (Number(usd || 0) * RATE_SGD).toFixed(2);
+    // G4-DA-fix F6 honest pricing: render the option's ACTUAL currency
+    // natively; non-THB fares carry a labeled indicative SGD estimate and
+    // never a misleading ฿ pairing.
+    function priceNative(price) {
+        var amount = (price && price.amount) || 0;
+        var cur = (price && price.currency) || 'USD';
+        if (cur === 'THB') return '\u0E3F' + Number(amount).toFixed(0);
+        if (cur === 'SGD') return 'S$' + Number(amount).toFixed(2);
+        return '$' + Number(amount).toFixed(2);
     }
-    function moneyThb(usd) {
-        return '\u2248 \u0E3F' + (Number(usd || 0) * RATE_THB).toFixed(0);
+    function priceSecondary(price) {
+        var cur = (price && price.currency) || 'USD';
+        if (cur !== 'USD' && cur !== 'SGD') return '';
+        var sgd = (cur === 'SGD') ? Number(price.amount || 0)
+                                  : Number(price.amount || 0) * RATE_SGD;
+        return '\u2248 S$' + sgd.toFixed(2) + ' (indicative SGD)';
     }
     function sgdRange(range) {
         if (!range || range.length < 2) return null;
@@ -68,7 +87,9 @@
     function sgdToThb(range) {
         if (!range || range.length < 2) return null;
         var factor = RATE_THB / RATE_SGD;
-        return '\u2248 \u0E3F' + Math.round(range[0] * factor) + '\u2013' + Math.round(range[1] * factor);
+        // labeled indicative estimate (§11 honesty), never the price itself
+        return '\u2248 \u0E3F' + Math.round(range[0] * factor) + '\u2013' +
+            Math.round(range[1] * factor) + ' (indicative)';
     }
     function clock(iso) {
         if (!iso) return '';
@@ -127,12 +148,17 @@
             var data = await api('/api/trip/start', jsonOpts('POST', {
                 goal_text: text, user_id: USER_ID
             }));
+            invalidatePolls();          // any in-flight poll is for the old trip
             Trip.tripId = data.trip_id;
             Trip.pnrShown = false;
+            Trip.terminal = false;
             Trip.renderedNodeCount = -1;
-            Trip.renderedOptionIds = '';
+            Trip.renderedDagSig = '';
+            Trip.renderedOptionIds = null;  // null sentinel: force re-render
             Trip.renderedItineraryCount = -1;
             Trip.answeredChips = {};
+            resetTripSurfaces();        // G4-DA-fix (leader defect e): per-trip
+                                        // panels never leak across trips
             clear(byId('trip-chat'));
             addChat('user', text);
             addChat('agent', 'Trip opened (' + data.trip_id + '). Working the plan now \u2014 follow the live execution panel.');
@@ -152,10 +178,19 @@
     function stopWatching() {
         if (Trip.pollTimer) { clearInterval(Trip.pollTimer); Trip.pollTimer = null; }
         if (Trip.es) { Trip.es.close(); Trip.es = null; }
+        if (Trip.pollAbort) { Trip.pollAbort.abort(); Trip.pollAbort = null; }
+    }
+
+    function invalidatePolls() {
+        // G4-DA-fix F2: any response captured before this moment must be
+        // dropped when it lands — bump the epoch and abort the in-flight GET.
+        Trip.epoch += 1;
+        if (Trip.pollAbort) { Trip.pollAbort.abort(); Trip.pollAbort = null; }
     }
 
     function startWatching() {
         stopWatching();
+        Trip.terminal = false;
         pollState();
         Trip.pollTimer = setInterval(pollState, POLL_MS);
         try {
@@ -170,13 +205,77 @@
         } catch (e) { /* SSE is an enhancement; polling alone satisfies F9 */ }
     }
 
+    // G4-DA-fix F1: the watcher stops on terminal status (after the final
+    // render) and whenever the user leaves the trip view — app.js is frozen,
+    // so view switches are observed via the .active class it toggles.
+    function observeTripView() {
+        var view = byId('view-trip');
+        if (!view || typeof MutationObserver === 'undefined') return;
+        var mo = new MutationObserver(function () {
+            if (view.classList.contains('active')) {
+                if (Trip.tripId && !Trip.pollTimer && !Trip.terminal) startWatching();
+            } else {
+                stopWatching();
+            }
+        });
+        mo.observe(view, { attributes: true, attributeFilter: ['class'] });
+    }
+
+    // G4-DA-fix (leader defect e): restore every per-trip surface to its
+    // honest empty state when a new trip starts.
+    function resetTripSurfaces() {
+        var chips = byId('trip-clarify-chips');
+        if (chips) clear(chips);
+        var scopeBlock = byId('trip-scope-block');
+        scopeBlock.hidden = true;
+        scopeBlock.removeAttribute('data-approval-id');
+        var banner = byId('trip-approval-banner');
+        banner.hidden = true;
+        var overlay = byId('trip-approval-overlay');
+        overlay.hidden = true;
+        Trip.approval = null;
+        byId('trip-pnr-block').hidden = true;
+        byId('trip-visa-block').hidden = true;
+        var optEmpty = el('div', 'trip-empty',
+            'No flight options yet \u2014 submit a travel goal to begin.');
+        optEmpty.setAttribute('data-testid', 'trip-options-empty');
+        var optionsBox = byId('trip-options');
+        clear(optionsBox);
+        optionsBox.appendChild(optEmpty);
+        var itinEmpty = el('div', 'trip-empty',
+            'Nothing planned yet \u2014 the itinerary appears after a confirmed booking.');
+        itinEmpty.setAttribute('data-testid', 'trip-itinerary-empty');
+        var itinBox = byId('trip-itinerary');
+        clear(itinBox);
+        itinBox.appendChild(itinEmpty);
+        var dagEmpty = el('li', 'trip-dag-empty',
+            'No nodes yet \u2014 the DAG fills in as the agent works (1s refresh).');
+        dagEmpty.setAttribute('data-testid', 'trip-dag-empty');
+        var dagList = byId('trip-dag-list');
+        clear(dagList);
+        dagList.appendChild(dagEmpty);
+    }
+
     async function pollState() {
-        if (!Trip.tripId) return;
+        if (!Trip.tripId || Trip.terminal) return;
+        var seq = (Trip.pollSeq += 1);
+        var epochAtSend = Trip.epoch;
+        if (Trip.pollAbort) Trip.pollAbort.abort();
+        Trip.pollAbort = new AbortController();
         try {
-            var state = await api('/api/trip/' + Trip.tripId + '/state');
+            var state = await api('/api/trip/' + Trip.tripId + '/state',
+                                  { signal: Trip.pollAbort.signal });
+            // G4-DA-fix F2: a response is stale if a trip-mutating action
+            // happened after it was sent, or a newer one was already applied.
+            if (epochAtSend !== Trip.epoch || seq <= Trip.appliedSeq) return;
+            Trip.appliedSeq = seq;
             renderState(state);
         } catch (err) {
+            if (err && err.name === 'AbortError') return; // superseded on purpose
+            if (epochAtSend !== Trip.epoch) return;
             showError('State poll failed (' + err.code + '): ' + err.message);
+        } finally {
+            if (Trip.pollAbort && Trip.pollAbort.signal.aborted) Trip.pollAbort = null;
         }
     }
 
@@ -199,6 +298,7 @@
     // --- main state renderer ----------------------------------------------------
 
     function renderState(s) {
+        hideError(); // G4-DA-fix F3: a successful render clears any banner
         renderStatusStrip(s);
         renderDag(s);
         renderClarifyChips(s);
@@ -208,6 +308,7 @@
         renderApprovalGate(s);
         renderPnr(s);
         renderItinerary(s);
+        window.__tripState = s; // test/diagnostic hook (last rendered state)
 
         if (s.status === 'failed') {
             var failed = null;
@@ -220,6 +321,12 @@
                     (d.message || failed.name + ' failed') +
                     (d.hint ? ' \u2014 ' + d.hint : ''));
             }
+        }
+
+        // G4-DA-fix F1: terminal status -> one final render, then stop.
+        if (s.status === 'completed' || s.status === 'failed') {
+            Trip.terminal = true;
+            stopWatching();
         }
     }
 
@@ -240,8 +347,16 @@
 
     function renderDag(s) {
         var nodes = s.nodes || [];
-        if (nodes.length === Trip.renderedNodeCount) return;
+        var last = nodes[nodes.length - 1];
+        var sig = nodes.length + ':' + (last ? last.name + '/' + last.status : '-');
+        // G4-DA-fix F2: the DAG is monotonic — a stale snapshot with fewer
+        // nodes can never regress the panel; equal counts re-render only on
+        // a real status/tail change.
+        if (nodes.length < Trip.renderedNodeCount ||
+                (nodes.length === Trip.renderedNodeCount &&
+                 sig === Trip.renderedDagSig)) return;
         Trip.renderedNodeCount = nodes.length;
+        Trip.renderedDagSig = sig;
         var list = byId('trip-dag-list');
         clear(list);
         if (nodes.length === 0) {
@@ -275,6 +390,19 @@
 
     var PROFILE_CHIP_FIELDS = ['passport_country', 'home_city', 'expiry'];
 
+    // G4-DA-fix F9: server-supplied field names may carry quotes/brackets —
+    // never build a selector from them unescaped.
+    function chipByField(wrap, field) {
+        if (window.CSS && CSS.escape) {
+            return wrap.querySelector('[data-chip-field="' + CSS.escape(field) + '"]');
+        }
+        var kids = wrap.children;
+        for (var i = 0; i < kids.length; i++) {
+            if (kids[i].getAttribute('data-chip-field') === field) return kids[i];
+        }
+        return null;
+    }
+
     function renderClarifyChips(s) {
         var clarify = (s.outputs && s.outputs.clarify) || null;
         var questions = (clarify && clarify.questions) || [];
@@ -282,7 +410,7 @@
         questions.forEach(function (q) {
             var field = q.field;
             if (!field || Trip.answeredChips[field]) return;
-            if (wrap.querySelector('[data-chip-field="' + field + '"]')) return;
+            if (chipByField(wrap, field)) return;
             Trip.answeredChips[field] = true; // render once
             var chip = el('div', 'trip-chip');
             chip.setAttribute('data-chip-field', field);
@@ -314,12 +442,27 @@
                           jsonOpts('PUT', { value: value, source: 'user' }));
                 btn.textContent = '\u2713 saved to profile';
             } else {
-                btn.textContent = '\u2713 noted';
+                // G4-DA-fix F4: trip-goal answers persist server-side and
+                // resume a trip that failed on the now-complete route.
+                invalidatePolls();
+                var ack = await api('/api/trip/' + Trip.tripId + '/clarify-answers',
+                                    jsonOpts('POST', { field: field, value: value }));
+                var shown = (ack && ack.clarify && ack.clarify.value != null)
+                    ? (typeof ack.clarify.value === 'string'
+                           ? ack.clarify.value
+                           : ((ack.clarify.value.start || '') + '\u2192' +
+                              (ack.clarify.value.end || '')))
+                    : value;
+                btn.textContent = '\u2713 added to trip';
+                addChat('agent', field + ': ' + shown + ' \u2014 added to the trip plan.');
             }
             chip.classList.add('confirmed');
             input.disabled = true;
-            addChat('agent', field + ': ' + value + ' \u2014 confirmed.');
+            if (PROFILE_CHIP_FIELDS.indexOf(field) !== -1) {
+                addChat('agent', field + ': ' + value + ' \u2014 confirmed.');
+            }
             refreshProfile();
+            pollState();
         } catch (err) {
             btn.disabled = false;
             btn.textContent = 'Retry';
@@ -357,6 +500,7 @@
     async function chooseScope(approval, choice, block) {
         block.querySelectorAll('.trip-scope-choice').forEach(function (b) { b.disabled = true; });
         try {
+            invalidatePolls(); // in-flight snapshots are pre-resolution: stale
             await api('/api/trip/' + Trip.tripId + '/approvals/' + approval.approval_id,
                       jsonOpts('POST', { decision: choice, value: { choice: choice } }));
             addChat('agent', 'Scope locked: ' + choice + '. Continuing the plan.');
@@ -430,7 +574,9 @@
         var container = byId('trip-options');
         var options = (search && search.options) || [];
         var ids = options.map(function (o) { return o.id; }).join(',');
-        if (ids === Trip.renderedOptionIds) return;
+        // null sentinel (G4-DA-fix leader defect e): an empty-options render
+        // must still clear stale cards from a previous trip.
+        if (ids === Trip.renderedOptionIds && Trip.renderedOptionIds !== null) return;
         Trip.renderedOptionIds = ids;
         clear(container);
         if (options.length === 0) {
@@ -441,12 +587,18 @@
             container.appendChild(optEmpty);
             return;
         }
+        // G4-DA-fix F5 honesty: a substituted date window is surfaced, never
+        // presented silently as the requested dates.
+        if (search.date_note) {
+            container.appendChild(chip('\u26A0 ' + search.date_note,
+                                       'trip-chip-warn', 'trip-date-note'));
+        }
         options.forEach(function (o) {
             var card = el('div', 'trip-option-card');
             card.setAttribute('data-testid', 'trip-option-card');
             var top = el('div', 'trip-option-top');
             var carrierName = CARRIER_NAMES[o.carrier] || o.carrier || '?';
-            var carrierLabel = carrierName + (CARRIER_NAMES[o.carrier] ? ' (' + o.carrier + ')' : '');
+            var carrierLabel = carrierName + (CARRIER_NAMES[o.carrier] ? ' (' + o.carrier + ')');
             top.appendChild(el('span', 'trip-option-carrier', carrierLabel));
             top.appendChild(el('span', 'trip-option-flight', o.flight_no));
             top.appendChild(chip('Atlas Sandbox data', 'trip-chip-sandbox'));
@@ -463,8 +615,11 @@
             times.appendChild(el('span', '', (o.arr && o.arr.time) || ''));
             card.appendChild(times);
             var price = el('div', 'trip-option-price');
-            price.appendChild(el('span', 'trip-option-sgd', money(o.price && o.price.amount)));
-            price.appendChild(el('span', 'trip-option-thb', moneyThb(o.price && o.price.amount)));
+            price.appendChild(el('span', 'trip-option-sgd', priceNative(o.price)));
+            var secondary = priceSecondary(o.price);
+            if (secondary) {
+                price.appendChild(el('span', 'trip-option-thb', secondary));
+            }
             card.appendChild(price);
             container.appendChild(card);
         });
@@ -525,7 +680,7 @@
             btn.appendChild(el('span', 'trip-option-flight', o.flight_no || ''));
             var routeTxt = ((o.dep && o.dep.airport) || '?') + ' \u2192 ' + ((o.arr && o.arr.airport) || '?');
             btn.appendChild(el('span', 'trip-approval-route', routeTxt));
-            btn.appendChild(el('span', 'trip-option-sgd', money(o.price && o.price.amount)));
+            btn.appendChild(el('span', 'trip-option-sgd', priceNative(o.price)));
             btn.addEventListener('click', function () { selectApprovalOption(btn, o.id); });
             list.appendChild(btn);
             if (idx === 0) selectApprovalOption(btn, o.id); // sensible default, still explicit
@@ -558,6 +713,7 @@
         approveBtn.disabled = true;
         rejectBtn.disabled = true;
         try {
+            invalidatePolls(); // in-flight snapshots predate this decision
             var payload = { decision: decision };
             if (decision === 'approve') payload.value = { option_id: Trip.selectedOptionId };
             var result = await api('/api/trip/' + Trip.tripId + '/approvals/' + Trip.approval.approval_id,
@@ -646,7 +802,10 @@
                 right.appendChild(chip('researched mock data (as_of ' + (asOf || 'unverified date') + ')',
                                        'trip-chip-mock', 'itin-chip-mock'));
             } else {
-                right.appendChild(chip('\uD83D\uDCA1 suggestion only', 'trip-chip-llm', 'itin-chip-llm'));
+                // G4-DA-fix F8: unknown provider sources fall back to the
+                // item's honesty_label before the blanket suggestion chip.
+                right.appendChild(chip(item.honesty_label || '\uD83D\uDCA1 suggestion only',
+                                       'trip-chip-llm', 'itin-chip-llm'));
             }
             var priceTxt = sgdRange(item.price_range_sgd);
             if (priceTxt) {
@@ -823,6 +982,8 @@
         byId('trip-consent').addEventListener('change', function (ev) {
             setConsent(ev.target.checked);
         });
+        observeTripView(); // G4-DA-fix F1: stop polling when the view is left
+        window.__tripRender = renderState; // diagnostic/test hook
         refreshProfile();
     }
 

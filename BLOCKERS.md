@@ -30,3 +30,16 @@ Entry template:
   omit-rather-than-invent); each item keeps its `price_notes` explaining the
   omission. ItinerarySkill loads all 34 entries with degraded=False.
 - Status: RESOLVED (committed with the G3 gate)
+## 2026-08-27 — G4 remediation UI suite rerun pending on port 8050
+- Repro: `TZ=UTC .venv/bin/python -m pytest tests/test_ui_trip.py -q` — the
+  `app_server` fixture fails fast when 127.0.0.1:8050 is occupied; the live
+  browser-validation session owns the port (PID 40933).
+- Attempts: probed the port every 10s for the full 15-minute retry window
+  after all other remediation work completed; the validation server never
+  released it. Scope isolation forbids killing/restarting PID 40933.
+- Hypothesis: the independent validation session keeps its server alive
+  until its own workflow finishes.
+- Alternative chosen: all non-UI evidence captured (201 passed, TZ=UTC);
+  the 8 new Playwright regressions collect cleanly (18 UI flows total) and
+  await the rerun; leader schedules it once the validation session ends.
+- Status: OPEN

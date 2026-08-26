@@ -283,8 +283,12 @@ def test_b2_b3_sandbox_options_approval_pnr(tracked_page, install_orch):
     assert "Scoot" in all_text, all_text
     expect(page.locator('[data-testid="sandbox-provenance"]').first) \
         .to_have_text("Atlas Sandbox data")
-    # SGD primary / THB secondary currency display (§16.1)
-    assert "S$" in all_text and "\u0e3f" in all_text, all_text
+    # honest currency display (G4-DA-fix F6): the option's ACTUAL currency
+    # renders natively; USD carries a labeled indicative SGD estimate and no
+    # misleading \u0e3f pairing
+    assert "$210.00" in all_text, all_text
+    assert "\u2248 S$" in all_text, all_text
+    assert "\u0e3f" not in all_text, all_text
     # visa panel with fresh citations surfaced alongside
     expect(page.locator('[data-testid="trip-visa-panel"]')).to_be_visible()
     expect(page.locator('[data-testid="visa-fresh-chip"]')).to_be_visible()
@@ -539,3 +543,289 @@ def test_ui_completeness_sweep_testids(tracked_page, install_orch):
                      or element.get_attribute("class") or "")
             missing.append(f"{tag}#{ident}")
     assert not missing, f"interactive elements without data-testid: {missing}"
+
+
+# --- G4 Devil's Advocate + live-browser remediation regressions ---------------------
+
+
+def _wait_poll_pause(page, seconds=2.5):
+    """Fail early if /state polling keeps firing; return True once the
+    poll counter stays static for ~seconds (polling genuinely stopped)."""
+    prev = page.evaluate("window.__statePolls")
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        time.sleep(0.25)
+        cur = page.evaluate("window.__statePolls")
+        if cur != prev:
+            return False
+    return True
+
+
+def test_f1_polling_stops_on_terminal_and_view_exit(tracked_page, install_orch):
+    """G4-DA-fix F1: the 1s DAG polling must stop once the trip reaches a
+    terminal status AND when the user leaves the trip view."""
+    install_orch()
+    page = tracked_page
+    set_passport_via_api("MM")
+    goto_trip(page)
+    page.evaluate("""() => {
+        window.__statePolls = 0;
+        const orig = window.fetch;
+        window.fetch = function (input, opts) {
+            const url = typeof input === 'string' ? input : String(input.url);
+            if (url.indexOf('/state') !== -1) window.__statePolls += 1;
+            return orig.apply(this, arguments);
+        };
+    }""")
+
+    start_goal(page, AMBIGUOUS_GOAL)
+    expect(page.locator('[data-testid="trip-chip-passport_country"]')) \
+        .to_be_visible(timeout=20000)
+    page.click('[data-testid="scope-choice-flight_only"]')
+    expect(page.locator('[data-testid="trip-status-pill"]')) \
+        .to_have_text("completed", timeout=25000)
+    # terminal status: polling stops (SSE closes alone is not enough)
+    assert _wait_poll_pause(page), "polling kept firing after terminal status"
+
+    # leaving the trip view also halts any residual watcher
+    page.evaluate("window.__statePolls = 0;")
+    page.click('[data-testid="nav-rescue"]')
+    expect(page.locator("#view-trip")).not_to_have_class(re.compile(r"\bactive\b"))
+    assert _wait_poll_pause(page), "polling kept firing after leaving trip view"
+
+
+def test_f2_stale_poll_cannot_resurrect_resolved_scope(tracked_page,
+                                                       install_orch):
+    """G4-DA-fix F2: an in-flight /state response captured BEFORE a scope
+    resolution must never re-apply its stale snapshot (resurrecting the
+    scope block / regressing the status pill) once released."""
+    install_orch()
+    page = tracked_page
+    set_passport_via_api("MM")
+    goto_trip(page)
+    page.evaluate("""() => {
+        window.__hold = null;
+        window.__release = null;
+        const orig = window.fetch;
+        window.fetch = function (input, opts) {
+            const url = typeof input === 'string' ? input : String(input.url);
+            if (url.indexOf('/state') !== -1 && window.__hold === null) {
+                const p = new Promise((resolve) => { window.__release = resolve; });
+                window.__hold = p;
+                return p;
+            }
+            return orig.apply(this, arguments);
+        };
+    }""")
+
+    start_goal(page, AMBIGUOUS_GOAL)
+    expect(page.locator('[data-testid="trip-dag-node"]')) \
+        .to_have_count(3, timeout=20000)
+    page.click('[data-testid="scope-choice-flight_only"]')
+    expect(page.locator('[data-testid="trip-status-pill"]')) \
+        .to_have_text("completed", timeout=25000)
+
+    # craft the held response into a stale pre-resolution snapshot
+    page.evaluate("""() => {
+        const stale = JSON.parse(JSON.stringify(window.__tripState));
+        stale.status = 'awaiting_approval';
+        stale.pending_approvals = [{
+            approval_id: 'stale_appr', node_name: 'scope_clarification',
+            options: [
+                {choice: 'flight_only', label: 'Search flights only'},
+                {choice: 'flight_plus_booking', label: 'Book'},
+                {choice: 'complete_trip', label: 'Complete trip'}
+            ]
+        }];
+        window.__release({
+            ok: true,
+            json: () => Promise.resolve(stale)
+        });
+    }""")
+    time.sleep(1.0)
+    # the stale snapshot must be dropped, never rendered
+    expect(page.locator('[data-testid="trip-status-pill"]')) \
+        .to_have_text("completed")
+    expect(page.locator("#trip-scope-block")).to_be_hidden()
+
+
+def test_f3_error_banner_clears_on_recovery(app_server, ui_browser,
+                                            install_orch):
+    """G4-DA-fix F3: the error banner must clear on the next successful
+    render — a transient 500 on /state never gets a banner stuck."""
+    install_orch()
+    errors = []
+    context = ui_browser.new_context()
+    page = context.new_page()
+
+    def on_console(msg):
+        if msg.type == "error" \
+                and not _THIRD_PARTY_FONT.search(msg.text) \
+                and "Failed to load resource" not in msg.text:
+            errors.append(msg.text)
+
+    page.on("console", on_console)
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.set_default_timeout(15000)
+    try:
+        page.goto(BASE)
+        page.click('[data-testid="nav-trip"]')
+        expect(page.locator("#view-trip")).to_be_visible()
+        page.evaluate("""() => {
+            window.__failOnce = true;
+            const orig = window.fetch;
+            window.fetch = function (input, opts) {
+                const url = typeof input === 'string' ? input : String(input.url);
+                if (url.indexOf('/state') !== -1 && window.__failOnce) {
+                    window.__failOnce = false;
+                    return Promise.resolve(new Response('boom', {status: 500}));
+                }
+                return orig.apply(this, arguments);
+            };
+        }""")
+        start_goal(page, AMBIGUOUS_GOAL)
+        expect(page.locator("#trip-error")).to_be_visible(timeout=20000)
+        # the next successful poll recovers — banner hides
+        expect(page.locator("#trip-error")).to_be_hidden(timeout=15000)
+        expect(page.locator('[data-testid="trip-chip-passport_country"]')) \
+            .to_be_visible(timeout=20000)
+    finally:
+        context.close()
+    assert not errors, f"browser console errors detected: {errors}"
+
+
+def test_f4_origin_city_chip_persists_and_trip_resumes(tracked_page,
+                                                       install_orch):
+    """G4-DA-fix F4: confirming a NON-profile clarify chip (origin_city)
+    must persist into the trip goal server-side and resume the failed trip
+    — previously the confirm was a silent no-op."""
+    install_orch()
+    page = tracked_page
+    goto_trip(page)
+    start_goal(page, "I need to get to Singapore on 2026-09-29.")
+    expect(page.locator('[data-testid="trip-chip-origin_city"]')) \
+        .to_be_visible(timeout=20000)
+    expect(page.locator('[data-testid="trip-status-pill"]')) \
+        .to_have_text("failed", timeout=20000)
+
+    page.fill('[data-testid="chip-input-origin_city"]', "Bangkok")
+    page.click('[data-testid="chip-confirm-origin_city"]')
+    expect(page.locator('[data-testid="chip-confirm-origin_city"]')) \
+        .to_have_text("\u2713 added to trip", timeout=15000)
+    expect(page.locator('[data-testid="trip-chip-origin_city"]')) \
+        .to_have_class(re.compile(r"confirmed"))
+    # the failed missing_route trip resumed and completed
+    expect(page.locator('[data-testid="trip-status-pill"]')) \
+        .to_have_text("completed", timeout=25000)
+    expect(page.locator('[data-testid="trip-option-card"]').first) \
+        .to_be_visible(timeout=15000)
+    routes = page.locator('[data-testid="trip-option-card"] '
+                          '.trip-option-route .trip-option-code').first
+    expect(routes).to_have_text("BKK")
+
+
+def test_f6_option_currency_rendered_honestly(tracked_page, install_orch):
+    """G4-DA-fix F6: a THB-priced offer renders its native currency; the
+    UI never pairs a non-THB fare with a \u0e3f conversion."""
+
+    class ThbAtlas(FakeAtlas):
+        async def search_flights(self, origin, destination, date_,
+                                 passengers=1, **kwargs):
+            offers = await super().search_flights(origin, destination, date_,
+                                                  passengers, **kwargs)
+            offers[0]["price_usd"] = 7400.0
+            offers[0]["currency"] = "THB"
+            return offers[:1]
+
+    install_orch(atlas=ThbAtlas())
+    page = tracked_page
+    set_passport_via_api("MM")
+    goto_trip(page)
+    start_goal(page, HAPPY_GOAL)
+    card = page.locator('[data-testid="trip-option-card"]').first
+    expect(card).to_be_visible(timeout=25000)
+    text = card.inner_text()
+    assert "\u0e3f" in text, text
+    assert "$" not in text, text
+
+
+def test_f8_unknown_itinerary_source_falls_back_to_honesty_label(
+        tracked_page, install_orch):
+    """G4-DA-fix F8: items whose source is none of the known provider
+    labels fall back to their honesty_label instead of the blanket
+    '\U0001f4a1 suggestion only' chip."""
+    install_orch()
+    page = tracked_page
+    goto_trip(page)
+    start_goal(page, AMBIGUOUS_GOAL)
+    expect(page.locator('[data-testid="trip-dag-node"]').first) \
+        .to_be_visible(timeout=20000)
+    page.evaluate("""() => {
+        const crafted = JSON.parse(JSON.stringify(window.__tripState));
+        crafted.outputs.itinerary = {items: [{
+            name: 'Gardens by the Bay', kind: 'activity',
+            source: 'organizer', honesty_label: 'live data',
+            price_range_sgd: [28, 53],
+            provenance: {researched_as_of: null}, details: {}
+        }]};
+        window.__tripRender(crafted);
+    }""")
+    expect(page.locator('[data-testid="itin-chip-llm"]')).to_be_visible()
+    expect(page.locator('[data-testid="itin-chip-llm"]')) \
+        .to_have_text("live data")
+
+
+def test_f9_hostile_field_name_does_not_throw(tracked_page, install_orch):
+    """G4-DA-fix F9: a clarify question carrying a quote-heavy field name
+    must render its chip without a SyntaxError (CSS.escape / safe scan)."""
+    install_orch()
+    page = tracked_page
+    goto_trip(page)
+    start_goal(page, AMBIGUOUS_GOAL)
+    expect(page.locator('[data-testid="trip-dag-node"]').first) \
+        .to_be_visible(timeout=20000)
+    page.evaluate("""() => {
+        const crafted = JSON.parse(JSON.stringify(window.__tripState));
+        crafted.outputs.clarify.questions.push({
+            field: 'na"ughty\\"x]',
+            question: 'Confirm the hostile field name renders safely'
+        });
+        window.__tripRender(crafted);
+    }""")
+    chip = page.locator('#trip-clarify-chips .trip-chip').last
+    expect(chip).to_contain_text("hostile field name renders safely")
+    assert page.evaluate("window.__xss === undefined")
+
+
+def test_f10_new_trip_clears_stale_panels(tracked_page, install_orch):
+    """G4-DA-fix (leader defect e): starting a new trip must clear the
+    previous trip's option cards, itinerary, PNR screen and DAG — nothing
+    from trip A may leak into trip B before B's own outputs exist."""
+    install_orch()
+    page = tracked_page
+    set_passport_via_api("MM")
+    goto_trip(page)
+
+    # trip A: full happy flow -> option cards + booked PNR
+    start_goal(page, HAPPY_GOAL)
+    expect(page.locator('[data-testid="trip-option-card"]').first) \
+        .to_be_visible(timeout=25000)
+    page.click('[data-testid="approval-open"]')
+    page.click('[data-testid="approval-approve"]')
+    expect(page.locator('[data-testid="pnr-code"]')) \
+        .to_have_text("ATLAS-UI7Q2Z", timeout=20000)
+    expect(page.locator('[data-testid="trip-itin-item"]').first) \
+        .to_be_visible(timeout=20000)
+
+    # trip B: paused at scope clarification — flight_search never ran
+    page.fill('[data-testid="trip-goal-input"]', AMBIGUOUS_GOAL)
+    page.click('[data-testid="trip-goal-submit"]')
+    expect(page.locator('[data-testid="trip-dag-node"]').first) \
+        .to_be_visible(timeout=20000)
+    # stale option cards cleared — empty placeholder restored
+    assert page.locator('[data-testid="trip-option-card"]').count() == 0, \
+        "stale option cards leaked into the new trip"
+    expect(page.locator('[data-testid="trip-options-empty"]')).to_be_visible()
+    expect(page.locator('[data-testid="trip-itinerary-empty"]')).to_be_visible()
+    expect(page.locator("#trip-pnr-block")).to_be_hidden()
+    expect(page.locator("#trip-approval-overlay")).to_be_hidden()

@@ -50,7 +50,8 @@ from services.skills.clarify_loop import ClarifyLoopSkill
 from services.skills.disruption_monitor import DisruptionMonitorSkill
 from services.skills.flight_book import FlightBookSkill
 from services.skills.flight_search import FlightSearchSkill
-from services.skills.goal_intake import GoalIntakeSkill
+from services.skills.goal_intake import GoalIntakeSkill, _extract_dates, \
+    _find_city
 from services.skills.itinerary import ItinerarySkill
 from services.skills.visa_check import VisaCheckSkill
 from services.trip_graph import (
@@ -88,6 +89,13 @@ _SCOPE_LABELS = {
     "complete_trip": "Complete trip: flights, booking, hotels, activities, "
                      "local transport",
 }
+
+# clarify fields that belong to the TRIP GOAL (not the profile). Confirming
+# them persists into the paused/failed trip's goal and resumes it
+# (G4-DA-fix F4 — previously the chip confirm was a silent no-op).
+_TRIP_GOAL_FIELDS = ("origin_city", "dest_city", "date_window")
+_RESUMABLE_ROUTE_ERRORS = ("missing_route", "missing_dates")
+_IATA_RE = re.compile(r"[A-Z]{3}")
 
 # actionable hints for recoverable failures (error contract §6)
 _HINTS = {
@@ -450,6 +458,9 @@ class TripOrchestrator:
         seed = self._seeds.get(trip.trip_id) or {}
         rs = resolve_scope_choice(
             RequestedServices(**seed["requested_services"]), choice)
+        # persist the scoped services so later goal updates (clarify answers)
+        # rebuild the SAME scope instead of re-pausing (G4-DA-fix F4)
+        seed["requested_services"] = rs.model_dump()
         async with trip.lock:
             if approval not in trip.pending_approvals:
                 raise TripApiError(409, "already_resolved",
@@ -527,6 +538,100 @@ class TripOrchestrator:
         except GraphError as exc:
             raise self._graph_error(exc)
         return self.resume_result(trip_id)
+
+    # -- clarify answers (G4-DA-fix F4) -----------------------------------------
+
+    async def answer_clarify(self, trip_id: str, field: str,
+                             value: str) -> Dict[str, Any]:
+        """Persist a NON-profile clarify answer (origin_city, dest_city,
+        date_window) into the paused/failed trip's goal, strip the answered
+        question and resume a trip that failed on the now-completed route.
+        Previously the chip confirm was a silent no-op and the rerun failed
+        missing_route again."""
+        trip = self._trip_or_404(trip_id)
+        if field not in _TRIP_GOAL_FIELDS:
+            raise TripApiError(
+                422, "invalid_clarify_field",
+                f"'{field}' is not a trip-goal clarify field",
+                recoverable=True,
+                hint=f"trip-goal fields: {', '.join(_TRIP_GOAL_FIELDS)}; "
+                     "profile fields use PUT /api/profile/{user_id}/{field}")
+        seed = self._seeds.get(trip_id)
+        if not seed:
+            raise TripApiError(404, "unknown_trip",
+                               f"trip '{trip_id}' has no intake seed",
+                               recoverable=True,
+                               hint="start a trip via POST /api/trip/start")
+        raw = value.strip()
+        if not raw:
+            raise TripApiError(422, "invalid_clarify_answer",
+                               f"the answer for '{field}' is empty",
+                               recoverable=True,
+                               hint="provide a concrete value, e.g. Bangkok "
+                                    "or 'Sep 29-30'")
+
+        if field == "date_window":
+            window = _extract_dates(raw)
+            if not window:
+                raise TripApiError(
+                    422, "invalid_clarify_answer",
+                    "the date answer could not be parsed into a window",
+                    recoverable=True,
+                    hint="e.g. 'Sep 29-30' or 2026-09-29 to 2026-09-30")
+            normalized: Any = window
+        else:
+            upper = raw.upper()
+            city = upper if _IATA_RE.fullmatch(upper) else _find_city(raw.lower())
+            if not city:
+                raise TripApiError(
+                    422, "invalid_clarify_answer",
+                    f"could not resolve '{raw[:60]}' to a known city",
+                    recoverable=True,
+                    hint="use a city name (e.g. Bangkok) or an IATA code "
+                         "(e.g. BKK)")
+            normalized = city
+
+        goal = seed["goal"]
+        goal[field] = normalized
+        gi = trip.context.get("goal_intake") or {}
+        gi["goal"] = goal
+        trip.context["goal_intake"] = gi
+
+        # the answered question disappears from the clarify surface
+        clarify = trip.context.get("clarify_loop") or {}
+        clarify["questions"] = [q for q in (clarify.get("questions") or [])
+                                if q.get("field") != field]
+        trip.context["clarify_loop"] = clarify
+        seed_clarify = seed.get("clarify")
+        if isinstance(seed_clarify, dict):
+            seed_clarify["questions"] = [
+                q for q in (seed_clarify.get("questions") or [])
+                if q.get("field") != field]
+
+        resumed = False
+        if trip.status == "failed":
+            failed = next((n for n in reversed(trip.trace)
+                           if n.status == "FAILED"), None)
+            code = (failed.details or {}).get("error_code") if failed else None
+            route_complete = goal.get("origin_city") and goal.get("dest_city")
+            if code in _RESUMABLE_ROUTE_ERRORS and route_complete:
+                rs = RequestedServices(**seed["requested_services"])
+                async with trip.lock:
+                    rest = self._build_plan_rest(seed, rs)
+                    trip.nodes = rest
+                    trip.nodes_by_name = {n.name: n for n in rest}
+                    trip.status = "pending"
+                    trip.current = None
+                resumed = True
+                if rest:
+                    await self._run_guarded(trip_id)
+                else:
+                    trip.status = "completed"
+
+        result = self.resume_result(trip_id)
+        result["clarify"] = {"field": field, "value": normalized,
+                             "resumed": resumed}
+        return result
 
     # -- introspection -------------------------------------------------------------
 
@@ -623,6 +728,12 @@ class ApprovalDecision(BaseModel):
     value: Optional[Any] = None
 
 
+class ClarifyAnswerRequest(BaseModel):
+    # bounded input at the boundary (§6, same pattern as TripStartRequest)
+    field: str = Field(..., max_length=64)
+    value: str = Field(..., max_length=200)
+
+
 @router.post("/start")
 async def trip_start(body: TripStartRequest):
     # explicit user_id validation FIRST (G3-DA fix F3): invalid_user_id is
@@ -682,6 +793,14 @@ async def trip_resolve_approval(trip_id: str, approval_id: str,
                                 body: ApprovalDecision):
     orch = get_trip_orchestrator()
     return await orch.resolve(trip_id, approval_id, body.decision, body.value)
+
+
+@router.post("/{trip_id}/clarify-answers")
+async def trip_clarify_answer(trip_id: str, body: ClarifyAnswerRequest):
+    """G4-DA-fix F4: non-profile clarify answers persist into the trip goal
+    (and resume a trip that failed on the now-complete route)."""
+    orch = get_trip_orchestrator()
+    return await orch.answer_clarify(trip_id, body.field, body.value)
 
 
 @router.get("/{trip_id}/simulate-disruption")

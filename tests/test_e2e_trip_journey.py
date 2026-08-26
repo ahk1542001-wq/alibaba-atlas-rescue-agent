@@ -71,7 +71,7 @@ class FakeAtlas:
 
     async def search_flights(self, origin, destination, date_, passengers=1,
                              **kwargs):
-        self.calls.append(("search", origin, destination))
+        self.calls.append(("search", origin, destination, date_))
         if self.fail_search:
             raise ConnectionError("atlas sandbox outage (simulated)")
         return [{
@@ -915,6 +915,162 @@ def test_stage1_skills_run_through_capability_enforcement(harness):
         orch.executor._registry_by_name.pop("goal_intake")
         with pytest.raises(GraphCapabilityViolation):
             await orch.start(AMBIGUOUS_GOAL, "cap_user")
+
+    _run(flow())
+
+
+# --- G4 Devil's Advocate + live-browser remediation regressions --------------------
+
+NO_ORIGIN_GOAL = "I need to get to Singapore on 2026-09-29."
+
+
+def test_date_window_is_forwarded_to_atlas_search(harness):
+    """G4-DA-fix F5: the goal's date_window.start must reach the Atlas
+    search call unmodified; the search output honestly reports the
+    requested date and labels any near-term substitution instead of
+    silently presenting other dates as the requested window."""
+    atlas = FakeAtlas()
+    harness(atlas=atlas)
+
+    async def flow():
+        async with _client() as client:
+            await client.put("/api/profile/date_user/passport_country",
+                             json={"value": "MM", "source": "user"})
+            trip_id = await _start(client, BOOK_GOAL, "date_user")
+            await _resolve_scope_if_paused(client, trip_id,
+                                           "flight_plus_booking")
+            search = [c for c in atlas.calls if c[0] == "search"]
+            assert search, "flight_search never queried the sandbox"
+            assert len(search) == 1
+            assert search[0][1:] == ("BKK", "SIN", "2026-09-29"), search
+
+            state = (await client.get(
+                f"/api/trip/{trip_id}/state")).json()
+            out = state["outputs"]["flight_search"]
+            assert out["requested_date"] == "2026-09-29"
+            # honored window: no substitution note; every option dated in it
+            assert not out.get("date_note")
+            assert all(o["dep"]["time"].startswith("2026-09-29")
+                       for o in out["options"])
+
+    _run(flow())
+
+
+class ClampedAtlas(FakeAtlas):
+    """Simulates the live sandbox's near-term clamp: any requested date on
+    or before today is silently replaced by tomorrow — the substitution the
+    skill must label, never hide."""
+
+    async def search_flights(self, origin, destination, date_, passengers=1,
+                             **kwargs):
+        from datetime import timedelta
+        clamped = date.today() + timedelta(days=1)
+        return await super().search_flights(origin, destination,
+                                            clamped.isoformat(),
+                                            passengers, **kwargs)
+
+
+def test_date_window_substitution_is_labeled_not_silent(harness):
+    """G4-DA-fix F5: when the sandbox cannot honor the requested date
+    (same-day/past window), the substitution must be labeled in the search
+    output — never silently presented as the requested window."""
+    atlas = ClampedAtlas()
+    harness(atlas=atlas)
+    today = date.today().isoformat()
+
+    async def flow():
+        async with _client() as client:
+            trip_id = await _start(
+                client, f"Book a flight from Bangkok to Singapore on {today}.",
+                "today_user")
+            result = await _resolve_scope_if_paused(client, trip_id,
+                                                    "flight_only")
+            assert result["status"] == "completed"
+            state = (await client.get(
+                f"/api/trip/{trip_id}/state")).json()
+            out = state["outputs"]["flight_search"]
+            assert out["requested_date"] == today
+            assert out["date_note"], \
+                "a substituted travel date must carry an honest note"
+            assert today in out["date_note"]
+
+    _run(flow())
+
+
+def test_clarify_answer_feeds_trip_goal_and_resumes(harness):
+    """G4-DA-fix F4: confirming a NON-profile clarify answer (origin_city,
+    dest_city, date_window) must persist into the paused/failed trip's goal
+    and resume it — previously the chip confirm was a silent no-op and the
+    next run failed missing_route."""
+    atlas = FakeAtlas()
+    harness(atlas=atlas)
+
+    async def flow():
+        async with _client() as client:
+            trip_id = await _start(client, NO_ORIGIN_GOAL, "chip_user")
+            result = await _resolve_scope_if_paused(client, trip_id,
+                                                    "flight_only")
+            assert result["status"] == "failed"
+            assert result["error"]["code"] == "missing_route"
+
+            resp = await client.post(
+                f"/api/trip/{trip_id}/clarify-answers",
+                json={"field": "origin_city", "value": "Bangkok"})
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["status"] == "completed"
+            assert body["clarify"]["field"] == "origin_city"
+            assert body["clarify"]["value"] == "BKK"  # alias -> IATA
+
+            state = (await client.get(
+                f"/api/trip/{trip_id}/state")).json()
+            options = state["outputs"]["flight_search"]["options"]
+            assert options and all(o["dep"]["airport"] == "BKK"
+                                   for o in options)
+            # the answered question no longer appears in clarify output
+            questions = [q["field"] for q in
+                         state["outputs"]["clarify"]["questions"]]
+            assert "origin_city" not in questions
+
+    _run(flow())
+
+
+def test_clarify_answer_date_window_parses_and_rejects_garbage(harness):
+    """G4-DA-fix F4: date_window answers parse into a real window; hostile
+    or unknown payloads get the §6 envelope, never a silent 200."""
+    harness()
+
+    async def flow():
+        async with _client() as client:
+            trip_id = await _start(client, NO_ORIGIN_GOAL, "datechip_user")
+            await _resolve_scope_if_paused(client, trip_id, "flight_only")
+
+            bad_date = await client.post(
+                f"/api/trip/{trip_id}/clarify-answers",
+                json={"field": "date_window", "value": "sometime soon"})
+            assert bad_date.status_code == 422
+            assert bad_date.json()["error"]["code"] == \
+                "invalid_clarify_answer"
+
+            ok_date = await client.post(
+                f"/api/trip/{trip_id}/clarify-answers",
+                json={"field": "date_window", "value": "Sep 29-30"})
+            assert ok_date.status_code == 200, ok_date.text
+            assert ok_date.json()["clarify"]["value"] == \
+                {"start": "2026-09-29", "end": "2026-09-30"}
+
+            bad_field = await client.post(
+                f"/api/trip/{trip_id}/clarify-answers",
+                json={"field": "passport_no", "value": "MD123"})
+            assert bad_field.status_code == 422
+            assert bad_field.json()["error"]["code"] == \
+                "invalid_clarify_field"
+
+            unknown = await client.post(
+                "/api/trip/trip_ghost/clarify-answers",
+                json={"field": "origin_city", "value": "BKK"})
+            assert unknown.status_code == 404
+            assert unknown.json()["error"]["code"] == "unknown_trip"
 
     _run(flow())
 

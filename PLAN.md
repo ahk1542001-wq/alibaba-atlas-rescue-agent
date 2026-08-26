@@ -371,3 +371,38 @@ enumerates `button, input, select, textarea, a[href], summary, .nav-icon,
 | Radar (legacy) | btn-radar-scan | canary radar flow |
 | Out-of-demo-scope (reason) | `.btn-rebook`, `.btn-radar-accept` — created at runtime by FROZEN `static/app.js`; data-testid cannot be added without editing it | covered behaviorally by canary clicks in `tests/e2e_full_journey.py` |
 
+
+### G4 Devil's Advocate + live-browser remediation
+
+Merged Devil's Advocate review + independent browser-validator findings
+against the G4 gate (286bc15); remediated per finding with failing
+regressions FIRST (TDD), then root-cause fixes. Scope isolation held:
+static/app.js, services/* (incl. atlas_client.py, trip_graph.py),
+pre-existing tests, AGENTS.md, README, .env untouched; the live
+validation server on :8050 (PID 40933) never killed or restarted.
+
+| # | Finding | Repro | Fix | Regression evidence |
+|---|---|---|---|---|
+| F1 | 1s polling never stops after terminal status / leaving trip view | reproduced (code: interval only cleared at startWatching start) | terminal stop after final renderState + MutationObserver on #view-trip class (app.js frozen) | `test_f1_polling_stops_on_terminal_and_view_exit` |
+| F2 | stale in-flight /state response can resurrect resolved scope / regress DAG | reproduced (no seq guard; equality re-render) | epoch + monotonic seq/appliedSeq + AbortController; invalidatePolls before every trip-mutating POST; monotonic DAG signature | `test_f2_stale_poll_cannot_resurrect_resolved_scope` |
+| F3 | error banner never clears on recovery | reproduced (hideError only in submitGoal) | hideError() at top of every successful renderState | `test_f3_error_banner_clears_on_recovery` |
+| F4 | non-profile clarify chips silent no-op; rerun fails missing_route | reproduced (confirm rendered "✓ noted", nothing persisted) | POST /api/trip/{id}/clarify-answers persists into goal (seed + context), strips the question, resumes failed missing_route/missing_dates trips with the SAME scope | `test_clarify_answer_feeds_trip_goal_and_resumes`, `test_clarify_answer_date_window_parses_and_rejects_garbage`, `test_f4_origin_city_chip_persists_and_trip_resumes` |
+| F5 | sandbox options ignored requested date window | PARTIAL — glue verified intact (input_map forwards date_window.start); CLI probe `atlas-flight search --depart 2026-09-29` honors the date; root cause: F4 no-op dropping the window + sandbox clamp for same-day/past dates | requested_date + honest date_note on flight_search output; UI warning chip; honest limitation logged (DECISIONS.tsv) — atlas_client.py untouched | `test_date_window_is_forwarded_to_atlas_search`, `test_date_window_substitution_is_labeled_not_silent` |
+| F6 | S$ price paired with ฿ conversion (wrong currency math) | reproduced in live browser | native fare currency + labeled indicative SGD estimate; ฿ pairing removed | `test_f6_option_currency_rendered_honestly` + updated B2 assertion |
+| F7 | appended mobile rules restyle legacy #bottom-nav | reproduced (lines 1899–1900 inside @media 768px) | AUTO- decision row logged; rules kept (append-only CSS; mobile 375px contract depends on them) | — (logged, DECISIONS.tsv AUTO-) |
+| F8 | unknown itinerary sources fall to "💡 suggestion only" | reproduced (else branch ignores honesty_label) | honesty_label fallback before the blanket chip | `test_f8_unknown_itinerary_source_falls_back_to_honesty_label` |
+| F9 | querySelector from server field name throws on quotes | reproduced (line 285 raw interpolation) | CSS.escape + attribute-scan fallback | `test_f9_hostile_field_name_does_not_throw` |
+| (e) | stale option cards leak across trips | reproduced by independent browser validator | resetTripSurfaces() on every new trip + null sentinel on renderedOptionIds | `test_f10_new_trip_clears_stale_panels` |
+
+Gate evidence (`TZ=UTC .venv/bin/python -m pytest tests/ -q --ignore=tests/test_ui_trip.py`):
+
+```
+before remediation (286bc15): 197 passed in 32.19s
+after  remediation (non-UI):  201 passed in 32.38s (+4 e2e regressions)
+```
+
+UI suite (`tests/test_ui_trip.py`, +8 regressions, 18 flows total): runs
+against its own uvicorn on 127.0.0.1:8050 — RERUN PENDING: the live
+validation session kept the port for the full 15-minute retry window
+(never killed per scope isolation); the rerun is recorded in BLOCKERS.md
+and scheduled by the leader once the validation session ends.

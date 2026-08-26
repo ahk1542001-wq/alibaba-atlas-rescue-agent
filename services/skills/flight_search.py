@@ -63,6 +63,22 @@ class FlightSearchSkill(SkillBase):
         options: List[Dict[str, Any]] = [normalize_offer(o) for o in offers]
         # rank: shortest duration first, price as tiebreaker (S4 procedure)
         options.sort(key=lambda o: (o["duration_min"], o["price"]["amount"]))
+        # Honesty (G4-DA-fix F5): report the requested date and LABEL any
+        # near-term substitution — the sandbox clamps same-day/past windows,
+        # and the returned options must never be presented silently as the
+        # requested window.
+        requested_date = str(travel_date) or None
+        date_note = None
+        if requested_date and options and all(
+                not str(o["dep"]["time"]).startswith(requested_date)
+                for o in options):
+            returned = sorted({str(o["dep"]["time"])[:10]
+                               for o in options})
+            date_note = (
+                f"requested {requested_date}; the Atlas sandbox returned "
+                f"near-term dates ({', '.join(returned)}) — the sandbox "
+                "clamps same-day/past windows and the substitution is shown "
+                "as-is, never relabeled")
         return {
             "options": options,
             "provenance": "sandbox",
@@ -70,4 +86,6 @@ class FlightSearchSkill(SkillBase):
             "source_url": f"atlas-sandbox://search/{origin}-{destination}",
             "freshness_state": "fresh",
             "count": len(options),
+            "requested_date": requested_date,
+            "date_note": date_note,
         }
