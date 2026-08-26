@@ -46,6 +46,7 @@
             <div id="qoder-badge">Qwen-2.5 via Qoder</div>
             <div id="currency-badge">USD</div>
             <div id="health-badge"><span id="health-dot"></span>System Healthy</div>
+            <button id="btn-aj-profile" class="btn-aj-profile" data-testid="aj-profile-open" aria-label="Your details" aria-haspopup="dialog"><span class="btn-aj-profile-label">Your details</span></button>
             <button id="btn-add-flight" data-testid="btn-add-flight" onclick="openAddFlightModal()">+ Add Flight</button>
             <button id="btn-simulate" data-testid="btn-simulate" onclick="simulateDisruption()">Simulate Disruption</button>
         </div>
@@ -240,6 +241,201 @@
 
             <!-- TRIP AGENT VIEW (G4 — additive; logic lives in static/trip.js) -->
             <div id="view-trip" class="view">
+                <!-- ATLAS JOURNEY shell (G4.5 — additive). Legacy surfaces are
+                     transplanted into these step cards by static/trip.js; every
+                     legacy id/testid stays in the DOM exactly once. -->
+                <section id="aj-shell" data-aj class="aj-shell">
+                    <header class="aj-top">
+                        <div class="aj-title-block">
+                            <p class="aj-kicker">Atlas Journey &middot; Atlas Sandbox</p>
+                            <h2 class="aj-greeting" id="aj-greeting" data-testid="aj-greeting">Welcome.</h2>
+                        </div>
+                        <nav class="aj-nav" aria-label="Trip destinations">
+                            <button type="button" class="aj-nav-btn is-active" id="aj-nav-plan" data-testid="aj-nav-plan" aria-current="page">Plan a trip</button>
+                            <button type="button" class="aj-nav-btn" id="aj-nav-mytrip" data-testid="aj-nav-mytrip">My trip</button>
+                            <button type="button" class="aj-nav-btn" id="aj-nav-help" data-testid="aj-nav-help">Help</button>
+                        </nav>
+                    </header>
+                    <div class="aj-live" id="aj-live" data-testid="aj-live" role="status" aria-live="polite"></div>
+
+                    <!-- Living Journey Line (spec §7; SVG/CSS only, no library) -->
+                    <div class="aj-journey">
+                        <svg class="aj-line" id="aj-journey-line" data-testid="aj-journey-line" data-state="empty" viewBox="0 0 720 104" aria-hidden="true" focusable="false">
+                            <path class="aj-seg" id="aj-seg-1" data-testid="aj-line-seg-1" d="M40 30 H190" pathLength="100"></path>
+                            <path class="aj-seg" id="aj-seg-2" data-testid="aj-line-seg-2" d="M190 30 H340" pathLength="100"></path>
+                            <path class="aj-seg" id="aj-seg-3" data-testid="aj-line-seg-3" d="M340 30 H490" pathLength="100"></path>
+                            <path class="aj-seg" id="aj-seg-4" data-testid="aj-line-seg-4" d="M490 30 H620" pathLength="100"></path>
+                            <path class="aj-branch" id="aj-line-branch" data-testid="aj-line-branch" d="M620 30 Q 664 48 680 74" pathLength="100"></path>
+                            <circle class="aj-node" id="aj-node-1" data-testid="aj-line-node-1" cx="40" cy="30" r="9"></circle>
+                            <circle class="aj-node" id="aj-node-2" data-testid="aj-line-node-2" cx="190" cy="30" r="9"></circle>
+                            <circle class="aj-node" id="aj-node-3" data-testid="aj-line-node-3" cx="340" cy="30" r="9"></circle>
+                            <circle class="aj-node" id="aj-node-4" data-testid="aj-line-node-4" cx="490" cy="30" r="9"></circle>
+                            <circle class="aj-node" id="aj-node-5" data-testid="aj-line-node-5" cx="620" cy="30" r="9"></circle>
+                            <circle class="aj-node-recovery" id="aj-node-recovery" cx="680" cy="82" r="8"></circle>
+                            <text class="aj-branch-label" x="688" y="100">Recovery</text>
+                        </svg>
+                        <ol class="aj-journey-labels" aria-hidden="true">
+                            <li>Tell us</li><li>Choose</li><li>Review</li><li>Confirm</li><li>Track</li>
+                        </ol>
+                        <div class="aj-line-mobile" id="aj-line-mobile" aria-hidden="true">
+                            <span class="aj-dot" data-aj-dot="1"></span><span class="aj-dot" data-aj-dot="2"></span><span class="aj-dot" data-aj-dot="3"></span><span class="aj-dot" data-aj-dot="4"></span><span class="aj-dot" data-aj-dot="5"></span>
+                            <span class="aj-line-mobile-label" id="aj-line-mobile-label"></span>
+                        </div>
+                    </div>
+
+                    <div class="aj-dest is-active" id="aj-dest-plan">
+                        <div class="aj-state-slot" id="aj-state-slot"></div>
+                        <ol class="aj-steps">
+                            <li class="aj-step is-current" id="aj-step-1" data-testid="aj-step-1">
+                                <div class="aj-step-head">
+                                    <span class="aj-step-num" aria-hidden="true">1</span>
+                                    <h3 class="aj-step-title">Tell us what you need</h3>
+                                    <span class="aj-step-summary" id="aj-step-1-summary" data-testid="aj-step-1-summary"></span>
+                                    <button type="button" class="aj-step-edit" id="aj-step-1-edit" data-testid="aj-step-1-edit" hidden>Edit</button>
+                                </div>
+                                <div class="aj-step-body" id="aj-step-1-body">
+                                    <div class="aj-hero-block">
+                                        <h4 class="aj-hero-title">Plan your trip</h4>
+                                        <p class="aj-hero-sub">Tell us where you need to go &mdash; we&rsquo;ll find options, show you the plan, and only book when you approve.</p>
+                                        <div class="aj-goal-slot" id="aj-goal-slot"><!-- trip-goal-form transplanted here --></div>
+                                    </div>
+                                    <div class="aj-starters" role="group" aria-label="Quick starts">
+                                        <span class="aj-starters-label">Or start with one tap:</span>
+                                        <div class="aj-starters-row">
+                                            <button type="button" class="aj-starter" id="aj-starter-flight-only" data-testid="aj-starter-flight-only">Find a flight</button>
+                                            <button type="button" class="aj-starter" id="aj-starter-flight-booking" data-testid="aj-starter-flight-booking">Find and book a flight</button>
+                                            <button type="button" class="aj-starter" id="aj-starter-complete" data-testid="aj-starter-complete">Plan my complete trip</button>
+                                        </div>
+                                    </div>
+                                    <div class="aj-services" id="aj-requested-services" data-testid="aj-requested-services" hidden></div>
+                                    <div class="aj-facts" id="aj-facts-summary" data-testid="aj-facts-summary"></div>
+                                    <div class="aj-questions" id="aj-questions-slot"><!-- trip-clarify-chips + trip-scope-block transplanted here --></div>
+                                    <div class="aj-disclosure-wrap">
+                                        <button type="button" class="aj-disclosure" id="aj-disclosure-chat" data-testid="aj-disclosure-chat" aria-expanded="false" aria-controls="aj-chat-body">
+                                            <span class="aj-disclosure-label">Conversation so far</span><span class="aj-caret" aria-hidden="true"></span>
+                                        </button>
+                                        <div class="aj-disclosure-body" id="aj-chat-body" hidden><div class="aj-chat-slot" id="aj-chat-slot"><!-- trip-chat transplanted here --></div></div>
+                                    </div>
+                                </div>
+                            </li>
+                            <li class="aj-step is-future" id="aj-step-2" data-testid="aj-step-2" aria-disabled="true">
+                                <div class="aj-step-head">
+                                    <span class="aj-step-num" aria-hidden="true">2</span>
+                                    <h3 class="aj-step-title">Choose your options</h3>
+                                    <span class="aj-step-summary" id="aj-step-2-summary" data-testid="aj-step-2-summary"></span>
+                                    <button type="button" class="aj-step-edit" id="aj-step-2-edit" data-testid="aj-step-2-edit" hidden>Edit</button>
+                                </div>
+                                <div class="aj-step-body" id="aj-step-2-body"><!-- trip-options-block transplanted here --></div>
+                            </li>
+                            <li class="aj-step is-future" id="aj-step-3" data-testid="aj-step-3" aria-disabled="true">
+                                <div class="aj-step-head">
+                                    <span class="aj-step-num" aria-hidden="true">3</span>
+                                    <h3 class="aj-step-title">Review your plan</h3>
+                                    <span class="aj-step-summary" id="aj-step-3-summary" data-testid="aj-step-3-summary"></span>
+                                    <button type="button" class="aj-step-edit" id="aj-step-3-edit" data-testid="aj-step-3-edit" hidden>Edit</button>
+                                </div>
+                                <div class="aj-step-body" id="aj-step-3-body">
+                                    <div class="aj-review" id="aj-review-summary" data-testid="aj-review-summary"></div>
+                                    <div class="aj-review-entry" id="aj-review-entry-req" data-testid="aj-review-entry-req"><!-- trip-visa-block transplanted here --></div>
+                                    <div class="aj-review-total" id="aj-review-total" data-testid="aj-review-total"></div>
+                                    <p class="aj-sandbox-note" id="aj-review-sandbox-note" data-testid="aj-review-sandbox-note">Bookings are made in the Atlas Sandbox &mdash; a safe practice environment with researched mock data.</p>
+                                    <button type="button" class="aj-disclosure" id="aj-disclosure-sources" data-testid="aj-disclosure-sources" aria-expanded="false" aria-controls="aj-sources-body">
+                                        <span class="aj-disclosure-label">Sources</span><span class="aj-caret" aria-hidden="true"></span>
+                                    </button>
+                                    <div class="aj-disclosure-body" id="aj-sources-body" hidden></div>
+                                </div>
+                            </li>
+                            <li class="aj-step is-future" id="aj-step-4" data-testid="aj-step-4" aria-disabled="true">
+                                <div class="aj-step-head">
+                                    <span class="aj-step-num" aria-hidden="true">4</span>
+                                    <h3 class="aj-step-title">Confirm booking</h3>
+                                    <span class="aj-step-summary" id="aj-step-4-summary" data-testid="aj-step-4-summary"></span>
+                                    <button type="button" class="aj-step-edit" id="aj-step-4-edit" data-testid="aj-step-4-edit" hidden>Edit</button>
+                                </div>
+                                <div class="aj-step-body" id="aj-step-4-body">
+                                    <div class="aj-confirm" id="aj-confirm-summary" data-testid="aj-confirm-summary"></div>
+                                    <div class="aj-confirm-row">
+                                        <span class="aj-confirm-price" id="aj-confirm-price" data-testid="aj-confirm-price"></span>
+                                        <span class="aj-confirm-pax" id="aj-confirm-pax" data-testid="aj-confirm-pax"></span>
+                                    </div>
+                                    <p class="aj-sandbox-note" id="aj-confirm-sandbox-note" data-testid="aj-confirm-sandbox-note">Bookings are made in the Atlas Sandbox &mdash; a safe practice environment with researched mock data.</p>
+                                    <div id="aj-approval-slot"><!-- trip-approval-banner transplanted here --></div>
+                                </div>
+                            </li>
+                        </ol>
+                    </div>
+
+                    <div class="aj-dest" id="aj-dest-mytrip" hidden>
+                        <div class="aj-step is-future" id="aj-step-5" data-testid="aj-step-5" aria-disabled="true">
+                            <div class="aj-step-head">
+                                <span class="aj-step-num" aria-hidden="true">5</span>
+                                <h3 class="aj-step-title">Track your trip</h3>
+                                <span class="aj-step-summary" id="aj-step-5-summary" data-testid="aj-step-5-summary"></span>
+                                <button type="button" class="aj-step-edit" id="aj-step-5-edit" data-testid="aj-step-5-edit" hidden>Edit</button>
+                            </div>
+                            <div class="aj-step-body" id="aj-step-5-body">
+                                <div class="aj-mytrip-status">
+                                    <div class="aj-status-line" id="aj-booking-status" data-testid="aj-booking-status" hidden></div>
+                                    <div class="aj-status-line" id="aj-next-action" data-testid="aj-next-action" hidden></div>
+                                    <div class="aj-status-line" id="aj-monitor-status" data-testid="aj-monitor-status" hidden></div>
+                                </div>
+                                <div id="aj-pnr-slot"><!-- trip-pnr-block transplanted here --></div>
+                                <div class="aj-recovery" id="aj-recovery-panel" data-testid="aj-recovery-panel" hidden></div>
+                                <div id="aj-itinerary-slot"><!-- trip-itinerary-block transplanted here --></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="aj-dest" id="aj-dest-help" hidden>
+                        <div class="aj-help-card">
+                            <h3 class="aj-help-title">How Atlas Journey works</h3>
+                            <div class="aj-help-item">
+                                <h4>What is the Atlas Sandbox?</h4>
+                                <p>Bookings are made in the Atlas Sandbox &mdash; a safe practice environment with researched mock data. Nothing here is a live airline seat, and we say so on every booking screen.</p>
+                            </div>
+                            <div class="aj-help-item">
+                                <h4>What does &ldquo;approval&rdquo; mean?</h4>
+                                <p>The agent never books on its own. Before anything is booked you see the exact flight and price, and you press the approve button yourself. Changing your mind before that point costs nothing.</p>
+                            </div>
+                            <div class="aj-help-item">
+                                <h4>How do I change my plan?</h4>
+                                <p>Every finished step shows an Edit button &mdash; press it to re-open that step. Steps after it are updated afterwards, and we tell you before anything changes.</p>
+                            </div>
+                            <div class="aj-help-item">
+                                <h4>What if my flight is disrupted?</h4>
+                                <p>If something changes after booking, your original plan stays visible. We show replacement options with reasons, and nothing is rebooked without a separate approval from you.</p>
+                            </div>
+                            <div class="aj-help-item">
+                                <h4>What do you store about me?</h4>
+                                <p>Only what you save in &ldquo;Your details&rdquo;, and only with your consent. Passport numbers are always shown and stored masked (e.g. MD*****67). You can delete any field at any time.</p>
+                            </div>
+                            <div class="aj-help-item">
+                                <h4>Good goals include from, to and when</h4>
+                                <p>Example: &ldquo;Bangkok to Singapore, Sep 29&ndash;30, plan my whole trip.&rdquo; If we can&rsquo;t work the trip out, we&rsquo;ll ask one short question at a time.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="aj-trace">
+                        <button type="button" class="aj-disclosure" id="aj-disclosure-trace" data-testid="aj-disclosure-trace" aria-expanded="false" aria-controls="aj-trace-body">
+                            <span class="aj-disclosure-label">How this plan was made</span><span class="aj-caret" aria-hidden="true"></span>
+                        </button>
+                        <div class="aj-disclosure-body aj-trace-body" id="aj-trace-body" hidden><!-- trip-status-strip + trip-dag transplanted here --></div>
+                    </div>
+                </section>
+
+                <!-- AJ profile drawer (opened from the top bar) -->
+                <aside class="aj-drawer" id="aj-profile-drawer" data-testid="aj-profile-drawer" data-aj role="dialog" aria-modal="true" aria-labelledby="aj-drawer-title" hidden>
+                    <div class="aj-drawer-head">
+                        <h3 class="aj-drawer-title" id="aj-drawer-title">Your details</h3>
+                        <button type="button" class="aj-drawer-close" id="aj-profile-close" data-testid="aj-profile-close">Close</button>
+                    </div>
+                    <p class="aj-consent-note" id="aj-profile-consent-note" data-testid="aj-profile-consent-note">Only save details I give you. You can delete anything at any time.</p>
+                    <div class="aj-consent-row" id="aj-consent-slot"><!-- trip-consent label transplanted here --></div>
+                    <div class="aj-drawer-rows" id="aj-drawer-rows"><!-- trip-profile-rows transplanted here --></div>
+                    <p class="aj-privacy-note" id="aj-profile-privacy-note" data-testid="aj-profile-privacy-note">We never store your full passport number, payment details, or legal identity unmasked. Passport numbers are shown and stored masked (e.g. MD*****67).</p>
+                </aside>
+
                 <div class="trip-shell">
                     <section class="trip-main">
                         <header class="trip-hero">
@@ -332,14 +528,14 @@
     <!-- TRIP APPROVAL MODAL (G4) -->
     <div class="trip-overlay" id="trip-approval-overlay" data-testid="trip-approval-overlay" hidden>
         <div class="trip-approval-card" role="dialog" aria-modal="true" aria-labelledby="trip-approval-title">
-            <div class="trip-approval-kicker">ApprovalGate · irreversible sandbox booking</div>
+            <div class="trip-approval-kicker">Your decision needed &middot; Atlas Sandbox booking</div>
             <h3 class="trip-approval-title" id="trip-approval-title">Approve this booking?</h3>
-            <p class="trip-approval-sub" id="trip-approval-sub">Pick one option, then confirm. The agent never books without your explicit approval.</p>
+            <p class="trip-approval-sub" id="trip-approval-sub">Pick one flight, then press &ldquo;Approve Sandbox booking&rdquo;. Nothing is booked until you do &mdash; and you can still change your plan before that.</p>
             <div class="trip-approval-options" id="trip-approval-options" data-testid="trip-approval-options"></div>
             <div class="trip-approval-note" id="trip-approval-note" data-testid="trip-approval-note" hidden></div>
             <div class="trip-approval-actions">
                 <button class="btn-trip-reject" id="trip-approval-reject" data-testid="approval-reject">Reject</button>
-                <button class="btn-trip-approve" id="trip-approval-approve" data-testid="approval-approve">Confirm booking</button>
+                <button class="btn-trip-approve" id="trip-approval-approve" data-testid="approval-approve">Approve Sandbox booking</button>
             </div>
         </div>
     </div>

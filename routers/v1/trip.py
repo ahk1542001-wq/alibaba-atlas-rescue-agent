@@ -49,7 +49,7 @@ from services.skills.base import SkillBase
 from services.skills.clarify_loop import ClarifyLoopSkill
 from services.skills.disruption_monitor import DisruptionMonitorSkill
 from services.skills.flight_book import FlightBookSkill
-from services.skills.flight_search import FlightSearchSkill
+from services.skills.flight_search import FlightSearchSkill, normalize_offer
 from services.skills.goal_intake import GoalIntakeSkill, _extract_dates, \
     _find_city
 from services.skills.itinerary import ItinerarySkill
@@ -255,6 +255,7 @@ class TripOrchestrator:
         ]
         self.executor = TripGraphExecutor(registry=registry)
         atlas_client = atlas or AtlasClient()
+        self.atlas = atlas_client  # AJ: recovery replacement search reuses it
         self.web_intel = web_intel or WebIntelClient(
             ddg_fetcher=ddg_lite_fetch,
             tavily_api_key="", serper_api_key="")
@@ -329,6 +330,14 @@ class TripOrchestrator:
         """Run the graph; provider/upstream failures degrade into a recorded
         recoverable FAILED state instead of escaping as raw 500s."""
         trip = self.executor.get(trip_id)
+        # AJ(G4.5): profile details saved mid-trip through the question
+        # cards (e.g. passport country) must reach the graph — the seed
+        # snapshot taken at /start would otherwise stay stale and
+        # visa_check/flight_book would refuse an answered passport.
+        uid = trip.context.get("user_id")
+        if uid:
+            trip.context["profile"] = self._profile_ctx(
+                self.store.get_or_create(uid))
         try:
             return await self.executor.run(trip_id)
         except GraphError as exc:
@@ -518,6 +527,45 @@ class TripOrchestrator:
             await self.resolve_scope(trip, approval, choice)
             return self.resume_result(trip_id)
 
+        if approval.node_name == "recovery_booking":
+            # AJ recovery: a SEPARATE approval for replacement options after
+            # a disruption — resolved here without re-running the graph; the
+            # original booking record is never mutated (never auto-rebooked).
+            if decision not in ("approve", "reject"):
+                raise TripApiError(422, "invalid_decision",
+                                   f"decision '{decision}' is not supported",
+                                   recoverable=True,
+                                   hint="decision must be 'approve' or "
+                                        "'reject'; recovery approval carries "
+                                        "value.option_id")
+            resolved: Dict[str, Any] = {"approved": decision == "approve",
+                                        "kind": "recovery_booking"}
+            if decision == "approve":
+                oid = value.get("option_id") if isinstance(value, dict) \
+                    else None
+                rec_opts = (trip.context.get("recovery") or {}).get(
+                    "options") or []
+                if not oid or not any(o.get("id") == oid for o in rec_opts):
+                    raise TripApiError(
+                        422, "missing_option",
+                        "recovery approval requires value.option_id from the "
+                        "replacement options", recoverable=True,
+                        hint="pick one of the replacement option ids listed "
+                             "in GET /api/trip/{id}/state (outputs.recovery)")
+                resolved["option_id"] = oid
+            async with trip.lock:
+                if approval in trip.pending_approvals:
+                    trip.pending_approvals.remove(approval)
+                approval.resolved_value = resolved
+                rec = trip.context.get("recovery") or {}
+                rec["resolved"] = resolved
+                trip.context["recovery"] = rec
+                trip.status = "completed"
+                trip.current = None
+            self._record(trip, "recovery_choice", "recovery_choice",
+                         "COMPLETED", 0.0, resolved)
+            return self.resume_result(trip_id)
+
         if decision not in ("approve", "reject"):
             raise TripApiError(422, "invalid_decision",
                                f"decision '{decision}' is not supported",
@@ -659,6 +707,9 @@ class TripOrchestrator:
         itinerary = ctx.get("itinerary")
         if itinerary:
             outputs["itinerary"] = itinerary
+        recovery = ctx.get("recovery")
+        if recovery:
+            outputs["recovery"] = recovery
         snapshot["outputs"] = outputs
         return snapshot
 
@@ -687,10 +738,89 @@ class TripOrchestrator:
             result["booking"] = booking
         return result
 
+    # -- recovery (AJ §8.6): replacement options + suitability reasons --------
+
+    @staticmethod
+    def _recovery_reason(option: Dict[str, Any],
+                         original: Dict[str, Any]) -> str:
+        """Deterministic plain-language suitability reason derived ONLY from
+        the returned data (never invented)."""
+        reasons = []
+        if option.get("carrier") and original.get("carrier") \
+                and option["carrier"] == original["carrier"]:
+            reasons.append("same airline as your booked flight")
+        dep_new = str((option.get("dep") or {}).get("time") or "")
+        dep_old = str((original.get("dep") or {}).get("time") or "")
+        if dep_new and dep_old:
+            if dep_new[11:16] < dep_old[11:16]:
+                reasons.append(f"leaves earlier ({dep_new[11:16]})")
+            elif dep_new[11:16] > dep_old[11:16]:
+                reasons.append(f"leaves later ({dep_new[11:16]})")
+        try:
+            if float((option.get("price") or {}).get("amount") or 0) < \
+                    float((original.get("price") or {}).get("amount") or 0):
+                reasons.append("lower price than your booked flight")
+        except (TypeError, ValueError):
+            pass
+        if not reasons:
+            reasons.append("same route, available in the Atlas Sandbox")
+        return "; ".join(reasons[:2]).capitalize()
+
+    async def _build_recovery(self, trip, event: Dict[str, Any]) -> None:
+        """After the recovery subgraph mounts, search replacement options on
+        the same route and pause on a SEPARATE recovery approval. Provider
+        failures degrade honestly (empty options + note), never fabricate."""
+        booking = trip.context.get("flight_book") or {}
+        original = (booking.get("booking") or {}).get("option") or {}
+        dep = original.get("dep") or {}
+        arr = original.get("arr") or {}
+        recovery: Dict[str, Any] = {
+            "event": event, "original": original, "options": [],
+            "degraded": False, "note": "",
+            "sandbox_note": "Replacement options come from the Atlas Sandbox "
+                            "— a safe practice environment with researched "
+                            "mock data.",
+        }
+        if dep.get("airport") and arr.get("airport"):
+            date_iso = str(dep.get("time") or "")[:10] \
+                or date.today().isoformat()
+            try:
+                offers = await self.atlas.search_flights(
+                    dep["airport"], arr["airport"], date_iso)
+                for offer in (offers or [])[:4]:
+                    option = normalize_offer(offer)
+                    if option.get("id") == original.get("id"):
+                        continue
+                    option["reason"] = self._recovery_reason(option, original)
+                    recovery["options"].append(option)
+            except Exception as exc:  # noqa: BLE001 — hostile upstream
+                recovery["degraded"] = True
+                recovery["note"] = (
+                    f"Replacement search degraded ({type(exc).__name__}) — "
+                    "no options are shown rather than invented.")
+        trip.context["recovery"] = recovery
+        if recovery["options"]:
+            approval = ApprovalRequest(
+                approval_id=f"{trip.trip_id}:rec1",
+                node_name="recovery_booking",
+                options=[{"id": o["id"], "reason": o["reason"],
+                          "label": f"{o.get('carrier', '')} "
+                                   f"{o.get('flight_no', '')}".strip()}
+                         for o in recovery["options"]],
+                created_at=_now_iso())
+            trip.pending_approvals.append(approval)
+            trip.status = "awaiting_approval"
+            trip.current = "recovery_booking"
+            self._record(trip, "recovery_options", "recovery_options",
+                         "PAUSED", 0.0,
+                         {"approval_id": approval.approval_id,
+                          "options": len(recovery["options"])})
+
     async def simulate_disruption(self, trip_id: str,
                                   event: Dict[str, Any]) -> Dict[str, Any]:
         trip = self._trip_or_404(trip_id)
         telemetry = await self.executor.on_disruption(trip_id, event)
+        await self._build_recovery(trip, event)
         return {"mounted": True, "trip_id": trip.trip_id,
                 "subgraph": telemetry, "event": event}
 

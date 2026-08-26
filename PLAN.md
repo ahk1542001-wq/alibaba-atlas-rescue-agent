@@ -448,3 +448,122 @@ UI suite  (tests/test_ui_trip.py, run 2):        18 passed in 46.27s
 non-UI    (tests/ --ignore=test_ui_trip.py):     203 passed in 32.67s
                                                  (201 prior + 2 syntax gate)
 ```
+
+## G4.5 — ATLAS JOURNEY beginner-friendly trip UX redesign
+
+Spec: `docs/superpowers/specs/2026-08-27-atlas-journey-trip-ux-redesign.md`
+(decision-complete). Files touched: `static/trip.js` (rework),
+`static/index.html` (additive AJ sections, dual-testid per spec D5),
+`static/styles.css` (append-only AJ token block), `tests/test_ui_trip.py`
+(B1–B6 intent kept + 13 AJ regressions), `routers/v1/trip.py` (smallest
+backend additions the spec demands). Frozen files untouched (verified
+below).
+
+### Shipped per spec section
+
+1. **IA (spec D7)** — 3 destinations Plan a trip / My trip / Help rendered
+   INSIDE `#view-trip` (`aj-nav-*`); frozen sidebar/bottom-nav intact;
+   profile drawer from the AJ top bar; no engineering dashboard.
+2. **5-step guided flow** — Tell us what you need → Choose → Review →
+   Confirm → Track; only current step expanded, completed steps compact
+   summaries with Edit, future steps collapsed + `aria-disabled`. Maps to
+   start / clarify-answers / approvals / state / simulate-disruption.
+3. **Start screen** — headline + one-sentence explanation + goal composer
+   + 3 starter choices initializing RequestedServices (editable chips);
+   custom goals infer services; confirm only ambiguous scope; nothing
+   auto-added.
+4. **Clarification** — one focused question card at a time (question,
+   why-needed, direct choices, Back + Save/Confirm) + confirmed-facts
+   compact editable summary; wired via POST `/api/trip/{id}/clarify-answers`.
+5. **Beginner language** — full translations table (Booking reference, How
+   this plan was made, Check entry requirements, Sources, Last checked,
+   Booking status, What happens next); result-stating buttons; one primary
+   action per screen; max 3 ranked flight options + Show more with ranking
+   reasons; itinerary day-grouped 6 items + Show more (D4); advanced
+   filters / raw citations / provider diagnostics / Agent Trace in
+   collapsed disclosures.
+6. **Recovery surface** (audit gap closed) — disruption shows original
+   trip preserved, replacement options separately with suitability
+   reasons, SEPARATE recovery approval, only when needed; backend
+   suitability reasons added in `routers/v1/trip.py` only (spec demanded).
+7. **Living Journey Line** — SVG/CSS only, 7 spec states incl. one
+   restrained confirmation pulse, disruption branch (muted-coral original
+   + recovery path), `prefers-reduced-motion` fully static (AJ12).
+8. **ATLAS JOURNEY tokens** — Canvas Ivory / Atlas Ink / Deep Teal /
+   Seafoam / Sunline Amber / Signal Coral (disruption/destructive only) /
+   Border Mist / White cards; monospace only for codes/times/prices/refs;
+   body ≥15px; 12px radius; ≥44px touch targets; no glassmorphism or
+   perpetual animation.
+9. **9-state matrix (AJ10)** — empty/loading/success/degraded/validation
+   error/provider failure/expired approval/uncertain booking/offline all
+   mapped to real API envelopes incl. live 422 `invalid_goal`
+   plain-language handling (D2); ARIA live regions; keyboard-only
+   completion (AJ11); focus trap + restore in dialogs; 360px no overflow.
+10. **Profile surface (AJ09)** — safe-fields presentation, Edit/Delete per
+    field, consent control, explicit statement that passport
+    number/payment details/legal identity are not stored unmasked.
+
+### Review-loop findings + fixes log
+
+Viewports probed: 1440x900, 768x1024, 360x800 (own instance on :8051 when
+8050 was suite-occupied). Each reproducible finding got a fix + regression.
+
+| # | Finding (skeptical-beginner pass) | Fix |
+|---|---|---|
+| 1 | State boxes (validation/expired/degraded) invisible once rail advanced past step 1 — `aj-state-slot` lived inside collapsed step-1 body | moved slot to pane level (top of `#aj-dest-plan`); AJ06/b2 assertions green |
+| 2 | Show-more expanded list collapsed back to 3 on poll re-render | `Trip.preserveOptionCap` — forced re-renders keep the expanded cap; only NEW option sets reset to top-3 (AJ04) |
+| 3 | Starter-choice service chips vanished after goal submitted | `pendingProvServices` carry-through: submitGoal restores starter services AFTER `resetTripSurfaces()` (AJ02) |
+| 4 | All-'unknown' server snapshot hid provisional service chips | renderServices fallback to `Trip.provServices` when snapshot yields none |
+| 5 | Keyboard users couldn't submit goal (Enter in textarea = newline) | AJ11 Tabs to `trip-goal-submit` then Enter — documented keyboard path |
+| 6 | f8 crafted itinerary wiped by background 1s `/state` poll | test stubs `/state` via a permanently-installed fetch wrapper with a `__f8Off` mode flag (see fetch(null) artifact below) |
+| 7 | After booking, My trip auto-switch hid goal composer for trip B | f10 takes the beginner path: `aj-nav-plan` → Edit step 1 |
+| 8 | At 360px legacy top nav icons hidden | probes/suite use `mnav-trip` bottom nav; top bar flex-wrap keeps 360px overflow-free |
+| 9 | Deterministic live-422 trigger needed | impossible-date goal "Fly on February 30 2026" → 422 `invalid_goal` → plain-language validation box (AJ10/D2) |
+
+**Chromium fetch(null) artifact (cross-cutting test-infra discovery):**
+re-assigning `window.fetch` BACK to a captured reference (e.g.
+`window.fetch = window.__origFetch`) makes Chromium/Playwright emit a
+`fetch(null)` probe → `GET /null` 404 console error. Proven reproducible
+via CDP initiator probe on a minimal stub page. Rule now codified: tests
+never re-assign `window.fetch` back — install one permanent wrapper and
+toggle a mode flag (`__f8Off`).
+
+### G4.5 completeness sweep (32 tests — `tests/test_ui_trip.py`)
+
+| Group | Tests | Intent |
+|---|---|---|
+| B1–B6 preserved | b1 goal/chat/chips, b2+b3 options/approval/PNR, b4 DAG growth, b5 profile+masking, b6 two-run greeting | original G4 intents intact |
+| G4 legacy | scope 3-choice+flight-only, degraded+stale visa, XSS inert payload, 375px + 360px no-overflow, testid completeness sweep | honesty/a11y/canary contracts |
+| G4-DA fixes | f1–f4, f6, f8–f10 | prior remediation regressions stay green |
+| AJ01–AJ13 (13 new) | IA destinations, starter services, one-question cards, max-3+Show more, vocabulary, honesty-never-hidden, journey-line states, recovery separate approval, profile drawer privacy, 9-state matrix, keyboard a11y, reduced motion, legacy canary | spec §10 exit criteria |
+
+### G4.5 gate evidence (TZ=UTC, fresh runs)
+
+```
+node --check static/trip.js:                     exit 0
+UI suite  (tests/test_ui_trip.py, run 1):        32 passed in 71.0s
+UI suite  (tests/test_ui_trip.py, run 2):        32 passed in 71.5s
+non-UI    (tests/ --ignore=test_ui_trip.py):     203 passed in 46.9s
+canary    (tests/e2e_full_journey.py, booted):   14/14 PASS
+```
+
+Frozen-file confirmation: `static/app.js` sha256 pin
+`2d1db42d79914bf5b807faccaff1cc25ce979a2c939abac5109ba96b000cb1ae5`
+verified by AJ13; `services/rights_engine.py`, `visa_guard.py`,
+`state_graph.py`, `guardian.py`, `atlas_client.py`, pre-existing tests, AGENTS.md,
+README demo-flow, `.env` untouched (`git diff --stat` limited to the five
+owned files + docs).
+
+### Screenshots (gitignored `screenshots/`)
+
+- Viewports/probes: `aj_probe_01_start_desktop.png`,
+  `aj_probe_12_tablet768.png`, `aj_probe_13_mobile360.png`,
+  `aj_probe_11_validation.png` (+`_desktop`, `_mobile360`),
+  `aj_probe_14_rescue_canary.png`
+- Screens: `aj_probe_02..05` clarification+options,
+  `aj_probe_06_approval_modal(_desktop).png`,
+  `aj_probe_07_mytrip(_desktop).png`,
+  `aj_probe_08_recovery(_desktop).png`, `aj_probe_08b_recovery_outcome.png`,
+  `aj_probe_09_help(_desktop).png`, `aj_probe_10_drawer(_desktop).png`
+- Suite evidence: `g45_aj07_journey_line.png`, `g45_aj08_recovery.png`,
+  `g45_aj09_drawer.png`, `g45_aj10_states.png`, `g45_mobile_360_trip.png`
