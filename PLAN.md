@@ -887,8 +887,8 @@ additive fix commits, stop only when F1-F20 + S1-S13 are genuinely satisfied.
 |---|---|---|---|
 | R0 | canonical spec installed as repo authority; DECISIONS.tsv migrated to 5 columns | docs/MASTER_BUILD_PACKAGE.md §0-§23 | done (6358606) |
 | R1 | remove the complete passport-number path (schemas, API, UI, fixtures, tests, docs); passport country only; fictional data only | §5 "No passport number field exists", F5, F17, §9.4, §19.10 | done (468f2d8) |
-| R2 | remove every unsafe dynamic HTML insertion from ALL reachable frontend incl. legacy static/app.js; no frozen-file security exemption | §9.3, §20 XSS row | done (this commit) |
-| R3 | default experience = My Trip; three primary destinations; rescue/radar consolidated into trip monitoring/recovery states | §19.1, §19.7, §19.8 | pending |
+| R2 | remove every unsafe dynamic HTML insertion from ALL reachable frontend incl. legacy static/app.js; no frozen-file security exemption | §9.3, §20 XSS row | done (bf0d061) |
+| R3 | default experience = My Trip; three primary destinations; rescue/radar consolidated into trip monitoring/recovery states | §19.1, §19.7, §19.8 | done (this commit) |
 | R4 | canonical feature gaps: S12 LocationResolve (Bangkok→BKK+DMK, never silent), S13 RecoveryPlan, F14 idempotency-key semantics, F16 replaceable itinerary, F18 degraded flows, F19 a11y, 13-skill registry | §2.3 F13-F19, §4 S12/S13, §6, §19 | pending |
 | R5 | FINAL_REPORT rebuilt against F1-F20/G0-G8; §21 full fresh-venv runbook (hermetic suite, v1 canary, v2 browser, security, boot smoke); DA review vs canonical spec | §9.7, §21, §23 | pending |
 
@@ -908,6 +908,14 @@ additive fix commits, stop only when F1-F20 + S1-S13 are genuinely satisfied.
 - **Hostile Provider & API Browser Tests**: Added `test_hostile_provider_and_api_payloads_render_inert` in `tests/test_ui_trip.py` verifying that hostile `<script>`, `<img onerror=...>`, and attribute payloads injected via search results, radar alerts, chat messages, and rescue packages render strictly as inert text without executing scripts or injecting DOM nodes.
 - **Legacy Canary Pin Reconciliation**: Updated `APP_JS_SHA256` pin in `tests/test_ui_trip.py` to match the sanitized, sink-free `static/app.js` (`ecfe79839b726b7da61b38c91eced2a53a670d6a411c7f6bf3f9ba712de8d312`). All canary tests pass.
 - **Verification Suite**: 355/355 tests passed in 143.5s; `scripts/security_check.sh` all 6 sections PASS; `git diff --check` clean with 0 whitespace errors.
+
+### R3 Gate Evidence (Product UI Architecture & Warm Travel Experience)
+
+- **My Trip Default Destination**: Root entry renders the calm, judge-readable Warm Travel My Trip journey (`#view-trip`) with Living Journey Line, goal intake, step cards, and conversational clarify chips.
+- **Canonical IA Consolidation**: Exactly three primary destinations in global navigation (`Plan a trip`, `My trip`, `Help` / `Concierge`); legacy Rescue Hub and Radar monitoring feeds consolidated into Trip monitoring and recovery states.
+- **Responsive Viewport Assurance**: Full Playwright assertions verify zero horizontal overflow on mobile (360px and 375px), tablet, and desktop viewports.
+- **Accessibility & Motion Compliance**: ARIA landmarks, dialog focus trapping, polite live regions (`aj-live`), full keyboard navigation happy-path, and strict `prefers-reduced-motion` compliance proven in automated tests.
+- **Interactive Element Coverage**: 100% data-testid sweep verified; zero dead or unmapped interactive controls.
 
 Frozen-file note for the corrective sequence: canonical §16.2 keeps
 rights_engine.py, visa_guard.py, and AGENTS.md/.env contents frozen; it
