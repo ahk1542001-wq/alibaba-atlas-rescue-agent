@@ -114,6 +114,8 @@
         appliedSeq: 0,           // newest response actually rendered
         pollAbort: null,         // AbortController of the in-flight poll
         terminal: false,
+        errorKind: null,         // action errors outlive same-state polling
+        errorEpoch: -1,
         // ATLAS JOURNEY state
         goalText: '',
         dest: 'plan',            // plan | mytrip | help
@@ -473,7 +475,7 @@
                     'We can\u2019t reach Atlas right now. Your last saved view ' +
                     'is below.', 'Retry', pollState);
             } else {
-                showError('State check failed: ' + plainError(err));
+                showError('State check failed: ' + plainError(err), 'state');
             }
         } finally {
             if (Trip.pollAbort && Trip.pollAbort.signal.aborted) Trip.pollAbort = null;
@@ -490,18 +492,22 @@
         return msg;
     }
 
-    function showError(text) {
+    function showError(text, kind) {
         var box = byId('trip-error');
         clear(box);
         box.appendChild(el('div', 'trip-error-title', '\u26A0 Trip needs attention'));
         box.appendChild(el('div', 'trip-error-text', text));
         box.hidden = false;
+        Trip.errorKind = kind || 'action';
+        Trip.errorEpoch = Trip.epoch;
     }
 
     function hideError() {
         var box = byId('trip-error');
         clear(box);
         box.hidden = true;
+        Trip.errorKind = null;
+        Trip.errorEpoch = -1;
     }
 
     // AJ inline state boxes: empty|loading|validation|provider|expired|
@@ -560,7 +566,13 @@
     // --- main state renderer ----------------------------------------------------
 
     function renderState(s) {
-        hideError(); // G4-DA-fix F3: a successful render clears any banner
+        // A successful state poll clears a state-fetch error.  A rejected
+        // user action (for example a safety gate) must remain visible while
+        // same-state polling continues; it clears only after a newer action
+        // advances the epoch.
+        if (Trip.errorKind === 'state' || Trip.errorEpoch < Trip.epoch) {
+            hideError();
+        }
         clearStateBox();
         Trip.lastState = s;
         renderStatusStrip(s);
