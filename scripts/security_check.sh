@@ -12,6 +12,7 @@ set -u
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
     echo "not inside a git repository" >&2; exit 2; }
 cd "$ROOT"
+HOOK_PATH="$(git rev-parse --git-path hooks/pre-commit)"
 
 FAILURES=0
 PY=".venv/bin/python"
@@ -22,9 +23,10 @@ note() { printf 'NOTE  %s\n' "$1"; }
 section() { printf '\n===== %s =====\n' "$1"; }
 
 if [ "${1:-}" = "--install-hook" ]; then
-    cp scripts/pre-commit .git/hooks/pre-commit
-    chmod +x .git/hooks/pre-commit
-    echo "installed .git/hooks/pre-commit (banned-pattern scan on staged"
+    mkdir -p "$(dirname "$HOOK_PATH")"
+    cp scripts/pre-commit "$HOOK_PATH"
+    chmod +x "$HOOK_PATH"
+    echo "installed $HOOK_PATH (banned-pattern scan on staged"
     echo "content; delegates additionally to gitleaks when installed)"
     exit 0
 fi
@@ -81,10 +83,10 @@ done
 
 # ---------------------------------------------------------------- 3/6
 section "3/6 precommit hook installed + live staged scan"
-if [ -x .git/hooks/pre-commit ]; then
-    ok ".git/hooks/pre-commit installed and executable"
+if [ -x "$HOOK_PATH" ]; then
+    ok "$HOOK_PATH installed and executable"
 else
-    bad ".git/hooks/pre-commit missing — run: scripts/security_check.sh --install-hook"
+    bad "$HOOK_PATH missing — run: scripts/security_check.sh --install-hook"
 fi
 if bash scripts/pre-commit; then
     ok "hook scan over currently staged content: clean"
