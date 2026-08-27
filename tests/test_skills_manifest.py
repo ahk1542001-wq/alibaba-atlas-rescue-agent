@@ -21,6 +21,7 @@ from services.skills import (
 EXPECTED_SKILLS = {
     "goal_intake",
     "clarify_loop",
+    "profile_edit",
     "profile_capture",
     "flight_search",
     "flight_book",
@@ -44,7 +45,7 @@ def skills_copy(tmp_path: Path) -> Path:
 
 def test_registry_loads_exactly_thirteen_skills():
     registry = load_skill_registry()
-    assert len(registry) == 13
+    assert len(registry) == 14
     assert {entry["name"] for entry in registry} == EXPECTED_SKILLS
 
 
@@ -96,14 +97,14 @@ def test_adding_skill_file_changes_listing(skills_copy: Path):
         encoding="utf-8",
     )
     registry = load_skill_registry(skills_copy)
-    assert len(registry) == 14
+    assert len(registry) == 15
     assert "hotel_finder" in {entry["name"] for entry in registry}
 
 
 def test_removing_skill_file_changes_listing(skills_copy: Path):
     (skills_copy / "web_intel.SKILL.md").unlink()
     registry = load_skill_registry(skills_copy)
-    assert len(registry) == 12
+    assert len(registry) == 13
     assert "web_intel" not in {entry["name"] for entry in registry}
 
 
@@ -155,9 +156,9 @@ def test_empty_allowed_tools_loads_cleanly(skills_copy: Path):
 
 def test_reload_reflects_filesystem_changes(skills_copy: Path):
     """Registry is rebuilt per call — no stale cache across add/remove."""
-    assert len(load_skill_registry(skills_copy)) == 13
+    assert len(load_skill_registry(skills_copy)) == 14
     (skills_copy / "web_intel.SKILL.md").unlink()
-    assert len(load_skill_registry(skills_copy)) == 12
+    assert len(load_skill_registry(skills_copy)) == 13
     (skills_copy / "web_intel.SKILL.md").write_text(
         "---\n"
         "name: web_intel\n"
@@ -167,7 +168,7 @@ def test_reload_reflects_filesystem_changes(skills_copy: Path):
         "# Procedure\n1. fetch\n",
         encoding="utf-8",
     )
-    assert len(load_skill_registry(skills_copy)) == 13
+    assert len(load_skill_registry(skills_copy)) == 14
 
 
 def test_duplicate_skill_name_rejected(skills_copy: Path):

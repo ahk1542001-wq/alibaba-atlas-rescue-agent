@@ -757,7 +757,9 @@
         // 1-CLICK REBOOK
         async function rebookFlight(offerId, pkgIdx) {
             if (!rescueData) return;
+            if (!confirm("Approve this recovery booking? This action is binding and will issue a ticket.")) return;
             const pkg = rescueData.rescue_packages[pkgIdx];
+
             await showRescueTimeline(pkg);
         }
 

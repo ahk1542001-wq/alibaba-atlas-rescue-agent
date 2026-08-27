@@ -463,7 +463,7 @@ class RescueEngine:
     def get_agent_prompt_telemetry(self) -> Dict[str, Any]:
         """Provides transparency into Qoder / Qwen-2.5 agent reasoning, token economics, and verifier suite."""
         return {
-            "model": "Alibaba Cloud Qwen-2.5-72B-Instruct via Qoder",
+            "model": getattr(settings, "default_model", "Qwen/Qwen2.5-72B-Instruct"),
             "system_prompt": (
                 "You are the Autonomous Flight Rescue Agent. When an airline disruption webhook triggers, "
                 "extract the traveler profile, query Atlas GDS for multi-carrier alternatives, "

@@ -44,8 +44,8 @@ async def assess_claim(req: ClaimAssessRequest):
         reason = str(status.get("reason", ""))
         disruption_type = str(status.get("status", "disruption"))
 
-        origin_airport = (req.origin_airport or status.get("origin") or "").upper()
-        dest_airport = (req.destination_airport or status.get("destination") or "").upper()
+        origin_airport = (status.get("origin") or req.origin_airport or "").upper()
+        dest_airport = (status.get("destination") or req.destination_airport or "").upper()
         airline_code = req.flight_number[:2]
         o_c, d_c, c_c = airports_to_countries(origin_airport, dest_airport, airline_code)
         distance_km = route_distance_km(origin_airport, dest_airport)
