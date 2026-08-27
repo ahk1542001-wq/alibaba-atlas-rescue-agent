@@ -957,6 +957,8 @@ R7 is the current completion record and supersedes every earlier count,
 provider label, screenshot statement, and owner-action note in this file.
 Implementation remains additive and preserves the full G0–G8/R0–R5 history.
 
+**Note:** The former open canonical reconciliation blocker is now RESOLVED.
+
 ### Corrective commit sequence
 
 | Commit | Corrective scope |
@@ -972,6 +974,9 @@ Implementation remains additive and preserves the full G0–G8/R0–R5 history.
 | `481142d` | confirmed route/profile facts and exact search |
 | `a06c956` | persistent safety action errors during polling |
 | `b35a9fc` | confirmed-route recovery and honest AI labels |
+| `121658d` | beginner-friendly slow safety/booking feedback |
+| `827be74` | reconcile R7 verification evidence |
+| `dbbe2d7` | verify the configured AI runtime |
 | `121658d` | beginner-friendly slow safety/booking feedback |
 
 ### Current verification evidence
@@ -1002,7 +1007,7 @@ Implementation remains additive and preserves the full G0–G8/R0–R5 history.
 - `gitleaks` and `pip-audit` were unavailable; neither is claimed as passed.
 - The verified product is a complete canonical hackathon build in
   hermetic/Atlas Sandbox mode, not a live-airline production deployment.
-- Integration is a local-only fast-forward to `feature/trip-agent`. No push,
+- Integration is a local-only fast-forward to `main`. No push,
   deployment, tag, publication, real identity, payment, credential, or live
   booking is authorized by this plan.
 

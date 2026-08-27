@@ -87,6 +87,11 @@ Entry template:
   (passport-number removal; legacy XSS; My-Trip default + consolidation;
   canonical feature gaps incl. F13 LocationResolve; FINAL_REPORT rebuild
   + full fresh-venv runbook + DA review).
-- Status: OPEN (tracked via R1–R5)
+- Status: RESOLVED by R0–R7 through dbbe2d7
 
-- [2026-08-27] G3-E2E atlas sandbox unreachable: live CLI probe returned no offers for BKK->SIN at test time — happy-path E2E ran on the documented curated fallback (provenance 'sandbox'); nothing was fabricated.
+## 2026-08-27 — Atlas sandbox unreachable
+- Repro: live CLI probe returned no offers for BKK->SIN at test time.
+- Attempts: ran the E2E on the documented curated fallback (provenance 'sandbox').
+- Hypothesis: Sandbox provider availability is limited/intermittent.
+- Alternative chosen: used hermetic fallback options. This is a structured provider-availability limitation, not a product bug.
+- Status: WORKAROUND

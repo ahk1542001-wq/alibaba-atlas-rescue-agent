@@ -4,9 +4,9 @@
 
 **Specification SHA-256:** `6283789fb1ce1f8f23289a65804d776e3e37dd29f7fd03d440f18363ad5e36fc`
 
-**Verification branch:** `codex/travelcare-r7-completion`
+**Verification branch:** `feature/trip-agent`
 
-**Integration target:** `feature/trip-agent` (local fast-forward only)
+**Integration target:** `main` (local fast-forward only)
 
 **External actions:** no push, deployment, tag, publication, or live booking
 
@@ -131,6 +131,8 @@ Every skill has a `.SKILL.md` manifest and is validated through the registry/man
 | `a06c956` | persistent safety action errors during polling |
 | `b35a9fc` | exact-route recovery and honest runtime/provider labels |
 | `121658d` | beginner-friendly slow safety/booking feedback |
+| `827be74` | evidence reconciliation |
+| `dbbe2d7` | configured-runtime honesty test |
 
 ## 8. Honest limitations and release boundary
 
@@ -144,7 +146,7 @@ Every skill has a `.SKILL.md` manifest and is validated through the registry/man
 
 ## 9. Handover
 
-- Integrate only by local fast-forward from the verified R7 branch to `feature/trip-agent` after confirming the owner checkout has not moved.
+- Integrate only by local fast-forward from the verified R7 branch to `main` after confirming the owner checkout has not moved.
 - Do not push or deploy without a separate owner instruction.
 - No real traveler identity, passport number, payment information, credential, or live booking was used.
 - No screenshot or live-provider result is claimed without an artifact.
