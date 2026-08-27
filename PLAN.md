@@ -94,8 +94,8 @@ test_skills_manifest).
 - Evidence: G7 gate section below.
 
 ### G8 Completion & Stop
-- [ ] §16.3 done: F1–F12 table filled, `FINAL_REPORT.md` written, fresh-boot smoke green
-- Evidence: smoke output + 15-line summary; then STOP per §16.3.
+- [x] §16.3 done: F1–F12 table filled, `FINAL_REPORT.md` written, fresh-boot smoke green
+- Evidence: G8 gate section below; 15-line summary printed; STOP per §16.3.
 
 ## Decision Log
 
@@ -847,3 +847,27 @@ UI suite (clean rerun):                    38 passed in 89.20s
    in BLOCKERS.md, no code or assertion changed)
 screenshot:                                screenshots/g7_mockdata_browser.png
 ```
+
+## G8 Completion & Stop
+
+Definition of DONE (spec §16.3), each item verified:
+
+- G0–G7 evidence complete: per-gate sections above, each with a local
+  `gate(G#)` commit (`git log` — never re-run, never rewritten).
+- F1–F12 acceptance table filled: `FINAL_REPORT.md` (all PASS with proof
+  pointers).
+- `FINAL_REPORT.md` written and FINAL (header marks it; no further
+  iterations after this gate).
+- `git status` clean: intentional tracked changes only; all forbidden
+  paths (`*.env*`, `data/profiles/*`, `data/mock_victor.json`,
+  `screenshots/`) gitignored.
+- Fresh boot passes smoke (fresh venv, NOT the dev venv):
+  requirements install clean; `from main import app` OK; 359 tests
+  collect cleanly; booted server answers `/api/health` (healthy),
+  `/api/skills` (registry), `POST /api/trip/start` (journey to
+  awaiting_approval), and `/api/trip/{id}/safety` (deterministic live
+  assessment); 37-test fresh-venv subset green; server stopped and the
+  fresh venv removed afterwards.
+
+Per §16.3 the build now prints its 15-line summary and STOPS: no extra
+features, refactors, or second iterations after gates are green.

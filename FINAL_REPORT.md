@@ -1,10 +1,10 @@
 # Build Self-Report
 
-Interim report written at G6 (Cleanup & Report Gate), updated at G7
-(mock-data pass — owner absent, graceful skip). G8 (completion/smoke)
-finalizes this file; see status flags per section.
+FINAL report, completed at G8 (Completion & Stop). Written at G6, updated
+at G7 (mock-data pass — owner absent, graceful skip), finalized here with
+the fresh-boot smoke. No further iterations after this gate (spec §16.3).
 
-## Stages completed: G0..G7
+## Stages completed: G0..G8
 
 | Gate | Commit | Scope (evidence: `git show <hash>`) |
 |---|---|---|
@@ -18,6 +18,7 @@ finalizes this file; see status flags per section.
 | G5 Security | 56a12f8 | secret scan + hook + privacy suite + dep audit |
 | G6 Cleanup | (this commit) | CI repair, cleanup sweep, this report |
 | G7 Mock-Data | (this commit) | `[mockdata]` victor suite; owner absent → graceful skip, run-path proven synthetic |
+| G8 Completion | (this commit) | fresh-boot smoke green; this report finalized; 15-line summary; STOP |
 
 ## Features vs acceptance criteria (F1..F12)
 
@@ -39,11 +40,16 @@ finalizes this file; see status flags per section.
 ## Test results
 
 ```
-non-UI suite (unit + integration + E2E):   316 passed in 47.78s (TZ=UTC)
-UI suite (Playwright headless chromium):    38 passed in 85.95s
+non-UI suite (unit + integration + E2E):   319 passed, 2 skipped (TZ=UTC)
+UI suite (Playwright headless chromium):    38 passed
 legacy canary (tests/e2e_full_journey.py):  14/14 PASS (booted app)
 JS syntax gate (node --check):              static/app.js + static/trip.js exit 0
 security gate (scripts/security_check.sh):  ALL SECTIONS PASS
+fresh-boot smoke (G8, fresh venv):          import OK; 359 tests collected
+                                            clean; boot + /api/health + /api/
+                                            skills + trip start + /safety all
+                                            respond; 37-test fresh-venv subset
+                                            green
 ```
 
 Key screenshots: `screenshots/` (gitignored) — G4 B1–B6 probes and G4.5
