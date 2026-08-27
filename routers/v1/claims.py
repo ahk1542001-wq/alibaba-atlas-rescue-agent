@@ -1,4 +1,5 @@
 import datetime
+import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -16,6 +17,8 @@ from services.rights_engine import (
 )
 from services.atlas_client import AtlasClient
 from services.rescue_engine import RescueEngine
+
+logger = logging.getLogger("claims")
 
 router = APIRouter(prefix="/api/claims", tags=["Claims"])
 
@@ -132,8 +135,14 @@ async def assess_claim(req: ClaimAssessRequest):
             "evidence_pack": evidence,
             "verdict": verdict,
         })
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("claim assessment failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to assess the claim from provider flight status.",
+        ) from exc
 
 
 class AppealRequest(BaseModel):
@@ -148,5 +157,11 @@ async def appeal_rejected_claim(req: AppealRequest):
         claim = dict(req.claim)
         result = await draft_appeal(claim, req.rejection_reason)
         return JSONResponse(content=result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("claim appeal drafting failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to draft the appeal.",
+        ) from exc
