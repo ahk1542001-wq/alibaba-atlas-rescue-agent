@@ -1,0 +1,145 @@
+import pytest
+from httpx import ASGITransport, AsyncClient
+from main import app
+from tests.test_e2e_trip_journey import harness, FakeAtlas, _client, _run
+
+from routers.v1.trip import get_trip_orchestrator
+from services.skills.recovery_plan import RecoveryPlanSkill
+from services.skills.itinerary import ItinerarySkill
+from tests.test_e2e_trip_journey import _no_llm
+
+# 1. API Missing Fields & Confirmations
+def test_gap1_api_confirmations_and_plan(harness):
+    orch = harness() # create orchestrator
+    
+    async def flow():
+        async with _client() as client:
+            await client.put("/api/profile/user_canonical/passport_country", json={"value": "SGP"})
+            # POST /api/trips
+            res = await client.post("/api/trips", json={
+                "goal_text": "Need to go to BKK on 2026-12-01",
+                "user_id": "user_canonical"
+            })
+            assert res.status_code == 200
+            data = res.json()
+            trip_id = data["trip_id"]
+            
+            assert isinstance(data["missing_fields"], list)
+            assert isinstance(data["confirmation_chips"], list)
+            
+            # If there's a chip, confirm it
+            if data["confirmation_chips"]:
+                chip = data["confirmation_chips"][0]
+                chip_id = chip["chip_id"]
+                
+                c_res = await client.post(f"/api/trips/{trip_id}/confirmations/{chip_id}", json={"decision": "confirm"})
+                assert c_res.status_code == 200
+                assert c_res.json()["status"] == "confirmed"
+                
+                # double confirm should 409
+                c_res2 = await client.post(f"/api/trips/{trip_id}/confirmations/{chip_id}", json={"decision": "confirm"})
+                assert c_res2.status_code == 409
+                
+            # Execute plan
+            p_res = await client.post(f"/api/trips/{trip_id}/plan")
+            assert p_res.status_code == 200
+            assert p_res.json()["status"] in ("completed", "failed", "awaiting_approval")
+            
+    _run(flow())
+        
+
+def test_gap2_and_gap3_recovery_rebooking_and_idempotency(harness):
+    import uuid
+    atlas = FakeAtlas()
+    orch = harness(atlas=atlas)
+    
+    async def flow():
+        async with _client() as client:
+            await client.put("/api/profile/user_recovery/passport_country", json={"value": "SGP"})
+            
+    _run(flow())
+    trip_id = _run(orch.start("Yangon to Singapore Oct 15", "user_recovery"))
+    
+    trip = orch.executor.get(trip_id)
+    if trip.current == "scope_clarification":
+        appr_id = trip.pending_approvals[0].approval_id
+        _run(orch.resolve(trip_id, appr_id, "flight_only", None))
+        
+    if trip.current == "flight_book":
+        appr_id = trip.pending_approvals[0].approval_id
+        opts = trip.context.get("flight_search", {}).get("options", [])
+        if opts:
+            oid = opts[0]["id"]
+            
+            # GAP 3: Require Idempotency-Key
+            with pytest.raises(Exception) as exc:
+                _run(orch.resolve(trip_id, appr_id, "approve", {"option_id": oid}))
+            assert "missing_idempotency_key" in str(exc.value)
+            
+            # Call with key
+            ikey = str(uuid.uuid4())
+            _run(orch.resolve(trip_id, appr_id, "approve", {"option_id": oid}, idempotency_key=ikey))
+            
+    # Trigger recovery
+    trip.context["flight_book"] = {"booking": {"pnr": "PNR1", "option": {"flight_no": "TG100"}}}
+    _run(orch.simulate_disruption(trip_id, {"flight_number": "TG100", "scenario": "cancellation", "simulated": True}))
+    
+    # Wait for recovery plan approval
+    if trip.current == "recovery_booking":
+        rec = trip.context.get("recovery", {})
+        opts = rec.get("options", [])
+        if opts:
+            rec_oid = opts[0]["id"]
+            appr_id = trip.pending_approvals[0].approval_id
+            
+            # Idempotency is required here too
+            with pytest.raises(Exception) as exc:
+                _run(orch.resolve(trip_id, appr_id, "approve", {"option_id": rec_oid}))
+            assert "missing_idempotency_key" in str(exc.value)
+            
+            # Reset spy calls to isolate the recovery boundary
+            atlas.calls.clear()
+            
+            ikey2 = str(uuid.uuid4())
+            _run(orch.resolve(trip_id, appr_id, "approve", {"option_id": rec_oid}, idempotency_key=ikey2))
+            
+            # GAP 2: Must have called Atlas EXACTLY ONCE for booking creation
+            creates = [c for c in atlas.calls if c[0] == "create"]
+            assert len(creates) == 1
+            
+            # Check itinerary
+            itin = trip.context.get("itinerary", {}).get("items", [])
+            assert any(i.get("honesty_label") == "booked replacement flight (Atlas sandbox record)" for i in itin)
+
+
+def test_gap4_itinerary_replace_section():
+    items = [
+        {"item_id": "i1", "kind": "flight", "booked": True},
+        {"item_id": "i2", "kind": "hotel", "booked": False},
+        {"item_id": "i3", "kind": "activity", "booked": False}
+    ]
+    # reject replacing booked flights
+    res1 = ItinerarySkill.replace_section(items, "i1", {})
+    assert res1.get("error") == "booked_section_immutable"
+    
+    # replace unbooked
+    res2 = ItinerarySkill.replace_section(items, "i2", {"name": "New Hotel", "kind": "hotel"})
+    assert res2.get("replaced", {}).get("before", {}).get("item_id") == "i2"
+    assert res2["items"][1]["name"] == "New Hotel"
+    assert "user-replaced section" in res2["items"][1]["honesty_label"]
+
+
+def test_gap5_recovery_plan_no_sq999_fabrication():
+    # Setup mock atlas that returns no results
+    class EmptyAtlas:
+        async def search_flights(self, *args, **kwargs):
+            return []
+            
+    skill = RecoveryPlanSkill(EmptyAtlas(), _no_llm)
+    trip_ctx = {
+        "flight_book": {"booking": {"option": {"dep": {"airport": "BKK"}, "arr": {"airport": "SIN"}}}}
+    }
+    out = _run(skill.run({"original_flight": "TG1", "disruption": {}}, trip_ctx))
+    # Must NOT fabricate SQ999, must return empty
+    assert out["status"] == "no_alternatives_available"
+    assert len(out["recovery_options"]) == 0

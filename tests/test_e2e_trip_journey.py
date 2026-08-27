@@ -1215,11 +1215,16 @@ def test_plural_api_trips_endpoints_and_idempotency_key(harness):
             assert clarif_resp.status_code == 200
 
             # 7. POST /api/trips/{trip_id}/confirmations/{chip_id}
+            from routers.v1.trip import get_trip_orchestrator
+            orch = get_trip_orchestrator()
+            trip = orch.executor.get(trip_id)
+            if trip:
+                trip._confirmation_chips = {"chip_123": {"chip_id": "chip_123", "decision": "pending", "node_name": "mock"}}
             conf_resp = await client.post(
                 f"/api/trips/{trip_id}/confirmations/chip_123",
                 json={"decision": "confirm"})
             assert conf_resp.status_code == 200
-            assert conf_resp.json()["status"] == "resolved"
+            assert conf_resp.json()["status"] == "confirmed"
 
             # 8. POST /api/trips/{trip_id}/plan
             plan_resp = await client.post(f"/api/trips/{trip_id}/plan")

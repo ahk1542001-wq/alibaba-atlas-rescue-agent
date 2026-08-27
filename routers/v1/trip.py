@@ -36,6 +36,8 @@ from pydantic import BaseModel, Field, ValidationError
 
 from models.schemas import (
     ApprovalRequest,
+    BookingRecord,
+    ConfirmationChip,
     DateWindow,
     GraphNodeStateV2,
     RequestedServices,
@@ -751,24 +753,28 @@ class TripOrchestrator:
     async def resolve(self, trip_id: str, approval_id: str,
                       decision: str, value: Any,
                       idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        trip = self._trip_or_404(trip_id)
+        
+        # Fast path for idempotency replay
         ledger_key = None
         payload_hash = None
         if idempotency_key:
-            ledger_key = f"POST:/api/trips/{trip_id}/approvals/{approval_id}:{idempotency_key}"
             import hashlib
             payload_str = json.dumps({"decision": decision, "value": value}, sort_keys=True, default=str)
             payload_hash = hashlib.sha256(payload_str.encode()).hexdigest()
-            if ledger_key in self._idempotency_ledger:
-                stored_hash, stored_resp = self._idempotency_ledger[ledger_key]
-                if stored_hash == payload_hash:
-                    return stored_resp
-                raise TripApiError(
-                    409, "idempotency_conflict",
-                    f"Idempotency-Key '{idempotency_key}' was already used with a different request payload",
-                    recoverable=True,
-                    hint="reuse the original payload for identical retry, or provide a new Idempotency-Key")
+            
+            for ns in ("approvals", "recovery"):
+                lk = f"POST:/api/trips/{trip_id}/{ns}/{approval_id}:{idempotency_key}"
+                if lk in self._idempotency_ledger:
+                    stored_hash, stored_resp = self._idempotency_ledger[lk]
+                    if stored_hash == payload_hash:
+                        return stored_resp
+                    raise TripApiError(
+                        409, "idempotency_conflict",
+                        f"Idempotency-Key '{idempotency_key}' was already used with a different request payload",
+                        recoverable=True,
+                        hint="reuse the original payload for identical retry, or provide a new Idempotency-Key")
 
-        trip = self._trip_or_404(trip_id)
         approval = next((a for a in trip.pending_approvals
                          if a.approval_id == approval_id), None)
         if approval is None:
@@ -786,6 +792,19 @@ class TripOrchestrator:
                                "rejected)", recoverable=True,
                                hint="list this trip's pending approvals via "
                                     "GET /api/trip/{id}/approvals")
+
+        # Gap 3: Enforce Idempotency-Key for booking approvals
+        is_booking_approval = approval.purpose in ("initial_booking", "recovery_booking") or approval.node_name in ("flight_book", "recovery_booking")
+        if is_booking_approval and not idempotency_key:
+            raise TripApiError(
+                422, "missing_idempotency_key",
+                "Idempotency-Key header is required for booking approvals",
+                recoverable=True,
+                hint="provide a unique UUID in the Idempotency-Key header")
+        
+        if idempotency_key:
+            namespace = "recovery" if approval.node_name == "recovery_booking" else "approvals"
+            ledger_key = f"POST:/api/trips/{trip_id}/{namespace}/{approval_id}:{idempotency_key}"
 
         if approval.node_name == "scope_clarification":
             choice = None
@@ -806,9 +825,6 @@ class TripOrchestrator:
             return res
 
         if approval.node_name == "recovery_booking":
-            # AJ recovery: a SEPARATE approval for replacement options after
-            # a disruption — resolved here without re-running the graph; the
-            # original booking record is never mutated (never auto-rebooked).
             if decision not in ("approve", "reject"):
                 raise TripApiError(422, "invalid_decision",
                                    f"decision '{decision}' is not supported",
@@ -818,19 +834,70 @@ class TripOrchestrator:
                                         "value.option_id")
             resolved: Dict[str, Any] = {"approved": decision == "approve",
                                         "kind": "recovery_booking"}
+            
+            # Extract option ID and validate expiry
+            if approval.expires_at:
+                from datetime import datetime, timezone
+                if datetime.now(timezone.utc) > datetime.fromisoformat(approval.expires_at):
+                    raise TripApiError(400, "approval_expired", "This recovery option has expired.", recoverable=True)
+
             if decision == "approve":
-                oid = value.get("option_id") if isinstance(value, dict) \
-                    else None
-                rec_opts = (trip.context.get("recovery") or {}).get(
-                    "options") or []
-                if not oid or not any(o.get("id") == oid for o in rec_opts):
+                oid = value.get("option_id") if isinstance(value, dict) else None
+                rec_opts = (trip.context.get("recovery") or {}).get("options") or []
+                selected_opt = next((o for o in rec_opts if o.get("id") == oid or (o.get("option") or {}).get("id") == oid), None)
+                
+                if not oid or not selected_opt:
                     raise TripApiError(
                         422, "missing_option",
-                        "recovery approval requires value.option_id from the "
-                        "replacement options", recoverable=True,
-                        hint="pick one of the replacement option ids listed "
-                             "in GET /api/trip/{id}/state (outputs.recovery)")
+                        "recovery approval requires value.option_id from the replacement options", 
+                        recoverable=True)
+                
                 resolved["option_id"] = oid
+                opt_data = selected_opt.get("option") or selected_opt
+                origin = (opt_data.get("dep") or {}).get("airport") or ""
+                destination = (opt_data.get("arr") or {}).get("airport") or ""
+                
+                # Gap 2: Execute REAL recovery rebooking
+                try:
+                    booking_res = await self.executor._skills["flight_book"].run({
+                        "trip_id": trip_id,
+                        "option_id": oid,
+                        "origin": origin,
+                        "destination": destination,
+                    }, trip.context)
+                    resolved["booking"] = booking_res
+                    
+                    # Store distinct recovery receipt, preserving original booking
+                    trip.context["recovery_booking"] = booking_res
+                    
+                    # Add to itinerary and arm monitoring
+                    itin = trip.context.get("itinerary") or {"items": []}
+                    if "items" in itin:
+                        # Find and mark original flight as replaced
+                        for item in itin["items"]:
+                            if item.get("source") == "atlas_real":
+                                item["honesty_label"] = "replaced flight"
+                        
+                        # Add new flight
+                        dep = opt_data.get("dep", {})
+                        arr = opt_data.get("arr", {})
+                        new_flt = {
+                            "item_id": f"itin-flt-{(opt_data.get('flight_no') or 'x')[:8]}",
+                            "name": f"{opt_data.get('carrier', '')} {opt_data.get('flight_no', '')} {dep.get('airport', '?')}→{arr.get('airport', '?')}".strip(),
+                            "kind": "flight",
+                            "source": "atlas_real",
+                            "honesty_label": "booked replacement flight (Atlas sandbox record)",
+                            "details": {"pnr": booking_res.get("pnr"), "dep_time": dep.get("time"), "arr_time": arr.get("time"), "status": booking_res.get("status")},
+                            "provenance": {"source_url": None, "retrieved_date": None, "researched_as_of": None, "degraded": False},
+                            "booked": True,
+                        }
+                        itin["items"].insert(0, new_flt)
+                        trip.context["itinerary"] = itin
+                        
+                except Exception as e:
+                    # In case of skill error, let it propagate as GraphError/TripApiError
+                    raise
+
             async with trip.lock:
                 if approval in trip.pending_approvals:
                     trip.pending_approvals.remove(approval)
@@ -840,8 +907,8 @@ class TripOrchestrator:
                 trip.context["recovery"] = rec
                 trip.status = "completed"
                 trip.current = None
-            self._record(trip, "recovery_choice", "recovery_choice",
-                         "COMPLETED", 0.0, resolved)
+            
+            self._record(trip, "recovery_choice", "recovery_choice", "COMPLETED", 0.0, resolved)
             res = self.resume_result(trip_id)
             if ledger_key and payload_hash:
                 self._idempotency_ledger[ledger_key] = (payload_hash, res)
@@ -1582,11 +1649,44 @@ class SimulateDisruptionRequest(BaseModel):
 async def trips_start(body: TripStartRequest):
     res = await trip_start(body)
     trip_id = res["trip_id"]
+    orch = get_trip_orchestrator()
+    trip = orch.executor.get(trip_id)
+    goal = (trip.context.get("goal_intake") or {}).get("goal") or {}
+    missing = goal.get("missing_fields") or []
+    clarify = trip.context.get("clarify_loop") or {}
+    chips_raw = clarify.get("confirmation_chips") or []
+    chips = []
+    for c in chips_raw:
+        if isinstance(c, dict):
+            chip = ConfirmationChip(
+                field=c.get("field", ""),
+                proposed_value=c.get("proposed_value"),
+                message=c.get("message", ""),
+                trip_id=trip_id,
+            )
+            chips.append(chip.model_dump(mode="json"))
+    # Also generate chips for ambiguous airport candidates
+    for prefix in ("origin", "destination"):
+        cands = goal.get(f"{prefix}_airport_candidates") or []
+        confirmed = goal.get(f"confirmed_{prefix}_airport")
+        if len(cands) > 1 and not confirmed:
+            chip = ConfirmationChip(
+                field=f"confirmed_{prefix}_airport",
+                proposed_value=cands[0],
+                message=f"Confirm {prefix} airport: {', '.join(cands)}?",
+                trip_id=trip_id,
+            )
+            chips.append(chip.model_dump(mode="json"))
+    # Store chips on the trip for later validation
+    if not hasattr(trip, "_confirmation_chips"):
+        trip._confirmation_chips = {}
+    for c in chips:
+        trip._confirmation_chips[c["chip_id"]] = c
     return {
         "trip_id": trip_id,
         "status": res["status"],
-        "missing_fields": [],
-        "confirmation_chips": [],
+        "missing_fields": missing,
+        "confirmation_chips": chips,
         "state_url": f"/api/trips/{trip_id}/state",
         "stream_url": f"/api/trips/{trip_id}/stream",
     }
@@ -1640,11 +1740,72 @@ async def trips_clarifications(trip_id: str, body: ClarificationsRequest):
 @trips_router.post("/{trip_id}/confirmations/{chip_id}")
 async def trips_confirmation(trip_id: str, chip_id: str, body: ConfirmationChipDecision):
     orch = get_trip_orchestrator()
-    orch._trip_or_404(trip_id)
+    trip = orch._trip_or_404(trip_id)
+
+    # Look up the chip — must belong to THIS trip
+    chips = getattr(trip, "_confirmation_chips", {})
+    chip = chips.get(chip_id)
+    if chip is None:
+        raise TripApiError(
+            404, "unknown_chip",
+            f"confirmation chip '{chip_id}' not found on trip '{trip_id}'",
+            recoverable=True,
+            hint="list chips via POST /api/trips response or GET /api/trips/{id}")
+
+    # Reject already-resolved chips
+    if chip.get("state") in ("confirmed", "rejected", "corrected"):
+        raise TripApiError(
+            409, "chip_already_resolved",
+            f"chip '{chip_id}' is already '{chip['state']}'",
+            recoverable=True,
+            hint="confirmation chips resolve exactly once")
+
+    # Apply the decision
+    field = chip.get("field", "")
+    decision = body.decision
+
+    if decision == "confirm":
+        chip["state"] = "confirmed"
+        # Apply the proposed value to the trip goal
+        goal_data = (trip.context.get("goal_intake") or {}).get("goal")
+        if isinstance(goal_data, dict) and field:
+            goal_data[field] = chip.get("proposed_value")
+            # Remove from missing_fields if present
+            mf = goal_data.get("missing_fields") or []
+            if field in mf:
+                mf.remove(field)
+                goal_data["missing_fields"] = mf
+
+    elif decision == "reject":
+        chip["state"] = "rejected"
+        # Leave goal unchanged — user must provide a new value later
+
+    elif decision == "corrected":
+        chip["state"] = "corrected"
+        corrected = body.corrected_value
+        chip["corrected_value"] = corrected
+        goal_data = (trip.context.get("goal_intake") or {}).get("goal")
+        if isinstance(goal_data, dict) and field and corrected is not None:
+            goal_data[field] = corrected
+            mf = goal_data.get("missing_fields") or []
+            if field in mf:
+                mf.remove(field)
+                goal_data["missing_fields"] = mf
+    else:
+        raise TripApiError(
+            422, "invalid_chip_decision",
+            f"decision '{decision}' not recognized",
+            recoverable=True,
+            hint="decision must be 'confirm', 'reject', or 'corrected'")
+
     return {
         "chip_id": chip_id,
-        "status": "resolved",
-        "decision": body.decision,
+        "status": chip["state"],
+        "decision": decision,
+        "field": field,
+        "applied_value": chip.get("corrected_value") if decision == "corrected"
+                         else chip.get("proposed_value") if decision == "confirm"
+                         else None,
         "state": orch.state(trip_id)
     }
 
@@ -1653,8 +1814,77 @@ async def trips_confirmation(trip_id: str, chip_id: str, body: ConfirmationChipD
 async def trips_plan(trip_id: str):
     orch = get_trip_orchestrator()
     trip = orch._trip_or_404(trip_id)
-    return JSONResponse(content=orch.state(trip_id))
 
+    # If the trip already has a final status, just return state
+    if trip.status in ("completed", "failed"):
+        return JSONResponse(content=orch.state(trip_id))
+
+    # If waiting for approval, return state with pending approvals
+    if trip.status == "awaiting_approval":
+        return JSONResponse(content=orch.state(trip_id))
+
+    # Build and run the plan if not yet started or if resume is needed
+    seed = orch._seeds.get(trip_id)
+    if seed and not trip.nodes:
+        clarify = trip.context.get("clarify_loop") or {}
+        rs = RequestedServices(**clarify.get("requested_services",
+                                              {"flight_search": "requested"}))
+        rest = orch._build_plan_rest(seed, rs)
+        trip.nodes = rest
+        trip.nodes_by_name = {n.name: n for n in rest}
+
+    if trip.nodes:
+        try:
+            await orch._run_guarded(trip_id)
+        except GraphError as exc:
+            raise orch._graph_error(exc)
+
+    state = orch.state(trip_id)
+
+    # Enrich with plan execution outputs
+    result = {
+        "trip_id": trip_id,
+        "status": trip.status,
+        "current_node": trip.current,
+        "outputs": {},
+        "pending_approvals": [a.model_dump(mode="json")
+                              for a in trip.pending_approvals],
+    }
+    for key in ("flight_search", "visa_check", "flight_book", "itinerary",
+                "safety_check", "hotel_research", "activities_research",
+                "local_transport_research", "recovery"):
+        if key in trip.context:
+            result["outputs"][key] = trip.context[key]
+    result["state"] = state
+    return JSONResponse(content=result)
+
+
+@trips_router.post("/{trip_id}/itinerary/sections/{section_id}/replace")
+async def trips_itinerary_replace_section(trip_id: str, section_id: str, body: dict):
+    from services.skills.itinerary import ItinerarySkill
+    orch = get_trip_orchestrator()
+    trip = orch._trip_or_404(trip_id)
+    
+    itin = trip.context.get("itinerary") or {}
+    items = itin.get("items") or []
+    
+    result = ItinerarySkill.replace_section(items, section_id, body)
+    if "error" in result:
+        # e.g. unknown_section, booked_flight_rejected, validation_error
+        code = 404 if result["error"] == "unknown_section" else 422
+        raise TripApiError(code, result["error"], result.get("message", "Cannot replace section"), recoverable=True)
+    
+    # Store updated items back to context
+    itin["items"] = result["items"]
+    trip.context["itinerary"] = itin
+    
+    return {
+        "trip_id": trip_id,
+        "section_id": section_id,
+        "replaced": result["replaced"],
+        "overlaps": result["overlaps"],
+        "state": orch.state(trip_id)
+    }
 
 @trips_router.post("/{trip_id}/simulate-disruption")
 async def trips_simulate_disruption_post(trip_id: str,

@@ -201,12 +201,25 @@
         return body;
     }
 
-    function jsonOpts(method, payload) {
-        return {
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    function jsonOpts(method, payload, extraHeaders) {
+        var opts = {
             method: method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         };
+        if (extraHeaders) {
+            for (var k in extraHeaders) {
+                opts.headers[k] = extraHeaders[k];
+            }
+        }
+        return opts;
     }
 
     // --- ARIA live announcements (spec §9.2) ------------------------------
@@ -1510,8 +1523,12 @@
             invalidatePolls(); // in-flight snapshots predate this decision
             var payload = { decision: decision };
             if (decision === 'approve') payload.value = { option_id: Trip.selectedOptionId };
+            var headers = {};
+            if (Trip.approval && (Trip.approval.node_name === 'flight_book' || Trip.approval.purpose === 'initial_booking')) {
+                headers['Idempotency-Key'] = generateUUID();
+            }
             var result = await api('/api/trip/' + Trip.tripId + '/approvals/' + Trip.approval.approval_id,
-                                   jsonOpts('POST', payload));
+                                   jsonOpts('POST', payload, headers));
             untrapDialog(byId('trip-approval-overlay'));
             byId('trip-approval-banner').hidden = true;
             Trip.approval = null;
@@ -2229,8 +2246,9 @@
             invalidatePolls();
             var payload = { decision: decision };
             if (decision === 'approve') payload.value = { option_id: Trip.recoverySelectedId };
+            var headers = { 'Idempotency-Key': generateUUID() };
             await api('/api/trip/' + Trip.tripId + '/approvals/' + approval.approval_id,
-                      jsonOpts('POST', payload));
+                      jsonOpts('POST', payload, headers));
             addChat('agent', decision === 'approve'
                 ? 'Replacement approved \u2014 booked in the Atlas Sandbox.'
                 : 'Keeping your original plan.');

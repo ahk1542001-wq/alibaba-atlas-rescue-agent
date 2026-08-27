@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any, Literal
 from datetime import date, datetime, timezone
+import uuid
 
 class FlightOffer(BaseModel):
     offer_id: str
@@ -373,10 +374,13 @@ class Profile(BaseModel):
 
 
 class ConfirmationChip(BaseModel):
+    chip_id: str = Field(default_factory=lambda: f"chip-{uuid.uuid4().hex[:8]}")
     field: str
     proposed_value: Any
     message: str
-    state: Literal["pending", "confirmed", "rejected"] = "pending"
+    state: Literal["pending", "confirmed", "rejected", "corrected"] = "pending"
+    corrected_value: Optional[Any] = None
+    trip_id: Optional[str] = None
 
 
 class ApprovalRequest(BaseModel):
@@ -453,6 +457,7 @@ class ItemProvenance(BaseModel):
 
 
 class ItineraryItem(BaseModel):
+    item_id: str = Field(default_factory=lambda: f"itin-{uuid.uuid4().hex[:8]}")
     name: str
     kind: str  # flight | hotel | activity | local_transport
     source: str  # atlas_real | organizer | amadeus | osm | researched_mock | llm_suggestion
@@ -460,6 +465,7 @@ class ItineraryItem(BaseModel):
     price_range_sgd: Optional[List[float]] = None
     details: Dict[str, Any] = {}
     provenance: ItemProvenance = ItemProvenance()
+    booked: bool = False  # True for flight items linked to a BookingRecord
 
 
 class ScopeClarificationRequest(BaseModel):

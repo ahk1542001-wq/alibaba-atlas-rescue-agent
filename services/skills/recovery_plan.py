@@ -71,20 +71,12 @@ class RecoveryPlanSkill(SkillBase):
         else:
             raw_offers = res
         if not raw_offers:
-            # Fallback mock offer if sandbox search is empty
-            raw_offers = [{
-                "offer_id": f"recov-{uuid.uuid4().hex[:6]}",
-                "airline": "Singapore Airlines",
-                "airline_code": "SQ",
-                "flight_number": "SQ999",
-                "origin": origin,
-                "destination": destination,
-                "departure_time": "2026-09-29 14:00",
-                "arrival_time": "2026-09-29 17:15",
-                "duration_minutes": 135,
-                "price_usd": 240.0,
-                "currency": "USD",
-            }]
+            return RecoveryPlanResult(
+                trip_id=trip_id,
+                status="no_alternatives_available",
+                recovery_options=[],
+                approval_request=None,
+            ).model_dump(mode="json")
 
         recovery_options: List[RecoveryOption] = []
         for i, offer in enumerate(raw_offers[:3]):

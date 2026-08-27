@@ -125,12 +125,25 @@ GOLDEN_PHRASINGS = [
     "coming back 30 Sep",
     "arrange my whole trip to Singapore for Web in Travel summit Sep 29-30, "
     "departing Bangkok",
+    "Yangon to Singapore for a medical checkup on October 1st, full package please.",
+    "BKK to RGN round trip next week, just flights.",
+    "Need to be in SIN by tomorrow morning, leaving from Yangon, urgent.",
+    "Plan a vacation in Singapore from September 28 to October 5, starting from Bangkok.",
+    "Singapore to Yangon for business, 3 days, September 15 to 18.",
+    "BKK-SIN flight tomorrow, plus 2 nights hotel near MBS.",
+    "Traveling to Singapore from Yangon for shopping, 12 Oct to 15 Oct.",
+    "RGN-SIN cheap air tickets on Sept 28.",
+    "From Bangkok to Yangon, need a 5-star hotel for 2 nights, Sep 29-30.",
+    "Singapore flights from BKK for me and my wife, Sept 28 to Oct 2.",
+    "Yangon to BKK, business trip, October 10-12, need flights and airport transfer.",
+    "I need a complete itinerary for a 3-day trip to Singapore from Bangkok starting Sep 28.",
+    "Book a flight from RGN to SIN leaving Sep 28 and returning Oct 1.",
+    "BKK to Singapore roundtrip, departing Sep 28.",
 ]
-
 
 def test_s1_golden_phrasings_parse_without_error():
     skill = GoalIntakeSkill(llm_chat=_no_llm)
-    assert len(GOLDEN_PHRASINGS) >= 10
+    assert len(GOLDEN_PHRASINGS) >= 24
     for phrase in GOLDEN_PHRASINGS:
         out = _run(skill.run({"free_text": phrase}))
         goal = out["goal"]

@@ -55,6 +55,7 @@ class ItinerarySkill(SkillBase):
         dep = option.get("dep") or {}
         arr = option.get("arr") or {}
         return {
+            "item_id": f"itin-flt-{(option.get('flight_no') or 'x')[:8]}",
             "name": f"{option.get('carrier', '')} {option.get('flight_no', '')} "
                     f"{dep.get('airport', '?')}→{arr.get('airport', '?')}".strip(),
             "kind": "flight",
@@ -66,6 +67,7 @@ class ItinerarySkill(SkillBase):
                         "status": booking.get("status")},
             "provenance": {"source_url": None, "retrieved_date": None,
                            "researched_as_of": None, "degraded": False},
+            "booked": True,
         }
 
     # -- researched-mock file (tolerant) -------------------------------------------
@@ -149,8 +151,119 @@ class ItinerarySkill(SkillBase):
 
         providers_tried: List[str] = []
         items.extend(await self._enrich(providers_tried))
+
+        # Assign stable item_ids to all items
+        for i, item in enumerate(items):
+            if "item_id" not in item:
+                item["item_id"] = f"itin-{i:03d}-{item.get('kind', 'item')[:4]}"
+
         return {
             "items": items,
             "providers_tried": providers_tried,
             "count": len(items),
+        }
+
+    # -- replace-one-section (§15.2, F16) ----------------------------------------
+
+    @staticmethod
+    def replace_section(items: List[Dict[str, Any]],
+                        target_id: str,
+                        replacement: Dict[str, Any]) -> Dict[str, Any]:
+        """Replace a single non-booked itinerary section by item_id.
+
+        Rules:
+        - Booked flights cannot be replaced through this path (requires a
+          new explicit booking flow).
+        - Unrelated sections are preserved byte-equivalently.
+        - Replacement carries provenance and honesty labels.
+        - Schedule overlaps with other items are flagged.
+        - Returns the updated items list with before/after metadata.
+        """
+        target_idx = None
+        for i, item in enumerate(items):
+            if item.get("item_id") == target_id:
+                target_idx = i
+                break
+
+        if target_idx is None:
+            return {"error": "unknown_section",
+                    "message": f"section '{target_id}' not found in itinerary",
+                    "recoverable": True}
+
+        target_item = items[target_idx]
+
+        # Booked flights require a new explicit booking flow
+        if target_item.get("booked") or (
+                target_item.get("kind") == "flight"
+                and target_item.get("source") == "atlas_real"):
+            return {"error": "booked_section_immutable",
+                    "message": "booked flight sections cannot be replaced through "
+                               "this path — start a new booking flow or use the "
+                               "recovery mechanism",
+                    "recoverable": True,
+                    "hint": "POST /api/trips/{id}/plan to start a new booking, "
+                            "or use the recovery approval if disrupted"}
+
+        # Validate replacement has required fields
+        if not isinstance(replacement, dict):
+            return {"error": "invalid_replacement",
+                    "message": "replacement must be a dict with name, kind, "
+                               "and honesty_label",
+                    "recoverable": True}
+        for required in ("name", "kind"):
+            if not replacement.get(required):
+                return {"error": "invalid_replacement",
+                        "message": f"replacement missing required field: {required}",
+                        "recoverable": True}
+
+        # Build the replacement item with provenance
+        new_item = {
+            "item_id": target_id,  # preserve the section ID
+            "name": replacement["name"],
+            "kind": replacement["kind"],
+            "source": replacement.get("source", "user_replacement"),
+            "honesty_label": replacement.get("honesty_label",
+                                              "user-replaced section"),
+            "price_range_sgd": replacement.get("price_range_sgd"),
+            "details": replacement.get("details", {}),
+            "provenance": replacement.get("provenance", {
+                "source_url": None,
+                "retrieved_date": date.today().isoformat(),
+                "researched_as_of": None,
+                "degraded": False,
+            }),
+            "booked": False,
+        }
+
+        # Check schedule overlap with other items
+        overlaps = []
+        new_start = (replacement.get("details") or {}).get("start_time")
+        new_end = (replacement.get("details") or {}).get("end_time")
+        if new_start and new_end:
+            for i, item in enumerate(items):
+                if i == target_idx:
+                    continue
+                item_start = (item.get("details") or {}).get("start_time")
+                item_end = (item.get("details") or {}).get("end_time")
+                if item_start and item_end:
+                    if new_start < item_end and new_end > item_start:
+                        overlaps.append({
+                            "item_id": item.get("item_id"),
+                            "name": item.get("name"),
+                            "conflict": "schedule_overlap"})
+
+        # Preserve unrelated items exactly, replace only the target
+        before = dict(target_item)
+        updated_items = list(items)
+        updated_items[target_idx] = new_item
+
+        return {
+            "items": updated_items,
+            "replaced": {
+                "item_id": target_id,
+                "before": before,
+                "after": new_item,
+            },
+            "overlaps": overlaps,
+            "count": len(updated_items),
         }
