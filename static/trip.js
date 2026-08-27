@@ -1623,8 +1623,14 @@
         }
         var approveBtn = byId('trip-approval-approve');
         var rejectBtn = byId('trip-approval-reject');
+        var approveIdleText = approveBtn.textContent;
         approveBtn.disabled = true;
         rejectBtn.disabled = true;
+        approveBtn.textContent = decision === 'approve'
+            ? 'Checking safety & booking…' : 'Working…';
+        announce(decision === 'approve'
+            ? 'Checking current safety information before booking.'
+            : 'Keeping your trip unbooked.');
         try {
             invalidatePolls(); // in-flight snapshots predate this decision
             var payload = { decision: decision };
@@ -1667,6 +1673,7 @@
                 showError('Approval failed: ' + plainError(err));
             }
         } finally {
+            approveBtn.textContent = approveIdleText;
             approveBtn.disabled = false;
             rejectBtn.disabled = false;
             // a disabled-then-re-enabled button loses focus; if the dialog

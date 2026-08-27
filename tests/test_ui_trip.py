@@ -1642,6 +1642,42 @@ def test_AJ10_states_matrix(app_server, ui_browser, install_orch):
     assert not errors, f"browser console errors detected: {errors}"
 
 
+def test_AJ10b_booking_wait_has_beginner_friendly_feedback(tracked_page,
+                                                           install_orch):
+    """A slow safety/booking request must explain why approval is waiting."""
+    install_orch()
+    page = tracked_page
+    preset_passport_home()
+    goto_trip(page)
+    start_goal(page, HAPPY_GOAL)
+    expect(page.locator('[data-testid="approval-open"]')) \
+        .to_be_visible(timeout=25000)
+    page.click('[data-testid="approval-open"]')
+    page.evaluate("""() => {
+        window.__origApprovalFetch = window.fetch.bind(window);
+        window.fetch = function (input, opts) {
+            const url = typeof input === 'string' ? input : String(input.url);
+            if (url.indexOf('/approvals/') !== -1 &&
+                    String((opts || {}).method || 'GET').toUpperCase() === 'POST') {
+                return new Promise((resolve, reject) => {
+                    window.__releaseApproval = () =>
+                        window.__origApprovalFetch(input, opts).then(resolve, reject);
+                });
+            }
+            return window.__origApprovalFetch(input, opts);
+        };
+    }""")
+    approve = page.locator('[data-testid="approval-approve"]')
+    approve.click()
+    expect(approve).to_be_disabled()
+    expect(approve).to_have_text("Checking safety & booking…")
+    expect(page.locator("#aj-live")).to_contain_text(
+        "Checking current safety information")
+    page.evaluate("window.__releaseApproval()")
+    expect(page.locator('[data-testid="pnr-code"]')) \
+        .to_have_text("ATLAS-UI7Q2Z", timeout=20000)
+
+
 def _tab_until(page, testid, max_tabs=60):
     for _ in range(max_tabs):
         focused = page.evaluate("""() => {
