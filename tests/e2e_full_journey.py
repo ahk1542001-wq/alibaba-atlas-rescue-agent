@@ -8,7 +8,7 @@ Covers the whole demo use case in a real Chromium:
      compensation card, Claims Autopilot panel (honest no-regime verdict on
      BKK-RGN), guardian/visa trail entries
   4. Radar view + scan
-  5. Concierge chat via real Qwen
+  5. Concierge chat via the configured LLM or deterministic fallback
   6. Flight search results (typed route)
   7. Mobile viewport sanity
 Plus an API-level positive case: AF198 CDG-BKK must yield EU261 with a real
@@ -71,6 +71,8 @@ with sync_playwright() as p:
         page.click("#btn-simulate")
         expect(page.locator("#disruption-banner")).to_be_visible()
         expect(page.locator("#banner-title")).to_contain_text("CANCELLED")
+        expect(page.locator("#banner-sub")).to_contain_text(
+            "policy-ranked options ready")
     check("simulate disruption shows banner", simulate)
 
     check("reasoning trail fills", lambda: expect(

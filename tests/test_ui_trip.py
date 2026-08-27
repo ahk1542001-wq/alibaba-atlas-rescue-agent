@@ -55,8 +55,7 @@ XSS_GOAL = ('I need to get to <script>window.__xss=1</script>Singapore from '
 INVALID_DATE_GOAL = "Fly on February 30 2026"   # deterministic 422 trigger
 
 # G4.5 / R2 sanitized static/app.js pin: zero injection sinks.
-APP_JS_SHA256 = ("ecfe79839b726b7da61b38c91eced2a53a670d6a411c7f6bf3f9ba712de8d3"
-                 "12")
+APP_JS_SHA256 = "d33533b8cd9765a776ba5cecf697da56e1b446fd34118238e7d3697e6a30afa1"
 
 
 # --- G3-pattern fakes ---------------------------------------------------------
@@ -1189,6 +1188,8 @@ def test_AJ01_ia_three_destinations(tracked_page, install_orch):
     expect(page.locator("#view-rescue")).to_be_hidden()
     expect(page.locator('[data-testid="nav-trip"]')).to_have_class(
         re.compile(r"\bactive\b"))
+    expect(page.locator('[data-testid="ai-runtime-badge"]')) \
+        .to_have_text("AI: Deterministic fallback")
     nav = page.locator(".aj-nav-btn")
     assert nav.count() == 3, "AJ IA is exactly Plan a trip / My trip / Help"
     for tid_name in ("aj-nav-plan", "aj-nav-mytrip", "aj-nav-help"):
@@ -1773,6 +1774,7 @@ def test_AJ13_legacy_canary(tracked_page, install_orch):
     app_js = Path(__file__).resolve().parent.parent / "static" / "app.js"
     digest = hashlib.sha256(app_js.read_bytes()).hexdigest()
     assert digest == APP_JS_SHA256, "static/app.js was modified"
+    assert "Qwen-2.5 ranking complete" not in app_js.read_text()
 
 
 # ======================================================================

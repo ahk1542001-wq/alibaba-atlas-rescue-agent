@@ -2,7 +2,7 @@
 
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
-[![Alibaba Cloud](https://img.shields.io/badge/Qwen3--235B--A22B-ModelScope-FF6A00.svg)](https://www.alibabacloud.com/)
+[![AI runtime](https://img.shields.io/badge/AI-configured%20LLM%20or%20deterministic%20fallback-FF6A00.svg)](https://www.alibabacloud.com/)
 [![Atlas GDS](https://img.shields.io/badge/Atlas%20Travel-ATRIP%20Sandbox-0F766E.svg)](https://sandbox.atriptech.com)
 [![Tests](https://img.shields.io/badge/Tests-19%20unit%20%2B%2014%20E2E-success.svg)](tests/)
 
@@ -32,7 +32,7 @@ Atlas organizers confirmed (2026-08): *"We did not prepare a separate 'Hackathon
 |---|---|
 | Flight search & fares | Live Atlas Sandbox via official `atlas-flight` CLI (`ATLAS_USE_CLI=true`); offers may carry `price_status=reference`, disclosed in the UI |
 | Booking | Sandbox order settlement (`POST /api/rescue/book`) |
-| LLM reasoning | Live Qwen3-235B-A22B-Instruct via ModelScope (`LLM_BASE_URL`, `ALIBABA_MODEL_API_KEY`) |
+| LLM reasoning | Configured ModelScope-compatible model via `LLM_BASE_URL` + `ALIBABA_MODEL_API_KEY`; deterministic fallback when no model is configured |
 | Rights engine | Deterministic rule tables grounded in published regulations |
 | Visa rules | Conservative curated table (2026-08), flags RISK over CLEAR |
 | Telegram Guardian | Live push when `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` set; simulated preview otherwise |
@@ -127,8 +127,8 @@ alibaba-atlas-rescue-agent/
 2. **(0:20–0:40)** Simulate Disruption → banner + reasoning trail animates (VisaGuard, Guardian push steps appear)
 3. **(0:40–1:10)** Visa-safe rescue packages fade in with live Sandbox fares ("Sandbox reference price" chip) → 1-Click Rebook → timeline → boarding pass
 4. **(1:10–1:40)** Claims Autopilot panel: honest verdict — no mandatory regime on BKK→RGN, duty-of-care refund route registered
-5. **(1:40–2:10)** API call: AF198 CDG→BKK → EU261 detected, real great-circle distance banding → EUR 600 entitlement + cited appeal letter via live Qwen
-6. **(2:10–2:40)** Concierge chat (live Qwen) + multi-currency flight search
+5. **(1:40–2:10)** API call: AF198 CDG→BKK → EU261 detected, real great-circle distance banding → EUR 600 entitlement + cited appeal letter via configured LLM or deterministic fallback
+6. **(2:10–2:40)** Concierge chat (configured LLM or deterministic fallback) + multi-currency flight search
 7. **(2:40–3:00)** Mobile viewport: bottom nav, stacked cards
 
 ---

@@ -60,8 +60,10 @@ class RecoveryPlanSkill(SkillBase):
         event = payload.get("event") or (context or {}).get("disruption_event") or {}
 
         opt_data = (booking.get("option") or booking.get("booking", {}).get("option") or {})
-        origin = str(opt_data.get("dep", {}).get("airport") or event.get("origin") or "BKK").upper()
-        destination = str(opt_data.get("arr", {}).get("airport") or event.get("destination") or "SIN").upper()
+        origin = str(opt_data.get("dep", {}).get("airport") or
+                     event.get("origin") or "BKK").strip().upper()
+        destination = str(opt_data.get("arr", {}).get("airport") or
+                          event.get("destination") or "SIN").strip().upper()
 
         departure_time = str((opt_data.get("dep") or {}).get("time") or "")
         travel_date = departure_time[:10] if len(departure_time) >= 10 \
@@ -86,6 +88,10 @@ class RecoveryPlanSkill(SkillBase):
         recovery_options: List[RecoveryOption] = []
         for offer in raw_offers:
             norm = normalize_offer(offer)
+            if (str(norm["dep"]["airport"]).strip().upper() != origin or
+                    str(norm["arr"]["airport"]).strip().upper() !=
+                    destination):
+                continue
             if norm.get("id") == original_id:
                 continue
             i = len(recovery_options)

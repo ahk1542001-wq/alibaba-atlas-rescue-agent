@@ -207,7 +207,7 @@
             document.getElementById('empty-state').style.display = 'none';
             document.getElementById('banner-title').textContent =
                 alert.flight_number + ' ' + (alert.status || 'DISRUPTION') + ' — Autonomous Rescue Active';
-            document.getElementById('banner-sub').textContent = '2 rescue packages ready — Qwen-2.5 ranking complete';
+            document.getElementById('banner-sub').textContent = '2 rescue packages ready — policy-ranked options ready';
             document.getElementById('disruption-banner').classList.add('visible');
             switchView('rescue');
             renderRescueData(rescueData);
@@ -408,7 +408,7 @@
 
         function renderRescueData(data) {
             // Update banner sub
-            document.getElementById('banner-sub').textContent = '2 rescue packages ready — Qwen-2.5 ranking complete';
+            document.getElementById('banner-sub').textContent = '2 rescue packages ready — policy-ranked options ready';
 
             // Route visual
             const disruption = data.disruption;
@@ -494,7 +494,7 @@
             const chip = document.getElementById('class-chip');
             chip.textContent = cls.classification || '';
             chip.className = 'classification-chip ' + (cls.classification === 'COMPENSABLE' ? 'chip-good' : 'chip-warn');
-            document.getElementById('class-confidence').textContent = 'confidence ' + (cls.confidence != null ? cls.confidence : '?') + '% • engine: ' + (cls.engine || 'qwen');
+            document.getElementById('class-confidence').textContent = 'confidence ' + (cls.confidence != null ? cls.confidence : '?') + '% • engine: ' + (cls.engine || 'deterministic policy');
             document.getElementById('class-reasoning').textContent = (cls.legal_reasoning || '') + (cls.key_article ? ' — ' + cls.key_article : '');
 
             const money = document.getElementById('rights-money');
@@ -1115,6 +1115,14 @@
             try {
                 const res = await fetch('/api/health');
                 const data = await res.json();
+                const runtimeBadge = document.querySelector('#qoder-badge');
+                if (runtimeBadge) {
+                    const engine = String(data.ai_engine || 'not reported');
+                    runtimeBadge.textContent = engine.indexOf('deterministic-fallback') !== -1
+                        ? 'AI: Deterministic fallback'
+                        : 'AI: ' + engine;
+                    runtimeBadge.title = engine;
+                }
                 badge.textContent = '';
                 const dot = document.createElement('span');
                 dot.id = 'health-dot';

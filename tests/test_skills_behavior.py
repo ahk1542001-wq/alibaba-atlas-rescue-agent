@@ -1104,3 +1104,32 @@ def test_s13_recovery_plan_generates_options_and_approval_request_without_bookin
     assert out["approval_request"]["purpose"] == "recovery_booking"
     assert out["approval_request"]["immutable_option"] is not None
     assert out["approval_request"]["price_snapshot"] is not None
+
+
+def test_s13_recovery_plan_discards_wrong_airport_replacements():
+    """A confirmed BKK booking can never be silently replaced from DMK."""
+    from services.skills.recovery_plan import RecoveryPlanSkill
+
+    class MixedRouteAtlas(FakeAtlas):
+        async def search_flights(self, origin, destination, date, **kwargs):
+            exact = dict(self.offer, offer_id="exact-bkk", origin="BKK",
+                         destination="SIN")
+            wrong = dict(self.offer, offer_id="wrong-dmk", origin="DMK",
+                         destination="SIN")
+            return [wrong, exact]
+
+    skill = RecoveryPlanSkill(atlas=MixedRouteAtlas())
+    out = _run(skill.run({
+        "trip_id": "trip-recovery-route",
+        "booking": {"option": {
+            "id": "original-bkk",
+            "dep": {"airport": "BKK", "time": "2026-09-28 09:30"},
+            "arr": {"airport": "SIN", "time": "2026-09-28 11:00"},
+        }},
+        "event": {"flight_number": "SQ712", "reason": "cancelled"},
+    }))
+
+    options = [row["option"] for row in out["recovery_options"]]
+    assert [row["id"] for row in options] == ["exact-bkk"]
+    assert all(row["dep"]["airport"] == "BKK"
+               and row["arr"]["airport"] == "SIN" for row in options)

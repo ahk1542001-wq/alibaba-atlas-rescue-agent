@@ -972,6 +972,8 @@
                              (PROFILE_CHIP_FIELDS.indexOf(field) !== -1
                                  ? ' \u2014 confirmed and saved to your details.'
                                  : ' \u2014 confirmed for this trip.'));
+            announce((FACT_LABELS[field] || 'Answer') +
+                     ' confirmed. Continuing your trip plan.');
             if (Trip.lastState) renderFacts(Trip.lastState);
             refreshProfile();
             // a chip answer can resume a terminal (failed) trip — the watcher
