@@ -149,7 +149,9 @@ async def _journey(profile_data: dict, goal_data: dict, tmp_path: Path) -> dict:
             resp = await client.post(
                 f"/api/trip/{trip_id}/approvals/{gate['approval_id']}",
                 json={"decision": "approve",
-                      "value": {"option_id": option_ids[0]}})
+                      "value": {"option_id": option_ids[0]}},
+                headers={"Idempotency-Key":
+                         "00000000-0000-4000-8000-000000000001"})
             assert resp.status_code == 200, resp.text
             body = resp.json()
             assert body["status"] == "completed"
