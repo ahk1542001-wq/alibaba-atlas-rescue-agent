@@ -87,46 +87,102 @@
             const sub = document.getElementById('radar-sub');
             const flights = (data.last_scan && data.last_scan.flights) ? data.last_scan.flights : [];
             const disrupted = flights.filter(f => f.disrupted).length;
-            sub.textContent = 'Monitoring ' + (data.watchlist ? data.watchlist.length : flights.length) +
-                ' flights • ' + disrupted + ' active disruption(s)';
+            if (sub) {
+                sub.textContent = 'Monitoring ' + (data.watchlist ? data.watchlist.length : flights.length) +
+                    ' flights • ' + disrupted + ' active disruption(s)';
+            }
 
             const fc = document.getElementById('radar-flights');
+            if (!fc) return;
+            fc.textContent = '';
             if (flights.length === 0) {
-                fc.innerHTML = '<div class="loading">Initializing radar scan...</div>';
+                const loadDiv = document.createElement('div');
+                loadDiv.className = 'loading';
+                loadDiv.textContent = 'Initializing radar scan...';
+                fc.appendChild(loadDiv);
             } else {
-                fc.innerHTML = flights.map(f => {
+                flights.forEach(f => {
                     const cls = f.disrupted ? 'disrupted' : 'ok';
                     const statusText = (f.status || 'UNKNOWN') + (f.reason ? ' — ' + f.reason : '');
-                    const flag = f.disrupted
-                        ? '<span class="rf-flag">ALERT</span>'
-                        : '<span class="rf-ok">On Time</span>';
-                    return '<div class="radar-flight ' + cls + '">' +
-                        '<div class="rf-dot"></div>' +
-                        '<div class="rf-info"><span class="rf-num">' + f.flight_number + '</span>' +
-                        '<span class="rf-status">' + statusText + '</span></div>' +
-                        flag +
-                        '</div>';
-                }).join('');
+                    const row = document.createElement('div');
+                    row.className = 'radar-flight ' + cls;
+
+                    const dot = document.createElement('div');
+                    dot.className = 'rf-dot';
+                    row.appendChild(dot);
+
+                    const info = document.createElement('div');
+                    info.className = 'rf-info';
+                    const num = document.createElement('span');
+                    num.className = 'rf-num';
+                    num.textContent = f.flight_number || '';
+                    const st = document.createElement('span');
+                    st.className = 'rf-status';
+                    st.textContent = statusText;
+                    info.appendChild(num);
+                    info.appendChild(st);
+                    row.appendChild(info);
+
+                    const flag = document.createElement('span');
+                    if (f.disrupted) {
+                        flag.className = 'rf-flag';
+                        flag.textContent = 'ALERT';
+                    } else {
+                        flag.className = 'rf-ok';
+                        flag.textContent = 'On Time';
+                    }
+                    row.appendChild(flag);
+                    fc.appendChild(row);
+                });
             }
             renderRadarAlerts();
         }
 
         function renderRadarAlerts() {
             const ac = document.getElementById('radar-alerts');
+            if (!ac) return;
+            ac.textContent = '';
             if (!radarAlerts || radarAlerts.length === 0) {
-                ac.innerHTML = '<div class="loading">No disruptions detected. Radar standing by.</div>';
+                const loadDiv = document.createElement('div');
+                loadDiv.className = 'loading';
+                loadDiv.textContent = 'No disruptions detected. Radar standing by.';
+                ac.appendChild(loadDiv);
                 return;
             }
-            ac.innerHTML = radarAlerts.map(a => {
+            radarAlerts.forEach(a => {
                 const comp = a.compensation_usd ? ' • $' + a.compensation_usd + ' compensation' : '';
-                const reason = a.reason ? ' (' + a.reason + ')' : '';
-                return '<div class="radar-alert">' +
-                    '<div class="ra-head"><span class="ra-flight">' + a.flight_number + '</span>' +
-                    '<span class="ra-status">' + (a.status || 'DISRUPTED') + '</span></div>' +
-                    '<div class="ra-reason">' + reason + comp + '</div>' +
-                    '<button class="btn-radar-accept" onclick="acceptRadarAlert(\'' + a.id + '\')">Review &amp; Accept Rescue</button>' +
-                    '</div>';
-            }).join('');
+                const reason = (a.reason ? ' (' + a.reason + ')' : '') + comp;
+
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'radar-alert';
+
+                const head = document.createElement('div');
+                head.className = 'ra-head';
+                const flight = document.createElement('span');
+                flight.className = 'ra-flight';
+                flight.textContent = a.flight_number || '';
+                const status = document.createElement('span');
+                status.className = 'ra-status';
+                status.textContent = a.status || 'DISRUPTED';
+                head.appendChild(flight);
+                head.appendChild(status);
+                alertDiv.appendChild(head);
+
+                const reasonDiv = document.createElement('div');
+                reasonDiv.className = 'ra-reason';
+                reasonDiv.textContent = reason;
+                alertDiv.appendChild(reasonDiv);
+
+                const btn = document.createElement('button');
+                btn.className = 'btn-radar-accept';
+                btn.textContent = 'Review & Accept Rescue';
+                btn.addEventListener('click', function () {
+                    acceptRadarAlert(a.id);
+                });
+                alertDiv.appendChild(btn);
+
+                ac.appendChild(alertDiv);
+            });
         }
 
         async function radarScanNow() {
@@ -205,16 +261,55 @@
 
         function renderMonitoredFlights() {
             const container = document.getElementById('monitored-flights');
-            if (monitoredFlights.length === 0) { container.innerHTML = ''; return; }
-            container.innerHTML = monitoredFlights.map(f =>
-                '<div class="monitored-flight-item">' +
-                    '<div class="monitored-flight-info">' +
-                        '<span class="monitored-flight-num">' + f.flight_number + '</span>' +
-                        '<span class="monitored-flight-date">' + f.date + '</span>' +
-                    '</div>' +
-                    '<div class="monitored-status"><span class="monitored-dot"></span>Monitoring</div>' +
-                '</div>'
-            ).join('');
+            if (!container) return;
+            container.textContent = '';
+            if (monitoredFlights.length === 0) return;
+            monitoredFlights.forEach(f => {
+                const item = document.createElement('div');
+                item.className = 'monitored-flight-item';
+
+                const info = document.createElement('div');
+                info.className = 'monitored-flight-info';
+                const num = document.createElement('span');
+                num.className = 'monitored-flight-num';
+                num.textContent = f.flight_number || '';
+                const date = document.createElement('span');
+                date.className = 'monitored-flight-date';
+                date.textContent = f.date || '';
+                info.appendChild(num);
+                info.appendChild(date);
+                item.appendChild(info);
+
+                const status = document.createElement('div');
+                status.className = 'monitored-status';
+                const dot = document.createElement('span');
+                dot.className = 'monitored-dot';
+                status.appendChild(dot);
+                status.appendChild(document.createTextNode('Monitoring'));
+                item.appendChild(status);
+
+                container.appendChild(item);
+            });
+        }
+
+        function createTrailItem(label, time, className) {
+            const li = document.createElement('li');
+            li.className = 'trail-item ' + (className || 'done');
+            const dot = document.createElement('div');
+            dot.className = 'trail-dot';
+            const text = document.createElement('div');
+            text.className = 'trail-text';
+            const l = document.createElement('span');
+            l.className = 'step-label';
+            l.textContent = label;
+            const t = document.createElement('span');
+            t.className = 'step-time';
+            t.textContent = time;
+            text.appendChild(l);
+            text.appendChild(t);
+            li.appendChild(dot);
+            li.appendChild(text);
+            return li;
         }
 
         // SIMULATE DISRUPTION
@@ -231,9 +326,14 @@
 
             const btn = document.getElementById('btn-simulate');
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span>Activating...';
+            btn.textContent = '';
+            const sp = document.createElement('span');
+            sp.className = 'spinner';
+            btn.appendChild(sp);
+            btn.appendChild(document.createTextNode('Activating...'));
 
-            document.getElementById('empty-state').style.display = 'none';
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) emptyState.style.display = 'none';
 
             // Show banner immediately
             const banner = document.getElementById('disruption-banner');
@@ -245,7 +345,7 @@
             const trail = document.getElementById('reasoning-trail');
             trail.classList.add('visible');
             const trailList = document.getElementById('trail-list');
-            trailList.innerHTML = '';
+            trailList.textContent = '';
 
             const steps = [
                 { label: 'Detected ' + flightNum + ' cancellation via Atlas GDS', time: 'just now', delay: 300 },
@@ -256,10 +356,7 @@
 
             for (const step of steps) {
                 await new Promise(r => setTimeout(r, step.delay));
-                const li = document.createElement('li');
-                li.className = 'trail-item ' + (step.active ? 'active' : 'done');
-                li.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">' +
-                    step.label + '</span><span class="step-time">' + step.time + '</span></div>';
+                const li = createTrailItem(step.label, step.time, step.active ? 'active' : 'done');
                 trailList.appendChild(li);
             }
 
@@ -285,20 +382,20 @@
                     const lastItem = trailItems[trailItems.length - 1];
                     lastItem.classList.remove('active');
                     lastItem.classList.add('done');
-                    lastItem.querySelector('.step-time').textContent = 'done';
+                    const st = lastItem.querySelector('.step-time');
+                    if (st) st.textContent = 'done';
                 }
                 // Add final reasoning step with actual API data
-                const pkgCount = rescueData.rescue_packages.length;
-                const firstPkg = rescueData.rescue_packages[0];
+                const firstPkg = (rescueData.rescue_packages && rescueData.rescue_packages.length > 0) ? rescueData.rescue_packages[0] : null;
                 const claim = rescueData.compensation_claim || {};
                 const compAmt = claim.eligible_payout_usd || 0;
                 const compText = compAmt > 0
                     ? ' \u2014 ' + (claim.jurisdiction ? claim.jurisdiction.id + ' ' : '') + compAmt.toFixed(0) + ' USD compensation identified'
                     : ' \u2014 refund & duty-of-care route registered';
-                const finalLi = document.createElement('li');
-                finalLi.className = 'trail-item done';
-                finalLi.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">Recommended ' + firstPkg.airline + ' ' + firstPkg.flight_number + compText + '</span><span class="step-time">done</span></div>';
-                trailList.appendChild(finalLi);
+                if (firstPkg) {
+                    const finalLi = createTrailItem('Recommended ' + (firstPkg.airline || '') + ' ' + (firstPkg.flight_number || '') + compText, 'done', 'done');
+                    trailList.appendChild(finalLi);
+                }
             } catch (err) {
                 console.error('Disruption analysis failed:', err);
                 document.getElementById('banner-sub').textContent = 'Unable to analyze disruption. Please try again.';
@@ -306,7 +403,7 @@
             }
 
             btn.disabled = false;
-            btn.innerHTML = 'Simulate Disruption';
+            btn.textContent = 'Simulate Disruption';
         }
 
         function renderRescueData(data) {
@@ -319,34 +416,30 @@
             document.getElementById('route-cancelled-codes').textContent = disruption.origin;
             document.getElementById('route-cancelled-dest').textContent = disruption.destination;
 
-            const firstPkg = data.rescue_packages[0];
+            const firstPkg = (data.rescue_packages && data.rescue_packages.length > 0) ? data.rescue_packages[0] : { origin: '', destination: '' };
             document.getElementById('route-rescue-codes').textContent = firstPkg.origin;
             document.getElementById('route-rescue-dest').textContent = firstPkg.destination;
             route.classList.add('visible');
 
             // Rescue packages (show only first 2)
-            renderPackages(data.rescue_packages.slice(0, 2));
+            renderPackages((data.rescue_packages || []).slice(0, 2));
 
             // Compensation card
-            const claim = data.compensation_claim;
-            document.getElementById('comp-claim-id').textContent = 'Claim #' + claim.claim_id + ' • $' + claim.eligible_payout_usd.toFixed(2) + ' USD';
-            document.getElementById('comp-amount').textContent = convertCurrency(claim.eligible_payout_usd);
-            document.getElementById('comp-status').textContent = 'Status: ' + claim.status.replace(/_/g, ' ');
+            const claim = data.compensation_claim || { eligible_payout_usd: 0, status: 'none', claim_id: '' };
+            document.getElementById('comp-claim-id').textContent = 'Claim #' + (claim.claim_id || '') + ' • $' + (claim.eligible_payout_usd || 0).toFixed(2) + ' USD';
+            document.getElementById('comp-amount').textContent = convertCurrency(claim.eligible_payout_usd || 0);
+            document.getElementById('comp-status').textContent = 'Status: ' + (claim.status || '').replace(/_/g, ' ');
             document.getElementById('compensation-card').classList.add('visible');
             document.getElementById('compensation-card').classList.add('fade-in-up');
 
             // Visa guard summary + guardian push in trail
-            if (data.visa_guard) {
-                const vgLi = document.createElement('li');
-                vgLi.className = 'trail-item done';
-                vgLi.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">🛂 VisaGuard: ' + data.visa_guard.summary + '</span><span class="step-time">done</span></div>';
+            if (data.visa_guard && data.visa_guard.summary) {
+                const vgLi = createTrailItem('🛂 VisaGuard: ' + data.visa_guard.summary, 'done', 'done');
                 document.getElementById('trail-list').appendChild(vgLi);
             }
             if (data.guardian_push && data.guardian_push.preview) {
-                const gLi = document.createElement('li');
-                gLi.className = 'trail-item done';
                 const simTag = data.guardian_push.simulated ? ' (demo mode)' : '';
-                gLi.innerHTML = '<div class="trail-dot"></div><div class="trail-text"><span class="step-label">📨 Proactive Telegram Guardian push sent' + simTag + '</span><span class="step-time">done</span></div>';
+                const gLi = createTrailItem('📨 Proactive Telegram Guardian push sent' + simTag, 'done', 'done');
                 document.getElementById('trail-list').appendChild(gLi);
             }
 
@@ -392,39 +485,46 @@
 
             const v = document.getElementById('rights-verdict');
             v.textContent = r.verdict;
-            v.className = 'rights-verdict ' + (r.classification.classification === 'COMPENSABLE' ? 'verdict-good' : 'verdict-warn');
+            v.className = 'rights-verdict ' + ((r.classification && r.classification.classification === 'COMPENSABLE') ? 'verdict-good' : 'verdict-warn');
             v.classList.add('shown');
 
-            const cls = r.classification;
+            const cls = r.classification || {};
             const cb = document.getElementById('rights-classification');
             cb.classList.add('shown');
             const chip = document.getElementById('class-chip');
-            chip.textContent = cls.classification;
+            chip.textContent = cls.classification || '';
             chip.className = 'classification-chip ' + (cls.classification === 'COMPENSABLE' ? 'chip-good' : 'chip-warn');
             document.getElementById('class-confidence').textContent = 'confidence ' + (cls.confidence != null ? cls.confidence : '?') + '% • engine: ' + (cls.engine || 'qwen');
-            document.getElementById('class-reasoning').textContent = cls.legal_reasoning + (cls.key_article ? ' — ' + cls.key_article : '');
+            document.getElementById('class-reasoning').textContent = (cls.legal_reasoning || '') + (cls.key_article ? ' — ' + cls.key_article : '');
 
             const money = document.getElementById('rights-money');
             money.classList.add('shown');
-            const cash = r.entitlement.fixed_cash_compensation;
+            const cash = r.entitlement ? r.entitlement.fixed_cash_compensation : null;
             if (cash) {
-                document.getElementById('ent-amount').textContent = cash.currency + ' ' + cash.amount.toLocaleString();
-                document.getElementById('ent-basis').textContent = 'under ' + r.best.citation;
+                document.getElementById('ent-amount').textContent = cash.currency + ' ' + (cash.amount != null ? cash.amount.toLocaleString() : '0');
+                document.getElementById('ent-basis').textContent = 'under ' + (r.best.citation || '');
             } else {
                 document.getElementById('ent-amount').textContent = 'Refund route';
-                document.getElementById('ent-basis').textContent = r.entitlement.note || '';
+                document.getElementById('ent-basis').textContent = (r.entitlement && r.entitlement.note) ? r.entitlement.note : '';
             }
 
             const ev = document.getElementById('rights-evidence');
             ev.classList.add('shown');
             const list = document.getElementById('evidence-list');
-            list.innerHTML = '';
-            r.evidence_pack.checklist.forEach(d => {
-                const li = document.createElement('li');
-                li.innerHTML = '<strong>' + d.item + '</strong><span>' + d.why + '</span>';
-                list.appendChild(li);
-            });
-            document.getElementById('claim-letter-text').textContent = r.evidence_pack.claim_letter;
+            list.textContent = '';
+            if (r.evidence_pack && r.evidence_pack.checklist) {
+                r.evidence_pack.checklist.forEach(d => {
+                    const li = document.createElement('li');
+                    const st = document.createElement('strong');
+                    st.textContent = d.item || '';
+                    const sp = document.createElement('span');
+                    sp.textContent = d.why || '';
+                    li.appendChild(st);
+                    li.appendChild(sp);
+                    list.appendChild(li);
+                });
+            }
+            document.getElementById('claim-letter-text').textContent = (r.evidence_pack && r.evidence_pack.claim_letter) ? r.evidence_pack.claim_letter : '';
 
             window._lastClaimForAppeal = {
                 jurisdiction_id: r.best.id,
@@ -441,8 +541,13 @@
 
         async function appealRejection() {
             const btn = document.querySelector('.btn-appeal');
+            if (!btn) return;
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span>Drafting appeal...';
+            btn.textContent = '';
+            const sp = document.createElement('span');
+            sp.className = 'spinner';
+            btn.appendChild(sp);
+            btn.appendChild(document.createTextNode('Drafting appeal...'));
             try {
                 const res = await fetch('/api/claims/appeal', {
                     method: 'POST',
@@ -462,60 +567,161 @@
                 showToast('Appeal drafting failed.');
             }
             btn.disabled = false;
-            btn.innerHTML = 'Airline said no? Draft appeal letter';
+            btn.textContent = 'Airline said no? Draft appeal letter';
         }
 
         function renderPackages(packages) {
             const container = document.getElementById('rescue-packages');
-            container.innerHTML = '';
+            if (!container) return;
+            container.textContent = '';
 
             packages.forEach((pkg, idx) => {
                 const isFastest = pkg.package_type === 'FASTEST_RECOVERY';
                 const card = document.createElement('div');
                 card.className = 'package-card';
 
-                const depTime = pkg.departure_time.split(' ')[1] || pkg.departure_time;
-                const arrTime = pkg.arrival_time.split(' ')[1] || pkg.arrival_time;
-                const priceDisplay = pkg.currency_symbol + (pkg.price_converted || pkg.price_usd).toFixed(2);
+                const depTime = (pkg.departure_time || '').split(' ')[1] || pkg.departure_time || '';
+                const arrTime = (pkg.arrival_time || '').split(' ')[1] || pkg.arrival_time || '';
+                const priceDisplay = (pkg.currency_symbol || '$') + (pkg.price_converted || pkg.price_usd || 0).toFixed(2);
                 const coverageText = isFastest ? 'Airline-covered' : 'Instant payout';
-                let visaBadge = '';
-                if (pkg.visa_status === 'CLEAR') {
-                    visaBadge = '<div class="visa-badge visa-clear">🛂 Visa-safe for your passport</div>';
-                } else if (pkg.visa_status === 'BLOCKED_RISK') {
-                    visaBadge = '<div class="visa-badge visa-risk">⚠️ ' + (pkg.visa_hub || 'Transit') + ' transit-visa risk: ' + (pkg.visa_note || '') + '</div>';
-                } else if (pkg.visa_status === 'TRANSIT_VISA_REQUIRED') {
-                    visaBadge = '<div class="visa-badge visa-warn">🛂 Transit visa needed at ' + (pkg.visa_hub || 'hub') + '</div>';
-                }
-                const sandboxTag = pkg.price_status === 'reference'
-                    ? '<div class="visa-badge visa-warn">🏷️ Sandbox reference price</div>' : '';
 
-                card.innerHTML =
-                    '<div class="package-badge">' + (isFastest ? 'FASTEST' : 'BEST VALUE') + '</div>' +
-                    sandboxTag +
-                    visaBadge +
-                    '<div class="package-body">' +
-                        '<div class="package-airline">' + pkg.airline + '</div>' +
-                        '<div class="package-flight">' + pkg.flight_number + '</div>' +
-                        '<div class="package-route">' +
-                            '<span class="codes">' + pkg.origin + '</span>' +
-                            '<span class="arrow">--></span>' +
-                            '<span class="codes">' + pkg.destination + '</span>' +
-                        '</div>' +
-                        '<div class="package-time">' + depTime + ' --> ' + arrTime + ' - Nonstop</div>' +
-                        '<div class="package-reason">' + pkg.agent_recommendation_reason + '</div>' +
-                        (isFastest ?
-                            '<div class="package-farelock"><div class="package-farelock-label">Fare Lock</div>' +
-                            '<div class="farelock-ring">' +
-                                '<svg width="80" height="80">' +
-                                    '<circle cx="40" cy="40" r="34" fill="none" stroke="var(--border-amber)" stroke-width="4"/>' +
-                                    '<circle class="farelock-progress" cx="40" cy="40" r="34" fill="none" stroke="var(--accent-teal)" stroke-width="4" stroke-dasharray="213.6" stroke-dashoffset="0" stroke-linecap="round" style="transition: stroke-dashoffset 1s linear, stroke 0.5s"/>' +
-                                '</svg>' +
-                                '<div class="farelock-ring-text" data-pkg="' + idx + '">14:59</div>' +
-                            '</div></div>' : '') +
-                        '<div class="package-price">' + priceDisplay + '</div>' +
-                        '<div class="package-coverage">' + coverageText + '</div>' +
-                        '<button class="btn-rebook" onclick="rebookFlight(\'' + pkg.offer_id + '\', ' + idx + ')">1-Click Rebook</button>' +
-                    '</div>';
+                const pkgBadge = document.createElement('div');
+                pkgBadge.className = 'package-badge';
+                pkgBadge.textContent = isFastest ? 'FASTEST' : 'BEST VALUE';
+                card.appendChild(pkgBadge);
+
+                if (pkg.price_status === 'reference') {
+                    const sandboxTag = document.createElement('div');
+                    sandboxTag.className = 'visa-badge visa-warn';
+                    sandboxTag.textContent = '🏷️ Sandbox reference price';
+                    card.appendChild(sandboxTag);
+                }
+
+                if (pkg.visa_status === 'CLEAR') {
+                    const visaBadge = document.createElement('div');
+                    visaBadge.className = 'visa-badge visa-clear';
+                    visaBadge.textContent = '🛂 Visa-safe for your passport';
+                    card.appendChild(visaBadge);
+                } else if (pkg.visa_status === 'BLOCKED_RISK') {
+                    const visaBadge = document.createElement('div');
+                    visaBadge.className = 'visa-badge visa-risk';
+                    visaBadge.textContent = '⚠️ ' + (pkg.visa_hub || 'Transit') + ' transit-visa risk: ' + (pkg.visa_note || '');
+                    card.appendChild(visaBadge);
+                } else if (pkg.visa_status === 'TRANSIT_VISA_REQUIRED') {
+                    const visaBadge = document.createElement('div');
+                    visaBadge.className = 'visa-badge visa-warn';
+                    visaBadge.textContent = '🛂 Transit visa needed at ' + (pkg.visa_hub || 'hub');
+                    card.appendChild(visaBadge);
+                }
+
+                const body = document.createElement('div');
+                body.className = 'package-body';
+
+                const airline = document.createElement('div');
+                airline.className = 'package-airline';
+                airline.textContent = pkg.airline || '';
+                body.appendChild(airline);
+
+                const flight = document.createElement('div');
+                flight.className = 'package-flight';
+                flight.textContent = pkg.flight_number || '';
+                body.appendChild(flight);
+
+                const route = document.createElement('div');
+                route.className = 'package-route';
+                const orig = document.createElement('span');
+                orig.className = 'codes';
+                orig.textContent = pkg.origin || '';
+                const arrow = document.createElement('span');
+                arrow.className = 'arrow';
+                arrow.textContent = '-->';
+                const dest = document.createElement('span');
+                dest.className = 'codes';
+                dest.textContent = pkg.destination || '';
+                route.appendChild(orig);
+                route.appendChild(arrow);
+                route.appendChild(dest);
+                body.appendChild(route);
+
+                const time = document.createElement('div');
+                time.className = 'package-time';
+                time.textContent = depTime + ' --> ' + arrTime + ' - Nonstop';
+                body.appendChild(time);
+
+                const reason = document.createElement('div');
+                reason.className = 'package-reason';
+                reason.textContent = pkg.agent_recommendation_reason || '';
+                body.appendChild(reason);
+
+                if (isFastest) {
+                    const farelock = document.createElement('div');
+                    farelock.className = 'package-farelock';
+                    const flLabel = document.createElement('div');
+                    flLabel.className = 'package-farelock-label';
+                    flLabel.textContent = 'Fare Lock';
+                    farelock.appendChild(flLabel);
+
+                    const ring = document.createElement('div');
+                    ring.className = 'farelock-ring';
+
+                    const svgNS = 'http://www.w3.org/2000/svg';
+                    const svg = document.createElementNS(svgNS, 'svg');
+                    svg.setAttribute('width', '80');
+                    svg.setAttribute('height', '80');
+
+                    const c1 = document.createElementNS(svgNS, 'circle');
+                    c1.setAttribute('cx', '40');
+                    c1.setAttribute('cy', '40');
+                    c1.setAttribute('r', '34');
+                    c1.setAttribute('fill', 'none');
+                    c1.setAttribute('stroke', 'var(--border-amber)');
+                    c1.setAttribute('stroke-width', '4');
+                    svg.appendChild(c1);
+
+                    const c2 = document.createElementNS(svgNS, 'circle');
+                    c2.setAttribute('class', 'farelock-progress');
+                    c2.setAttribute('cx', '40');
+                    c2.setAttribute('cy', '40');
+                    c2.setAttribute('r', '34');
+                    c2.setAttribute('fill', 'none');
+                    c2.setAttribute('stroke', 'var(--accent-teal)');
+                    c2.setAttribute('stroke-width', '4');
+                    c2.setAttribute('stroke-dasharray', '213.6');
+                    c2.setAttribute('stroke-dashoffset', '0');
+                    c2.setAttribute('stroke-linecap', 'round');
+                    c2.style.transition = 'stroke-dashoffset 1s linear, stroke 0.5s';
+                    svg.appendChild(c2);
+                    ring.appendChild(svg);
+
+                    const ringText = document.createElement('div');
+                    ringText.className = 'farelock-ring-text';
+                    ringText.setAttribute('data-pkg', String(idx));
+                    ringText.textContent = '14:59';
+                    ring.appendChild(ringText);
+
+                    farelock.appendChild(ring);
+                    body.appendChild(farelock);
+                }
+
+                const price = document.createElement('div');
+                price.className = 'package-price';
+                price.textContent = priceDisplay;
+                body.appendChild(price);
+
+                const coverage = document.createElement('div');
+                coverage.className = 'package-coverage';
+                coverage.textContent = coverageText;
+                body.appendChild(coverage);
+
+                const rebookBtn = document.createElement('button');
+                rebookBtn.className = 'btn-rebook';
+                rebookBtn.textContent = '1-Click Rebook';
+                rebookBtn.addEventListener('click', function () {
+                    rebookFlight(pkg.offer_id, idx);
+                });
+                body.appendChild(rebookBtn);
+
+                card.appendChild(body);
                 container.appendChild(card);
                 setTimeout(() => card.classList.add('fade-in-up'), idx * 200);
             });
@@ -559,13 +765,14 @@
         async function showRescueTimeline(pkg) {
             const overlay = document.getElementById('rescue-timeline-overlay');
             const stepsList = document.getElementById('timeline-steps');
-            stepsList.innerHTML = '';
-            overlay.classList.add('visible');
+            if (!stepsList) return;
+            stepsList.textContent = '';
+            if (overlay) overlay.classList.add('visible');
 
             const claim = rescueData.compensation_claim || {};
             const payout = claim.eligible_payout_usd || 0;
             const steps = [
-                { label: 'Verifying fare lock via Atlas GDS', sub: pkg.airline + ' ' + pkg.flight_number + ' \u2014 $' + pkg.price_usd.toFixed(2) },
+                { label: 'Verifying fare lock via Atlas GDS', sub: (pkg.airline || '') + ' ' + (pkg.flight_number || '') + ' \u2014 $' + (pkg.price_usd || 0).toFixed(2) },
                 { label: 'Agent assigns seat 12A', sub: 'Window seat \u2014 30kg priority baggage' },
                 { label: 'Transferring baggage to rescue flight', sub: 'Auto-routed to Cargo Bay 2' },
                 { label: 'Issuing e-ticket via Atlas Sandbox', sub: 'PNR generation \u2014 instant settlement' },
@@ -578,24 +785,39 @@
                 const li = document.createElement('li');
                 li.className = 'timeline-step';
                 li.id = 'tl-step-' + i;
-                li.innerHTML = '<div class="step-check empty"></div><div class="step-text"><div class="step-label">' +
-                    step.label + '</div><div style="font-size:12px;color:var(--text-muted)">' + step.sub + '</div></div>';
+
+                const check = document.createElement('div');
+                check.className = 'step-check empty';
+                li.appendChild(check);
+
+                const text = document.createElement('div');
+                text.className = 'step-text';
+                const label = document.createElement('div');
+                label.className = 'step-label';
+                label.textContent = step.label;
+                const sub = document.createElement('div');
+                sub.style.fontSize = '12px';
+                sub.style.color = 'var(--text-muted)';
+                sub.textContent = step.sub;
+                text.appendChild(label);
+                text.appendChild(sub);
+                li.appendChild(text);
+
                 stepsList.appendChild(li);
 
                 await new Promise(r => setTimeout(r, 50));
                 li.classList.add('shown', 'timeline-step-active');
-                li.querySelector('.step-check').classList.remove('empty');
-                li.querySelector('.step-check').textContent = '...';
+                check.classList.remove('empty');
+                check.textContent = '...';
 
                 await new Promise(r => setTimeout(r, 700));
                 li.classList.remove('timeline-step-active');
                 li.classList.add('timeline-step-done');
-                li.querySelector('.step-check').textContent = '';
-                li.querySelector('.step-check').innerHTML = '&#10003;';
+                check.textContent = '\u2713';
             }
 
             await new Promise(r => setTimeout(r, 400));
-            overlay.classList.remove('visible');
+            if (overlay) overlay.classList.remove('visible');
 
             // Now call the actual booking API and show boarding pass
             try {
@@ -624,6 +846,7 @@
         // IMPACT SUMMARY CARD
         function showImpactCard(pkg) {
             const card = document.getElementById('impact-card');
+            if (!card) return;
             document.getElementById('impact-time').textContent = '190 min';
             document.getElementById('impact-cost').textContent = convertCurrency(18.50);
             document.getElementById('impact-comp').textContent = convertCurrency(250.00);
@@ -634,36 +857,40 @@
 
         function showBoardingPass(ticket, pkg) {
             const overlay = document.getElementById('modal-overlay');
-            document.getElementById('bp-airline').textContent = pkg.airline;
-            document.getElementById('bp-origin').textContent = pkg.origin;
-            document.getElementById('bp-origin-name').textContent = pkg.origin_airport || pkg.origin;
-            document.getElementById('bp-dest').textContent = pkg.destination;
-            document.getElementById('bp-dest-name').textContent = pkg.destination_airport || pkg.destination;
-            document.getElementById('bp-flight').textContent = pkg.flight_number;
-            document.getElementById('bp-gate').textContent = ticket.gate || pkg.gate || 'D4';
-            document.getElementById('bp-seat').textContent = ticket.seat_assigned || '12A';
-            document.getElementById('bp-boarding').textContent = ticket.boarding_time || '11:05 AM';
-            document.getElementById('bp-pnr').textContent = ticket.pnr || 'ATLAS-XXXXXX';
+            if (!overlay) return;
+            document.getElementById('bp-airline').textContent = pkg.airline || '';
+            document.getElementById('bp-origin').textContent = pkg.origin || '';
+            document.getElementById('bp-origin-name').textContent = pkg.origin_airport || pkg.origin || '';
+            document.getElementById('bp-dest').textContent = pkg.destination || '';
+            document.getElementById('bp-dest-name').textContent = pkg.destination_airport || pkg.destination || '';
+            document.getElementById('bp-flight').textContent = pkg.flight_number || '';
+            document.getElementById('bp-gate').textContent = (ticket && ticket.gate) || pkg.gate || 'D4';
+            document.getElementById('bp-seat').textContent = (ticket && ticket.seat_assigned) || '12A';
+            document.getElementById('bp-boarding').textContent = (ticket && ticket.boarding_time) || '11:05 AM';
+            document.getElementById('bp-pnr').textContent = (ticket && ticket.pnr) || 'ATLAS-XXXXXX';
 
             const barcode = document.getElementById('bp-barcode');
-            barcode.innerHTML = '';
-            const pnr = ticket.pnr || 'ATLAS-XXXXXX';
-            for (let i = 0; i < 50; i++) {
-                const charCode = pnr.charCodeAt(i % pnr.length);
-                const isThick = (charCode + i) % 3 === 0;
-                const bar = document.createElement('div');
-                bar.className = 'bp-bar';
-                bar.style.width = isThick ? '4px' : '2px';
-                bar.style.height = (24 + ((charCode + i) % 12)) + 'px';
-                bar.style.opacity = (charCode + i) % 2 === 0 ? '1' : '0.4';
-                barcode.appendChild(bar);
+            if (barcode) {
+                barcode.textContent = '';
+                const pnr = (ticket && ticket.pnr) || 'ATLAS-XXXXXX';
+                for (let i = 0; i < 50; i++) {
+                    const charCode = pnr.charCodeAt(i % pnr.length);
+                    const isThick = (charCode + i) % 3 === 0;
+                    const bar = document.createElement('div');
+                    bar.className = 'bp-bar';
+                    bar.style.width = isThick ? '4px' : '2px';
+                    bar.style.height = (24 + ((charCode + i) % 12)) + 'px';
+                    bar.style.opacity = (charCode + i) % 2 === 0 ? '1' : '0.4';
+                    barcode.appendChild(bar);
+                }
             }
 
             overlay.classList.add('visible');
         }
 
         function closeModal() {
-            document.getElementById('modal-overlay').classList.remove('visible');
+            const overlay = document.getElementById('modal-overlay');
+            if (overlay) overlay.classList.remove('visible');
         }
 
         // COMPENSATION PAYOUT
@@ -686,7 +913,25 @@
             const destination = document.getElementById('search-destination').value.trim().toUpperCase();
             if (!origin || !destination) { showToast('Enter origin and destination airports.'); return; }
             const results = document.getElementById('search-results');
-            results.innerHTML = '<div class="skeleton-card"><div><div class="skeleton-line med"></div><div class="skeleton-line short"></div></div><div class="skeleton-line short" style="width:40px"></div></div><div class="skeleton-card"><div><div class="skeleton-line med"></div><div class="skeleton-line short"></div></div><div class="skeleton-line short" style="width:40px"></div></div><div class="skeleton-card"><div><div class="skeleton-line med"></div><div class="skeleton-line short"></div></div><div class="skeleton-line short" style="width:40px"></div></div>';
+            if (!results) return;
+            results.textContent = '';
+            for (let i = 0; i < 3; i++) {
+                const sk = document.createElement('div');
+                sk.className = 'skeleton-card';
+                const left = document.createElement('div');
+                const line1 = document.createElement('div');
+                line1.className = 'skeleton-line med';
+                const line2 = document.createElement('div');
+                line2.className = 'skeleton-line short';
+                left.appendChild(line1);
+                left.appendChild(line2);
+                const right = document.createElement('div');
+                right.className = 'skeleton-line short';
+                right.style.width = '40px';
+                sk.appendChild(left);
+                sk.appendChild(right);
+                results.appendChild(sk);
+            }
 
             try {
                 const res = await fetch('/api/flights/search', {
@@ -704,37 +949,64 @@
                 const data = await res.json();
                 renderSearchResults(data.offers);
             } catch (err) {
-                results.innerHTML = '<div class="loading">Search failed. Please try again.</div>';
+                results.textContent = '';
+                const errDiv = document.createElement('div');
+                errDiv.className = 'loading';
+                errDiv.textContent = 'Search failed. Please try again.';
+                results.appendChild(errDiv);
                 console.error('Search failed:', err);
             }
         }
 
         function renderSearchResults(offers) {
             const container = document.getElementById('search-results');
-            container.innerHTML = '';
+            if (!container) return;
+            container.textContent = '';
 
             if (!offers || offers.length === 0) {
-                container.innerHTML = '<div class="loading">No flights found.</div>';
+                const noFlights = document.createElement('div');
+                noFlights.className = 'loading';
+                noFlights.textContent = 'No flights found.';
+                container.appendChild(noFlights);
                 return;
             }
 
             offers.forEach(o => {
-                const depTime = o.departure_time.split(' ')[1] || o.departure_time;
-                const arrTime = o.arrival_time.split(' ')[1] || o.arrival_time;
-                const price = (o.currency_symbol || '$') + (o.price_converted || o.price_usd).toFixed(2);
+                const depTime = (o.departure_time || '').split(' ')[1] || o.departure_time || '';
+                const arrTime = (o.arrival_time || '').split(' ')[1] || o.arrival_time || '';
+                const price = (o.currency_symbol || '$') + (o.price_converted || o.price_usd || 0).toFixed(2);
 
                 const card = document.createElement('div');
                 card.className = 'search-result-card';
-                card.innerHTML =
-                    '<div class="src-left">' +
-                        '<div class="src-airline">' + o.airline + '</div>' +
-                        '<div class="src-flight">' + o.flight_number + '</div>' +
-                        '<div class="src-route">' + o.origin + ' --> ' + o.destination + ' - ' + depTime + ' to ' + arrTime + '</div>' +
-                    '</div>' +
-                    '<div class="src-right">' +
-                        '<div class="src-price">' + price + '</div>' +
-                        '<div class="src-seats">' + o.seats_available + ' seats left</div>' +
-                    '</div>';
+
+                const left = document.createElement('div');
+                left.className = 'src-left';
+                const airline = document.createElement('div');
+                airline.className = 'src-airline';
+                airline.textContent = o.airline || '';
+                const flight = document.createElement('div');
+                flight.className = 'src-flight';
+                flight.textContent = o.flight_number || '';
+                const route = document.createElement('div');
+                route.className = 'src-route';
+                route.textContent = (o.origin || '') + ' --> ' + (o.destination || '') + ' - ' + depTime + ' to ' + arrTime;
+                left.appendChild(airline);
+                left.appendChild(flight);
+                left.appendChild(route);
+                card.appendChild(left);
+
+                const right = document.createElement('div');
+                right.className = 'src-right';
+                const priceDiv = document.createElement('div');
+                priceDiv.className = 'src-price';
+                priceDiv.textContent = price;
+                const seats = document.createElement('div');
+                seats.className = 'src-seats';
+                seats.textContent = (o.seats_available != null ? o.seats_available : 0) + ' seats left';
+                right.appendChild(priceDiv);
+                right.appendChild(seats);
+                card.appendChild(right);
+
                 container.appendChild(card);
             });
         }
@@ -742,6 +1014,7 @@
         // CONCIERGE CHAT
         async function sendChat() {
             const input = document.getElementById('chat-input');
+            if (!input) return;
             const msg = input.value.trim();
             if (!msg) return;
             input.value = '';
@@ -754,6 +1027,7 @@
 
         async function sendConciergeQuery(query) {
             const container = document.getElementById('chat-messages');
+            if (!container) return;
             const now = new Date();
             const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
@@ -778,7 +1052,39 @@
             // AI typing indicator with avatar
             const aiRow = document.createElement('div');
             aiRow.className = 'msg-row msg-ai-row';
-            aiRow.innerHTML = '<div class="msg-avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 1-3-3V5a3 3 0 0 1 3-3z"/><path d="M12 14c-4 0-7 2-7 5v3h14v-3c0-3-3-5-7-5z"/></svg></div><div class="msg-content"><div class="msg-bubble msg-ai"><div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>';
+
+            const avatar = document.createElement('div');
+            avatar.className = 'msg-avatar';
+            const svgNS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNS, 'svg');
+            svg.setAttribute('viewBox', '0 0 24 24');
+            svg.setAttribute('fill', 'none');
+            svg.setAttribute('stroke', 'currentColor');
+            svg.setAttribute('stroke-width', '2');
+            const path1 = document.createElementNS(svgNS, 'path');
+            path1.setAttribute('d', 'M12 2a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 1-3-3V5a3 3 0 0 1 3-3z');
+            const path2 = document.createElementNS(svgNS, 'path');
+            path2.setAttribute('d', 'M12 14c-4 0-7 2-7 5v3h14v-3c0-3-3-5-7-5z');
+            svg.appendChild(path1);
+            svg.appendChild(path2);
+            avatar.appendChild(svg);
+            aiRow.appendChild(avatar);
+
+            const content = document.createElement('div');
+            content.className = 'msg-content';
+            const bubble = document.createElement('div');
+            bubble.className = 'msg-bubble msg-ai';
+            const dots = document.createElement('div');
+            dots.className = 'typing-dots';
+            for (let i = 0; i < 3; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'typing-dot';
+                dots.appendChild(dot);
+            }
+            bubble.appendChild(dots);
+            content.appendChild(bubble);
+            aiRow.appendChild(content);
+
             container.appendChild(aiRow);
             container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
 
@@ -790,13 +1096,13 @@
                 });
                 const data = await res.json();
                 const replyTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-                aiRow.querySelector('.msg-bubble').textContent = data.reply;
+                bubble.textContent = data.reply;
                 var timeDiv = document.createElement('div');
                 timeDiv.className = 'msg-time';
                 timeDiv.textContent = replyTime;
-                aiRow.querySelector('.msg-content').appendChild(timeDiv);
+                content.appendChild(timeDiv);
             } catch (err) {
-                aiRow.querySelector('.msg-bubble').textContent = 'Sorry, I could not process your request right now.';
+                bubble.textContent = 'Sorry, I could not process your request right now.';
                 console.error('Concierge failed:', err);
             }
             container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
@@ -804,12 +1110,23 @@
 
         // HEALTH CHECK
         async function checkHealth() {
+            const badge = document.querySelector('#health-badge');
+            if (!badge) return;
             try {
                 const res = await fetch('/api/health');
                 const data = await res.json();
-                document.querySelector('#health-badge').innerHTML = '<span id="health-dot"></span>' + data.status;
+                badge.textContent = '';
+                const dot = document.createElement('span');
+                dot.id = 'health-dot';
+                badge.appendChild(dot);
+                badge.appendChild(document.createTextNode(data.status || 'OK'));
             } catch (err) {
-                document.querySelector('#health-badge').innerHTML = '<span id="health-dot" style="background:#DC2626"></span>Offline';
+                badge.textContent = '';
+                const dot = document.createElement('span');
+                dot.id = 'health-dot';
+                dot.style.background = '#DC2626';
+                badge.appendChild(dot);
+                badge.appendChild(document.createTextNode('Offline'));
             }
         }
 

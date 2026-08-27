@@ -93,17 +93,17 @@ else
 fi
 
 # ---------------------------------------------------------------- 4/6
-section "4/6 XSS sink audit — owned JS strict, frozen app.js informational"
+section "4/6 XSS sink audit — strict across ALL frontend JS (zero sinks allowed)"
 SINKS='\.innerHTML[[:space:]]*=|\.outerHTML[[:space:]]*=|insertAdjacentHTML[[:space:]]*\(|document\.write[[:space:]]*\(|[^A-Za-z_.]eval[[:space:]]*\('
-trip_hits="$(grep -nE "$SINKS" static/trip.js || true)"
-if [ -z "$trip_hits" ]; then
-    ok "static/trip.js: zero injection sinks (createElement/textContent only)"
-else
-    bad "static/trip.js carries injection sinks:"
-    printf '%s\n' "$trip_hits"
-fi
-app_count="$(grep -cE "$SINKS" static/app.js || true)"
-note "static/app.js is FROZEN (legacy rescue UI, sha256-pinned by AJ13, canary-covered): $app_count sink line(s) reported, not gate-enforced"
+for js_file in static/trip.js static/app.js; do
+    hits="$(grep -nE "$SINKS" "$js_file" || true)"
+    if [ -z "$hits" ]; then
+        ok "$js_file: zero injection sinks (createElement/textContent only)"
+    else
+        bad "$js_file carries injection sinks:"
+        printf '%s\n' "$hits"
+    fi
+done
 
 # ---------------------------------------------------------------- 5/6
 section "5/6 pydantic boundary validation + privacy contracts (pytest)"

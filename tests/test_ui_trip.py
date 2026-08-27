@@ -50,9 +50,9 @@ XSS_GOAL = ('I need to get to <script>window.__xss=1</script>Singapore from '
             'Bangkok <img src=x onerror="window.__xss2=1"> on 2026-09-29.')
 INVALID_DATE_GOAL = "Fly on February 30 2026"   # deterministic 422 trigger
 
-# G4.5 frozen-canary pin: static/app.js must stay byte-identical.
-APP_JS_SHA256 = ("2d1db42d79914bf5b807facaff1cc25ce979a2c939abac5109ba96b000"
-                 "cb1ae5")
+# G4.5 / R2 sanitized static/app.js pin: zero injection sinks.
+APP_JS_SHA256 = ("ecfe79839b726b7da61b38c91eced2a53a670d6a411c7f6bf3f9ba712de8d3"
+                 "12")
 
 
 # --- G3-pattern fakes ---------------------------------------------------------
@@ -662,6 +662,82 @@ def test_xss_goal_payload_renders_inert(tracked_page, install_orch):
     assert page.evaluate("window.__xss2 === undefined")
     assert page.locator("#trip-chat script").count() == 0
     assert page.locator("#trip-chat img").count() == 0
+
+
+def test_hostile_provider_and_api_payloads_render_inert(tracked_page, install_orch):
+    """R2: Hostile search/radar/chat/package payloads render safely as plain text."""
+    install_orch()
+    page = tracked_page
+    page.goto(BASE)
+
+    # 1. Test search results rendering hostile HTML
+    page.evaluate("""() => {
+        renderSearchResults([{
+            airline: '<script>window.__xss_air=1</script>EvilAir',
+            flight_number: 'EV666<img src=x onerror="window.__xss_fn=1">',
+            origin: 'BKK<script>window.__xss_org=1</script>',
+            destination: 'SIN',
+            departure_time: '2026-09-29 10:00',
+            arrival_time: '2026-09-29 13:00',
+            price_usd: 120,
+            seats_available: 5
+        }]);
+    }""")
+    assert page.evaluate("window.__xss_air === undefined")
+    assert page.evaluate("window.__xss_fn === undefined")
+    assert page.evaluate("window.__xss_org === undefined")
+    assert page.locator("#search-results script").count() == 0
+    assert page.locator("#search-results img").count() == 0
+
+    # 2. Test radar flights & alerts rendering hostile HTML
+    page.evaluate("""() => {
+        renderRadar({
+            alerts: [{
+                id: 'alert-xss',
+                flight_number: 'TG999<script>window.__xss_rad=1</script>',
+                status: 'CANCELLED<img src=x onerror="window.__xss_rad2=1">',
+                reason: 'Hostile <script>window.__xss_rad3=1</script>'
+            }],
+            last_scan: {
+                flights: [{
+                    flight_number: 'TG888<script>window.__xss_rf=1</script>',
+                    status: 'DELAYED',
+                    reason: 'Storm<img src=x onerror="window.__xss_rf2=1">',
+                    disrupted: true
+                }]
+            }
+        });
+    }""")
+    assert page.evaluate("window.__xss_rad === undefined")
+    assert page.evaluate("window.__xss_rad2 === undefined")
+    assert page.evaluate("window.__xss_rad3 === undefined")
+    assert page.evaluate("window.__xss_rf === undefined")
+    assert page.evaluate("window.__xss_rf2 === undefined")
+    assert page.locator("#radar-alerts script").count() == 0
+    assert page.locator("#radar-alerts img").count() == 0
+    assert page.locator("#radar-flights script").count() == 0
+    assert page.locator("#radar-flights img").count() == 0
+
+    # 3. Test package rendering hostile HTML
+    page.evaluate("""() => {
+        renderPackages([{
+            package_type: 'FASTEST_RECOVERY',
+            airline: 'Singapore Airlines<script>window.__xss_pkg=1</script>',
+            flight_number: 'SQ123',
+            origin: 'BKK',
+            destination: 'SIN',
+            departure_time: '2026-09-29 11:00',
+            arrival_time: '2026-09-29 14:00',
+            price_usd: 250,
+            currency_symbol: '$',
+            visa_status: 'CLEAR',
+            agent_recommendation_reason: 'Fastest<img src=x onerror="window.__xss_pkg2=1">'
+        }]);
+    }""")
+    assert page.evaluate("window.__xss_pkg === undefined")
+    assert page.evaluate("window.__xss_pkg2 === undefined")
+    assert page.locator("#rescue-packages script").count() == 0
+    assert page.locator("#rescue-packages img").count() == 0
 
 
 # --- narrow viewports: no horizontal overflow at 375 AND 360 --------------------------
