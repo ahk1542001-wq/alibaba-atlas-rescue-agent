@@ -193,6 +193,24 @@ class AtlasClient:
                 "terminal": "Terminal 3",
                 "aircraft": "Airbus A350-900",
                 "compensation_amount_usd": 300.0
+            },
+            "AF198": {
+                "flight_number": "AF198",
+                "airline_code": "AF",
+                "carrier": "Air France",
+                "origin": "CDG",
+                "origin_airport": "Charles de Gaulle Airport (CDG)",
+                "destination": "BKK",
+                "destination_airport": "Suvarnabhumi Airport (BKK)",
+                "scheduled_departure": f"{date} 13:45",
+                "scheduled_arrival": f"{date} 06:10",
+                "status": "CANCELLED",
+                "reason": "Crew Duty Time Limits Exceeded",
+                "affected_passengers": 290,
+                "gate": "K32",
+                "terminal": "Terminal 2E",
+                "aircraft": "Boeing 777-300ER",
+                "compensation_amount_usd": 650.0
             }
         }
         

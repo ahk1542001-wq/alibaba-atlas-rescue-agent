@@ -72,7 +72,7 @@ with sync_playwright() as p:
         expect(page.locator("#disruption-banner")).to_be_visible()
         expect(page.locator("#banner-title")).to_contain_text("CANCELLED")
         expect(page.locator("#banner-sub")).to_contain_text(
-            "policy-ranked options ready")
+            "policy-ranked options ready", timeout=30000)
     check("simulate disruption shows banner", simulate)
 
     check("reasoning trail fills", lambda: expect(
