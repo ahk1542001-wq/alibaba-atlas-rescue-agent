@@ -1,5 +1,12 @@
 # TravelCare AI v2 — Execution Plan (G0→G8)
 
+> **Current-evidence notice (2026-08-27):** This file preserves additive gate
+> history. Counts, screenshots, provider labels, owner-action notes, and
+> "FINAL" wording inside the earlier G0–G8/R0–R5 snapshots are historical
+> evidence only. They are superseded by **R7 Canonical Completion** at the end
+> of this file and by `FINAL_REPORT.md`. Do not treat the older snapshots as
+> current verification or ask the owner for real traveler data.
+
 Authoritative spec: `docs/MASTER_BUILD_PACKAGE.md` (package defines G0–G6;
 this plan extends with G7 = §12 mock-data pass and G8 = §16.3
 completion/smoke/stop). Rules of engagement from spec §0 apply to every gate.
@@ -943,3 +950,62 @@ rights_engine.py, visa_guard.py, and AGENTS.md/.env contents frozen; it
 explicitly REQUIRES modifying static/app.js for the security gate (R2) and
 intentional contract changes with equivalent-or-stronger coverage elsewhere
 (R1) — those are no longer treated as frozen for the mandated fixes.
+
+## R7 Canonical Completion (2026-08-27) — Current Authority
+
+R7 is the current completion record and supersedes every earlier count,
+provider label, screenshot statement, and owner-action note in this file.
+Implementation remains additive and preserves the full G0–G8/R0–R5 history.
+
+### Corrective commit sequence
+
+| Commit | Corrective scope |
+|---|---|
+| `18ca460` | canonical R7 implementation plan |
+| `57c8f0e` | real proposal/confirmation semantics |
+| `8026ad5` | typed, summarized, replaceable itinerary |
+| `2d25094` | atomic retry-safe initial booking approval |
+| `a7dc9d5` | governed recovery evidence, rights, and monitoring |
+| `b956181` | safe inline itinerary replacement UI |
+| `879a605` | idempotent fictional demo journey |
+| `17b289f` | worktree-aware security-hook resolution |
+| `481142d` | confirmed route/profile facts and exact search |
+| `a06c956` | persistent safety action errors during polling |
+| `b35a9fc` | confirmed-route recovery and honest AI labels |
+| `121658d` | beginner-friendly slow safety/booking feedback |
+
+### Current verification evidence
+
+- Fresh collection: **376 tests**.
+- Complete suite: **376 passed** in 82.79s.
+- Browser UI suite: **42 passed** in 78.96s.
+- Corrective backend focus: **75 passed** in 0.55s.
+- Legacy browser canary: **14/14 passed**.
+- JavaScript syntax: `static/app.js` and `static/trip.js` valid.
+- Security gate: all six executed sections pass; privacy **32/32**.
+- Dependency consistency: `pip check` reports no broken requirements.
+- Fresh boot: healthy; `/api/skills` reports 13 skills; runtime truthfully
+  reports deterministic fallback because no live LLM was configured.
+- Rendered desktop/mobile QA: exact BKK→SIN initial and recovery routes,
+  two-step fact confirmation, atomic approval, complete receipts/rights,
+  replaceable itinerary, no horizontal overflow, and no browser console errors.
+
+### Superseded assumptions and release boundary
+
+- `data/demo_profile.json` and `data/demo_trip_goal.json` are tracked fictional
+  fixtures. The former `data/mock_victor.json` real-owner-data action is
+  cancelled and must not be requested or restored.
+- Earlier screenshot paths are historical only; R7 claims no committed
+  screenshot evidence.
+- Earlier live-Qwen or other live-provider wording is historical only. R7
+  verified deterministic fallback and does not claim a live ModelScope run.
+- `gitleaks` and `pip-audit` were unavailable; neither is claimed as passed.
+- The verified product is a complete canonical hackathon build in
+  hermetic/Atlas Sandbox mode, not a live-airline production deployment.
+- Integration is a local-only fast-forward to `feature/trip-agent`. No push,
+  deployment, tag, publication, real identity, payment, credential, or live
+  booking is authorized by this plan.
+
+The exact requirement matrices, commands, results, limitations, and handover
+are maintained in `FINAL_REPORT.md`, which is the authoritative current
+completion evidence.
