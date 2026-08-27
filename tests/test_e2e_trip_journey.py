@@ -674,9 +674,10 @@ def test_skills_manifest_listing(harness):
             resp = await client.get("/api/skills")
             assert resp.status_code == 200
             body = resp.json()
-            assert body["count"] == len(body["skills"]) == 14
+            assert body["count"] == len(body["skills"]) == 13
             names = {s["name"] for s in body["skills"]}
-            assert {"goal_intake", "visa_check", "flight_book", "location_resolve", "recovery_plan"} <= names
+            assert {"goal_intake", "profile_edit", "visa_check", "flight_book", "location_resolve", "recovery_plan"} <= names
+            assert "clarify_loop" not in names
             for skill in body["skills"]:
                 assert skill["when_to_use"].strip()
 
@@ -1142,8 +1143,10 @@ def test_api_skills_thirteen_skills(harness):
             resp = await client.get("/api/skills")
             assert resp.status_code == 200
             data = resp.json()
-            assert data["count"] == 14
+            assert data["count"] == 13
             names = {s["name"] for s in data["skills"]}
+            assert "profile_edit" in names
+            assert "clarify_loop" not in names
             assert "location_resolve" in names
             assert "recovery_plan" in names
 

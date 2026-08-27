@@ -755,6 +755,21 @@
         }
 
         // 1-CLICK REBOOK
+        function rescueBookingKey(pkg) {
+            const passenger = activePassenger() || 'anonymous-demo-traveler';
+            const storageKey = 'travelcare-rescue-booking:' +
+                String(pkg.offer_id || '') + ':' + passenger;
+            let key = sessionStorage.getItem(storageKey);
+            if (!key) {
+                key = (window.crypto && typeof window.crypto.randomUUID === 'function')
+                    ? window.crypto.randomUUID()
+                    : 'legacy-rescue-' + Date.now().toString(36) + '-' +
+                      Math.random().toString(36).slice(2);
+                sessionStorage.setItem(storageKey, key);
+            }
+            return key;
+        }
+
         async function rebookFlight(offerId, pkgIdx) {
             if (!rescueData) return;
             if (!confirm("Approve this recovery booking? This action is binding and will issue a ticket.")) return;
@@ -823,9 +838,13 @@
 
             // Now call the actual booking API and show boarding pass
             try {
+                const idempotencyKey = rescueBookingKey(pkg);
                 const res = await fetch('/api/rescue/book', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Idempotency-Key': idempotencyKey
+                    },
                     body: JSON.stringify({
                         offer_id: pkg.offer_id,
                         passenger_name: activePassenger(),
@@ -835,6 +854,9 @@
                     })
                 });
                 const result = await res.json();
+                if (!res.ok || !result.success) {
+                    throw new Error('Sandbox booking request was not confirmed');
+                }
                 if (result.success) {
                     showBoardingPass(result.ticket, pkg);
                     showImpactCard(pkg);

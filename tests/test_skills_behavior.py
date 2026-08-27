@@ -32,6 +32,7 @@ from services.skills.goal_intake import GoalIntakeSkill
 from services.skills.guardian_push import GuardianPushSkill, sanitize_payload
 from services.skills.itinerary import ItinerarySkill
 from services.skills.profile_capture import ProfileCaptureSkill
+from services.skills.profile_edit import ProfileEditSkill
 from services.skills.rights_check import RightsCheckSkill
 from services.skills.visa_check import VisaCheckSkill
 from services.skills.web_intel import WebIntelSkill
@@ -201,6 +202,45 @@ def test_s1_adversarial_empty_and_garbage_never_raise():
 @pytest.fixture()
 def store(tmp_path: Path) -> ProfileStore:
     return ProfileStore(root=tmp_path)
+
+
+# --- S3 profile_edit ----------------------------------------------------------
+
+def test_s3_profile_edit_uses_real_store_and_deletes_only_selected_field(store):
+    skill = ProfileEditSkill(store)
+
+    edited = _run(skill.run({
+        "user_id": "victor",
+        "field": "home_city",
+        "value": "Bangkok",
+        "source": "user",
+    }))
+    assert edited["operation"] == "updated"
+    assert edited["profile"]["fields"]["home_city"]["value"] == "Bangkok"
+
+    store.set_field("victor", "diet", "vegetarian", source="user")
+    deleted = _run(skill.run({
+        "user_id": "victor",
+        "field": "home_city",
+        "delete": True,
+        "source": "user",
+    }))
+    assert deleted["operation"] == "deleted"
+    assert "home_city" not in deleted["profile"]["fields"]
+    assert deleted["profile"]["fields"]["diet"]["value"] == "vegetarian"
+
+
+def test_s3_profile_edit_rejects_non_user_source_without_writing(store):
+    skill = ProfileEditSkill(store)
+    with pytest.raises(SkillError) as exc:
+        _run(skill.run({
+            "user_id": "victor",
+            "field": "home_city",
+            "value": "Bangkok",
+            "source": "ai_inferred",
+        }))
+    assert exc.value.code == "invalid_edit_source"
+    assert store.get_or_create("victor").fields == {}
 
 
 def _complete_goal():

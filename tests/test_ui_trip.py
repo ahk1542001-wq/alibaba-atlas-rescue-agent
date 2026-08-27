@@ -21,6 +21,7 @@ Screenshots land in screenshots/ (gitignored, created locally).
 """
 
 import hashlib
+import json
 import re
 import socket
 import threading
@@ -55,7 +56,7 @@ XSS_GOAL = ('I need to get to <script>window.__xss=1</script>Singapore from '
 INVALID_DATE_GOAL = "Fly on February 30 2026"   # deterministic 422 trigger
 
 # G4.5 / R2 sanitized static/app.js pin: zero injection sinks.
-APP_JS_SHA256 = "ad8d81bdd2adb68d4a83fb1bae840db6e45276028dea2221de4786f24963df75"
+APP_JS_SHA256 = "0bb512ac2aea6d3afe9a7426ca52b94ad16d3a1cbee1084fdf61d4f15370c08e"
 
 
 # --- G3-pattern fakes ---------------------------------------------------------
@@ -1792,6 +1793,74 @@ def test_AJ12_reduced_motion(app_server, ui_browser, install_orch):
     assert not errors, f"browser console errors detected: {errors}"
 
 
+def test_legacy_rebook_ui_sends_and_reuses_idempotency_key(
+    tracked_page, install_orch
+):
+    """A double click/retry for one legacy offer must carry one stable key."""
+    install_orch()
+    page = tracked_page
+    seen_headers = []
+
+    def fulfill_booking(route):
+        seen_headers.append(route.request.headers)
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({
+                "success": True,
+                "verification": {"verified": True},
+                "ticket": {
+                    "pnr": "ATLAS-LEG1",
+                    "status": "CONFIRMED",
+                    "seat_assigned": "12A",
+                },
+                "message": "Sandbox booking confirmed.",
+            }),
+        )
+
+    page.route("**/api/rescue/book", fulfill_booking)
+    page.goto(BASE)
+    page.click('[data-testid="nav-rescue"]')
+    page.evaluate("""() => {
+        monitoredFlights = [{ passenger_name: 'Demo Traveler' }];
+        rescueData = {
+            compensation_claim: { eligible_payout_usd: 0 },
+            rescue_packages: [{
+                offer_id: 'off_ui_legacy_1',
+                package_type: 'FASTEST_RECOVERY',
+                airline: 'Sandbox Air',
+                flight_number: 'SB101',
+                origin: 'BKK',
+                destination: 'SIN',
+                departure_time: '2026-09-29 09:30',
+                arrival_time: '2026-09-29 11:00',
+                duration_minutes: 150,
+                price_usd: 210,
+                price_converted: 210,
+                currency_symbol: '$',
+                visa_status: 'CLEAR'
+            }]
+        };
+        renderPackages(rescueData.rescue_packages);
+    }""")
+    page.on("dialog", lambda dialog: dialog.accept())
+
+    page.locator(".btn-rebook").click()
+    expect(page.locator("#modal-overlay")).to_have_class(
+        re.compile(r"\bvisible\b"), timeout=15000
+    )
+    page.evaluate("closeModal()")
+    page.locator(".btn-rebook").click()
+    expect(page.locator("#modal-overlay")).to_have_class(
+        re.compile(r"\bvisible\b"), timeout=15000
+    )
+
+    assert len(seen_headers) == 2
+    keys = [headers.get("idempotency-key") for headers in seen_headers]
+    assert all(keys), "legacy booking request omitted Idempotency-Key"
+    assert keys[0] == keys[1], "same offer retry used a different key"
+
+
 def test_AJ13_legacy_canary(tracked_page, install_orch):
     """Frozen canary: every e2e_full_journey.py pinned selector still
     resolves; static/app.js is byte-identical."""
@@ -1810,7 +1879,7 @@ def test_AJ13_legacy_canary(tracked_page, install_orch):
     )
     missing = [cid for cid in canary_ids
                if page.locator(f"#{cid}").count() == 0]
-    if missing: print("HTML:", page.content()[-1500:]); assert not missing, f"frozen canary ids missing: {missing}"
+    assert not missing, f"frozen canary ids missing: {missing}"
     for view in ("rescue", "search", "concierge", "radar", "trip"):
         assert page.locator(f"#view-{view}").count() == 1, view
     # byte-frozen legacy engine

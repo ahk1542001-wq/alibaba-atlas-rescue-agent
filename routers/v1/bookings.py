@@ -1,40 +1,95 @@
-from fastapi import APIRouter, HTTPException, Header
+import asyncio
+import hashlib
+import json
+from copy import deepcopy
+from typing import Dict, Tuple
+
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
+
 from models.schemas import BookingRequest
 from services.atlas_client import AtlasClient
 
 router = APIRouter(prefix="/api/rescue", tags=["Bookings"])
 atlas_client = AtlasClient()
-_rescue_locks = {}
+_rescue_booking_ledger: Dict[str, Tuple[str, dict]] = {}
+_rescue_booking_locks: Dict[str, asyncio.Lock] = {}
+
+
+def _payload_hash(req: BookingRequest) -> str:
+    canonical = json.dumps(
+        req.model_dump(mode="json"),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 @router.post("/book")
-async def execute_rescue_booking(req: BookingRequest, idempotency_key: str = Header(None)):
-    """Execute 1-click rebooking, seat assignment, and sandbox ticket issuance via Atlas."""
-    if not idempotency_key:
-        idempotency_key = "legacy-default-" + req.offer_id  # fallback for demo paths
-    if idempotency_key in _rescue_locks:
-        if _rescue_locks[idempotency_key] == "PENDING":
-            raise HTTPException(409, "Concurrent request")
-        return JSONResponse(content=_rescue_locks[idempotency_key])
-    _rescue_locks[idempotency_key] = "PENDING" 
-    try:
-        verify_res = await atlas_client.verify_fare(req.offer_id)
-        order_res = await atlas_client.create_booking_order(
-            offer_id=req.offer_id,
-            passenger={
-                "name": req.passenger_name,
-                "price_usd": req.price_usd
-            },
-            baggage_addon=req.baggage_addon,
-            seat_selected=req.seat_selected or "12A"
+async def execute_rescue_booking(
+    req: BookingRequest,
+    idempotency_key: str = Header(None, alias="Idempotency-Key"),
+):
+    """Issue one Atlas Sandbox order with conflict-safe retry semantics."""
+    key = (idempotency_key or "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=422,
+            detail="Idempotency-Key header is required for booking requests.",
         )
-        res_content = {
+
+    request_hash = _payload_hash(req)
+    lock = _rescue_booking_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        stored = _rescue_booking_ledger.get(key)
+        if stored is not None:
+            stored_hash, stored_response = stored
+            if stored_hash != request_hash:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Idempotency-Key was already used with a different "
+                        "booking payload."
+                    ),
+                )
+            return JSONResponse(content=deepcopy(stored_response))
+
+        try:
+            verify_res = await atlas_client.verify_fare(req.offer_id)
+            if not verify_res.get("verified"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "The fare could not be re-verified; no booking order "
+                        "was created."
+                    ),
+                )
+            order_res = await atlas_client.create_booking_order(
+                offer_id=req.offer_id,
+                passenger={
+                    "name": req.passenger_name,
+                    "price_usd": req.price_usd,
+                    "party_size": req.party_size,
+                },
+                baggage_addon=req.baggage_addon,
+                seat_selected=req.seat_selected or "12A",
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Atlas Sandbox booking failed. Retry the same request "
+                    "with the same Idempotency-Key."
+                ),
+            ) from exc
+
+        response = {
             "success": True,
             "verification": verify_res,
             "ticket": order_res,
-            "message": "Rescue flight rebooked and e-ticket issued in 18 seconds."
+            "message": "Rescue flight rebooked and Sandbox e-ticket issued.",
         }
-        _rescue_locks[idempotency_key] = res_content
-        return JSONResponse(content=res_content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        _rescue_booking_ledger[key] = (request_hash, deepcopy(response))
+        return JSONResponse(content=response)

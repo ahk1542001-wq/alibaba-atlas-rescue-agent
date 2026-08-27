@@ -20,7 +20,6 @@ from services.skills import (
 
 EXPECTED_SKILLS = {
     "goal_intake",
-    "clarify_loop",
     "profile_edit",
     "profile_capture",
     "flight_search",
@@ -45,8 +44,25 @@ def skills_copy(tmp_path: Path) -> Path:
 
 def test_registry_loads_exactly_thirteen_skills():
     registry = load_skill_registry()
-    assert len(registry) == 14
+    assert len(registry) == 13
     assert {entry["name"] for entry in registry} == EXPECTED_SKILLS
+
+
+def test_internal_clarify_loop_is_governed_but_not_advertised():
+    public = load_skill_registry()
+    execution = load_skill_registry(include_internal=True)
+    assert "clarify_loop" not in {entry["name"] for entry in public}
+    assert "clarify_loop" in {entry["name"] for entry in execution}
+    assert len(execution) == 14
+
+
+def test_orchestrator_registers_profile_edit_and_internal_clarify(tmp_path):
+    from routers.v1.trip import TripOrchestrator
+    from services.profile_store import ProfileStore
+
+    orchestrator = TripOrchestrator(profile_store=ProfileStore(root=tmp_path))
+    assert "profile_edit" in orchestrator.executor._skills
+    assert "clarify_loop" in orchestrator.executor._registry_by_name
 
 
 def test_registry_entries_carry_manifest_fields():
@@ -97,14 +113,14 @@ def test_adding_skill_file_changes_listing(skills_copy: Path):
         encoding="utf-8",
     )
     registry = load_skill_registry(skills_copy)
-    assert len(registry) == 15
+    assert len(registry) == 14
     assert "hotel_finder" in {entry["name"] for entry in registry}
 
 
 def test_removing_skill_file_changes_listing(skills_copy: Path):
     (skills_copy / "web_intel.SKILL.md").unlink()
     registry = load_skill_registry(skills_copy)
-    assert len(registry) == 13
+    assert len(registry) == 12
     assert "web_intel" not in {entry["name"] for entry in registry}
 
 
@@ -156,9 +172,9 @@ def test_empty_allowed_tools_loads_cleanly(skills_copy: Path):
 
 def test_reload_reflects_filesystem_changes(skills_copy: Path):
     """Registry is rebuilt per call — no stale cache across add/remove."""
-    assert len(load_skill_registry(skills_copy)) == 14
-    (skills_copy / "web_intel.SKILL.md").unlink()
     assert len(load_skill_registry(skills_copy)) == 13
+    (skills_copy / "web_intel.SKILL.md").unlink()
+    assert len(load_skill_registry(skills_copy)) == 12
     (skills_copy / "web_intel.SKILL.md").write_text(
         "---\n"
         "name: web_intel\n"
@@ -168,7 +184,7 @@ def test_reload_reflects_filesystem_changes(skills_copy: Path):
         "# Procedure\n1. fetch\n",
         encoding="utf-8",
     )
-    assert len(load_skill_registry(skills_copy)) == 14
+    assert len(load_skill_registry(skills_copy)) == 13
 
 
 def test_duplicate_skill_name_rejected(skills_copy: Path):
@@ -259,7 +275,7 @@ def test_manifest_flags_match_class_capabilities():
 
     from services.skills.base import SkillBase
 
-    for entry in load_skill_registry():
+    for entry in load_skill_registry(include_internal=True):
         module = importlib.import_module(entry["module_path"])
         classes = [
             obj for obj in vars(module).values()

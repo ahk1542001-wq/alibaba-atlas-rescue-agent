@@ -63,6 +63,7 @@ from services.skills.goal_intake import GoalIntakeSkill, _extract_dates, \
 from services.skills.guardian_push import GuardianPushSkill
 from services.skills.itinerary import ItinerarySkill
 from services.skills.location_resolve import LocationResolveSkill
+from services.skills.profile_edit import ProfileEditSkill
 from services.skills.recovery_plan import RecoveryPlanSkill
 from services.skills.rights_check import RightsCheckSkill
 from services.skills.safety_monitor import SafetyMonitorSkill
@@ -317,7 +318,7 @@ class TripOrchestrator:
         # research adapters become explicit capability-empty registry entries
         # (documented exemption, §14.4), so allow_unmanifested_skills stays
         # False in production — every execution is manifest-governed.
-        registry = load_skill_registry() + [
+        registry = load_skill_registry(include_internal=True) + [
             {"name": f"{domain}_research",
              "description": (f"bounded {domain} research delegated to the "
                              "ResearchCoordinator (capability-empty embedded "
@@ -361,8 +362,10 @@ class TripOrchestrator:
         ex = self.executor
         gi = GoalIntakeSkill(llm_chat=llm_chat or llm_service.chat)
         cl = ClarifyLoopSkill(self.store)
+        pe = ProfileEditSkill(self.store)
         ex.register_skill("goal_intake", gi)
         ex.register_skill("clarify_loop", cl)
+        ex.register_skill("profile_edit", pe)
         ex.register_skill("flight_search", FlightSearchSkill(atlas=atlas_client))
         ex.register_skill("visa_check", VisaCheckSkill(web_intel=self.web_intel))
         ex.register_skill("flight_book", FlightBookSkill(atlas=atlas_client))
@@ -379,7 +382,11 @@ class TripOrchestrator:
         for domain in ("hotel", "activities", "local_transport"):
             ex.register_skill(f"{domain}_research",
                               DomainResearchSkill(domain, self.coordinator))
-        self.skills = {"goal_intake": gi, "clarify_loop": cl}
+        self.skills = {
+            "goal_intake": gi,
+            "clarify_loop": cl,
+            "profile_edit": pe,
+        }
         # boot governance: no write-capable skill may run unmanifested
         _assert_manifest_governance(ex._skills, ex._registry_by_name)
         # trip_id -> intent seed for scope-clarification resume

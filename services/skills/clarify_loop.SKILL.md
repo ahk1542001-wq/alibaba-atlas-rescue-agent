@@ -2,6 +2,7 @@
 name: clarify_loop
 description: Asks only the missing questions and surfaces confirmation chips for inferred facts. Use after goal intake while TripGoal fields stay incomplete.
 allowed-tools: llm_call
+visibility: internal
 ---
 
 # Procedure

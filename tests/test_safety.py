@@ -834,7 +834,7 @@ def test_skill_manifests_are_documented_and_registry_stays_at_13():
     # Canonical registry contains the 13 validated runnable skills;
     # the safety manifests are documented in services/safety/
     registry = load_skill_registry()
-    assert len(registry) == 14
+    assert len(registry) == 13
     safety_dir = Path(__file__).resolve().parents[1] / "services" / "safety"
     for stem in ("safety_research", "safety_monitor"):
         manifest = safety_dir / f"{stem}.SKILL.md"

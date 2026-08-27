@@ -57,10 +57,18 @@ def _allowed_tools(meta: Dict[str, Any], path: Path) -> List[str]:
     return [t.strip() for t in str(raw).split(",") if t.strip()]
 
 
-def load_skill_registry(skills_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+def load_skill_registry(
+    skills_dir: Optional[Path] = None,
+    *,
+    include_internal: bool = False,
+) -> List[Dict[str, Any]]:
     """Parse every *.SKILL.md under skills_dir into registry entries.
 
     Entry shape: {name, description, allowed_tools, module_path, path}.
+    Manifests marked ``visibility: internal`` are validated on every load but
+    omitted from the public product registry unless ``include_internal`` is
+    true. This keeps orchestration helpers governed without advertising them
+    as one of the canonical S1-S13 product skills.
     Raises SkillManifestError on missing required keys, unknown capability
     flags (closed vocabulary, §4.0 rule 4), unpaired manifests, name/stem
     mismatch, unsafe name charset, or duplicate names (§4.0 rule 1).
@@ -101,6 +109,13 @@ def load_skill_registry(skills_dir: Optional[Path] = None) -> List[Dict[str, Any
                 f"{path.name}: unknown capability flag(s) {sorted(unknown)}; "
                 f"closed vocabulary: {sorted(CAPABILITY_VOCABULARY)}"
             )
+        visibility = str(meta.get("visibility") or "public").strip().lower()
+        if visibility not in {"public", "internal"}:
+            raise SkillManifestError(
+                f"{path.name}: visibility must be 'public' or 'internal'"
+            )
+        if visibility == "internal" and not include_internal:
+            continue
         registry.append(
             {
                 "name": name,
