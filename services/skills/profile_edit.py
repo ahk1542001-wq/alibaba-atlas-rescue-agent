@@ -20,7 +20,6 @@ class ProfileEditSkill(SkillBase):
         self._store = profile_store or ProfileStore()
 
     async def run(self, payload: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        # Handled at the router level for UI, this skill acts as a stub for agent invocation
         user_id = str(payload.get("user_id") or "")
         field = payload.get("field")
         value = payload.get("value")
@@ -28,5 +27,13 @@ class ProfileEditSkill(SkillBase):
         if not user_id or not field:
             raise SkillError("invalid_edit", "user_id and field required", recoverable=True)
             
-        # Simplified execution for the skill interface, real logic is in the router
+        profile = self._store.load_profile(user_id)
+        if profile is None:
+             raise SkillError("not_found", "Profile not found", recoverable=True)
+             
+        try:
+             self._store.update_field(user_id, field, value)
+        except ValueError as e:
+             raise SkillError("invalid_edit", str(e), recoverable=True)
+             
         return {"saved": True, "field": field, "source": "user"}

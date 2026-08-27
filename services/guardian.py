@@ -33,14 +33,11 @@ async def notify(
     if action_label:
         text += f"\n\n👉 {action_label}" + (f": {deep_link}" if deep_link else "")
 
-    if not token or not chat_id:
-        logger.info("guardian: no Telegram credentials — simulating send")
+    if not token or not chat_id or not getattr(settings, "telegram_live_test", False):
         return {
-            "channel": "telegram",
-            "sent": False,
-            "simulated": True,
-            "preview": text,
-            "reason": "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not configured",
+            "pushed": False,
+            "reason": "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not configured, or TELEGRAM_LIVE_TEST not true",
+            "mocked_payload": payload
         }
 
     url = f"{TELEGRAM_API}/bot{token}/sendMessage"

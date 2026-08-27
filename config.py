@@ -22,6 +22,7 @@ class Settings(BaseModel):
     # Proactive Telegram guardian (optional; simulated when unset)
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    telegram_live_test: bool = os.getenv("TELEGRAM_LIVE_TEST", "false").lower() == "true"
     host: str = os.getenv("HOST", "0.0.0.0")
     port: int = int(os.getenv("PORT", "8050"))
     # TravelCare v2 optional keys (empty default; active only when set in .env)

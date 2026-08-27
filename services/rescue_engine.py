@@ -1,4 +1,5 @@
 import datetime
+from config import settings
 import uuid
 from typing import Dict, Any, List, Optional
 from services import llm

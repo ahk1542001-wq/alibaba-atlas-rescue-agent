@@ -4,8 +4,8 @@
 Local main promotion complete.
 
 **2. Branch and HEAD**
-- Final main SHA: `12f8da2bd714a662fe2ffb05ee2f1060910213f4`
-- Source feature SHA: `12f8da2bd714a662fe2ffb05ee2f1060910213f4`
+- Final main SHA: `affa9bfc702316e6d1eb7d00f3be8f45a6c116c2`
+- Source feature SHA: `affa9bfc702316e6d1eb7d00f3be8f45a6c116c2`
 
 **3. Changes**
 Documentation correction (R7 verification evidence update) plus reproduced bug-fix commits resolving completeness (ProfileEditSkill missing), security (Idempotency and concurrency locks on booking, Claims airport hints spoofing, hardcoded model in rescue_engine), and user-flow (Keyboard accessibility on nav icons, separate recovery approval in legacy).
