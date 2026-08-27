@@ -40,6 +40,7 @@ from models.schemas import (
     ConfirmationChip,
     DateWindow,
     GraphNodeStateV2,
+    ItineraryReplacementRequest,
     RequestedServices,
     SafetyQuery,
     TripGoal,
@@ -1996,29 +1997,33 @@ async def trips_plan(trip_id: str):
 
 
 @trips_router.post("/{trip_id}/itinerary/sections/{section_id}/replace")
-async def trips_itinerary_replace_section(trip_id: str, section_id: str, body: dict):
-    from services.skills.itinerary import ItinerarySkill
+async def trips_itinerary_replace_section(
+        trip_id: str, section_id: str, body: ItineraryReplacementRequest):
     orch = get_trip_orchestrator()
     trip = orch._trip_or_404(trip_id)
     
     itin = trip.context.get("itinerary") or {}
     items = itin.get("items") or []
     
-    result = ItinerarySkill.replace_section(items, section_id, body)
+    result = ItinerarySkill.replace_section(
+        items, section_id, body,
+        timezone_name=itin.get("timezone") or "Asia/Singapore")
     if "error" in result:
         # e.g. unknown_section, booked_flight_rejected, validation_error
         code = 404 if result["error"] == "unknown_section" else 422
         raise TripApiError(code, result["error"], result.get("message", "Cannot replace section"), recoverable=True)
     
-    # Store updated items back to context
-    itin["items"] = result["items"]
+    # Store the complete recomputed contract, not only the changed card.
+    for key in ("items", "count", "timezone", "budget", "validation"):
+        itin[key] = result[key]
     trip.context["itinerary"] = itin
     
     return {
         "trip_id": trip_id,
         "section_id": section_id,
         "replaced": result["replaced"],
-        "overlaps": result["overlaps"],
+        "overlaps": result["validation"]["overlaps"],
+        "itinerary": itin,
         "state": orch.state(trip_id)
     }
 

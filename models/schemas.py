@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any, Literal
 from datetime import date, datetime, timezone
+import math
 import uuid
 
 class FlightOffer(BaseModel):
@@ -464,9 +465,28 @@ class ItineraryItem(BaseModel):
     source: str  # atlas_real | organizer | amadeus | osm | researched_mock | llm_suggestion
     honesty_label: str  # §15.2 chip text
     price_range_sgd: Optional[List[float]] = None
-    details: Dict[str, Any] = {}
-    provenance: ItemProvenance = ItemProvenance()
+    details: Dict[str, Any] = Field(default_factory=dict)
+    provenance: ItemProvenance = Field(default_factory=ItemProvenance)
     booked: bool = False  # True for flight items linked to a BookingRecord
+
+
+class ItineraryReplacementRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=160)
+    kind: Literal["hotel", "activity", "local_transport"]
+    price_range_sgd: Optional[List[float]] = Field(
+        default=None, min_length=2, max_length=2)
+    details: Dict[str, Any] = Field(default_factory=dict)
+    source_url: Optional[str] = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_price_range(self):
+        if self.price_range_sgd is not None:
+            low, high = self.price_range_sgd
+            if (not math.isfinite(low) or not math.isfinite(high)
+                    or low < 0 or high < low):
+                raise ValueError(
+                    "price_range_sgd must be non-negative and ordered low to high")
+        return self
 
 
 class ScopeClarificationRequest(BaseModel):

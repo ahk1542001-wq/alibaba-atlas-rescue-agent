@@ -562,6 +562,9 @@ def test_s8_flight_item_tagged_atlas_real(tmp_path):
     flight = out["items"][0]
     assert flight["source"] == "atlas_real"
     assert flight["kind"] == "flight"
+    assert out["timezone"] == "Asia/Singapore"
+    assert out["budget"]["currency"] == "SGD"
+    assert out["validation"]["invalid_ranges"] == []
 
 
 def test_s8_researched_mock_file_tagged_with_as_of_chip(tmp_path):

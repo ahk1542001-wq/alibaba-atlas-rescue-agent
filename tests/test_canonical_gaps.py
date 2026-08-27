@@ -150,19 +150,83 @@ def test_gap2_and_gap3_recovery_rebooking_and_idempotency(harness):
 
 def test_gap4_itinerary_replace_section():
     items = [
-        {"item_id": "i1", "kind": "flight", "booked": True},
-        {"item_id": "i2", "kind": "hotel", "booked": False},
-        {"item_id": "i3", "kind": "activity", "booked": False}
+        {
+            "item_id": "i1", "name": "SQ 712", "kind": "flight",
+            "source": "atlas_real", "booked": True,
+            "details": {
+                "dep_time": "2026-09-28T09:30:00+07:00",
+                "arr_time": "2026-09-28T13:00:00+08:00",
+            },
+        },
+        {
+            "item_id": "i2", "name": "Old Hotel", "kind": "hotel",
+            "source": "researched_mock", "booked": False,
+            "price_range_sgd": [120, 180],
+            "details": {
+                "start_time": "2026-09-28T15:00:00+08:00",
+                "end_time": "2026-09-30T11:00:00+08:00",
+            },
+        },
+        {
+            "item_id": "i3", "name": "Gardens", "kind": "activity",
+            "source": "organizer", "booked": False,
+            "details": {
+                "start_time": "2026-09-29T10:00:00+08:00",
+                "end_time": "2026-09-29T12:00:00+08:00",
+            },
+        },
     ]
+    summary = ItinerarySkill.summarize(items, "Asia/Singapore")
+    assert summary["timezone"] == "Asia/Singapore"
+    assert summary["budget"]["total_range_sgd"] == [120.0, 180.0]
+    assert summary["budget"]["by_category"]["hotel"] == [120.0, 180.0]
+    assert summary["validation"]["invalid_ranges"] == []
+
     # reject replacing booked flights
     res1 = ItinerarySkill.replace_section(items, "i1", {})
     assert res1.get("error") == "booked_section_immutable"
-    
+
     # replace unbooked
-    res2 = ItinerarySkill.replace_section(items, "i2", {"name": "New Hotel", "kind": "hotel"})
+    before_first = dict(items[0])
+    before_last = dict(items[2])
+    res2 = ItinerarySkill.replace_section(items, "i2", {
+        "name": "New Hotel",
+        "kind": "hotel",
+        "price_range_sgd": [150, 210],
+        "details": {
+            "start_time": "2026-09-28T15:00:00+08:00",
+            "end_time": "2026-09-30T11:00:00+08:00",
+        },
+    }, timezone_name="Asia/Singapore")
     assert res2.get("replaced", {}).get("before", {}).get("item_id") == "i2"
     assert res2["items"][1]["name"] == "New Hotel"
     assert "user-replaced section" in res2["items"][1]["honesty_label"]
+    assert res2["items"][0] == before_first
+    assert res2["items"][2] == before_last
+    assert res2["timezone"] == "Asia/Singapore"
+    assert res2["budget"]["total_range_sgd"] == [150.0, 210.0]
+    assert res2["validation"]["overlaps"]
+
+
+def test_gap4_itinerary_overlap_uses_real_iso_instants():
+    items = [
+        {
+            "item_id": "a", "name": "A", "kind": "activity",
+            "details": {
+                "start_time": "2026-09-29T09:00:00+08:00",
+                "end_time": "2026-09-29T10:00:00+08:00",
+            },
+        },
+        {
+            "item_id": "b", "name": "B", "kind": "activity",
+            "details": {
+                "start_time": "2026-09-29T02:30:00+00:00",
+                "end_time": "2026-09-29T03:30:00+00:00",
+            },
+        },
+    ]
+    result = ItinerarySkill.summarize(items, "Asia/Singapore")
+    assert result["validation"]["overlaps"] == []
 
 
 def test_gap5_recovery_plan_no_sq999_fabrication():

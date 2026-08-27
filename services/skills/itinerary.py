@@ -12,14 +12,27 @@ chain actually attempted.
 """
 
 import json
-from datetime import date
+from copy import deepcopy
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from pydantic import ValidationError
+
+from models.schemas import ItineraryReplacementRequest
 from services.skills.base import SkillBase
 
 _DEFAULT_HOTELS_PATH = Path(__file__).resolve().parent.parent.parent \
     / "data" / "mock_hotels_sg.json"
+
+_AIRPORT_TIMEZONES = {
+    "SIN": "Asia/Singapore",
+    "BKK": "Asia/Bangkok",
+    "DMK": "Asia/Bangkok",
+    "RGN": "Asia/Yangon",
+    "FRA": "Europe/Berlin",
+}
 
 
 def _valid_entry(entry: Any) -> bool:
@@ -157,18 +170,161 @@ class ItinerarySkill(SkillBase):
             if "item_id" not in item:
                 item["item_id"] = f"itin-{i:03d}-{item.get('kind', 'item')[:4]}"
 
+        timezone_name = self._timezone_for_booking(booking)
         return {
             "items": items,
             "providers_tried": providers_tried,
+            **self.summarize(items, timezone_name),
+        }
+
+    @staticmethod
+    def _timezone_for_booking(booking: Dict[str, Any]) -> str:
+        option = booking.get("option") or {}
+        airport = str(((option.get("arr") or {}).get("airport")) or "").upper()
+        return _AIRPORT_TIMEZONES.get(airport, "UTC")
+
+    @staticmethod
+    def _parse_time(value: Any, timezone_name: str) -> Optional[datetime]:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        raw = value.strip().replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(raw)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=ZoneInfo(timezone_name))
+            return parsed.astimezone(timezone.utc)
+        except (ValueError, ZoneInfoNotFoundError):
+            return None
+
+    @classmethod
+    def _time_range(cls, item: Dict[str, Any],
+                    timezone_name: str) -> tuple[Optional[datetime], Optional[datetime], Any, Any]:
+        details = item.get("details") or {}
+        if item.get("kind") == "flight":
+            raw_start = details.get("dep_time")
+            raw_end = details.get("arr_time")
+        else:
+            raw_start = details.get("start_time")
+            raw_end = details.get("end_time")
+        return (cls._parse_time(raw_start, timezone_name),
+                cls._parse_time(raw_end, timezone_name),
+                raw_start, raw_end)
+
+    @classmethod
+    def summarize(cls, items: List[Dict[str, Any]],
+                  timezone_name: str = "Asia/Singapore") -> Dict[str, Any]:
+        by_category: Dict[str, List[float]] = {}
+        total_low = 0.0
+        total_high = 0.0
+        priced_items = 0
+        invalid_prices: List[Dict[str, Any]] = []
+        for item in items:
+            price = item.get("price_range_sgd")
+            if price is None:
+                continue
+            if (not isinstance(price, list) or len(price) != 2
+                    or not all(isinstance(v, (int, float)) for v in price)
+                    or price[0] < 0 or price[1] < price[0]):
+                invalid_prices.append({"item_id": item.get("item_id"),
+                                       "reason": "invalid_price_range"})
+                continue
+            low, high = float(price[0]), float(price[1])
+            category = str(item.get("kind") or "other")
+            current = by_category.setdefault(category, [0.0, 0.0])
+            current[0] += low
+            current[1] += high
+            total_low += low
+            total_high += high
+            priced_items += 1
+
+        ranges = []
+        invalid_ranges: List[Dict[str, Any]] = []
+        for item in items:
+            start, end, raw_start, raw_end = cls._time_range(
+                item, timezone_name)
+            if raw_start is None and raw_end is None:
+                continue
+            if start is None or end is None or end <= start:
+                invalid_ranges.append({
+                    "item_id": item.get("item_id"),
+                    "reason": "invalid_time_range",
+                })
+                continue
+            ranges.append((start, end, item))
+
+        overlaps: List[Dict[str, Any]] = []
+        ranges.sort(key=lambda row: row[0])
+        for index, (start, end, item) in enumerate(ranges):
+            for other_start, other_end, other in ranges[index + 1:]:
+                if other_start >= end:
+                    break
+                if start < other_end and end > other_start:
+                    overlaps.append({
+                        "item_ids": [item.get("item_id"), other.get("item_id")],
+                        "reason": "schedule_overlap",
+                    })
+
+        transfer_warnings: List[Dict[str, Any]] = []
+        flights = [r for r in ranges if r[2].get("kind") == "flight"]
+        non_flights = [r for r in ranges if r[2].get("kind") != "flight"]
+        for _, arrival, flight in flights:
+            future = [r for r in non_flights if r[0] >= arrival]
+            if future:
+                next_start, _, next_item = min(future, key=lambda row: row[0])
+                minutes = int((next_start - arrival).total_seconds() / 60)
+                if minutes < 90:
+                    transfer_warnings.append({
+                        "from_item_id": flight.get("item_id"),
+                        "to_item_id": next_item.get("item_id"),
+                        "available_minutes": minutes,
+                        "reason": "insufficient_airport_transfer_time",
+                    })
+
+        check_in_warnings: List[Dict[str, Any]] = []
+        latest_arrival = max((end for _, end, item in flights), default=None)
+        if latest_arrival is not None:
+            for item in items:
+                if item.get("kind") != "hotel":
+                    continue
+                latest_raw = (item.get("details") or {}).get(
+                    "latest_check_in_time")
+                latest_check_in = cls._parse_time(latest_raw, timezone_name)
+                if latest_raw and (latest_check_in is None
+                                   or latest_arrival > latest_check_in):
+                    check_in_warnings.append({
+                        "item_id": item.get("item_id"),
+                        "reason": "arrival_after_latest_check_in",
+                    })
+
+        valid = not (invalid_ranges or invalid_prices or overlaps
+                     or transfer_warnings or check_in_warnings)
+        return {
             "count": len(items),
+            "timezone": timezone_name,
+            "budget": {
+                "currency": "SGD",
+                "by_category": by_category,
+                "total_range_sgd": [total_low, total_high],
+                "priced_items": priced_items,
+                "unpriced_items": len(items) - priced_items,
+            },
+            "validation": {
+                "valid": valid,
+                "overlaps": overlaps,
+                "invalid_ranges": invalid_ranges,
+                "invalid_prices": invalid_prices,
+                "transfer_warnings": transfer_warnings,
+                "check_in_warnings": check_in_warnings,
+            },
         }
 
     # -- replace-one-section (§15.2, F16) ----------------------------------------
 
-    @staticmethod
-    def replace_section(items: List[Dict[str, Any]],
+    @classmethod
+    def replace_section(cls, items: List[Dict[str, Any]],
                         target_id: str,
-                        replacement: Dict[str, Any]) -> Dict[str, Any]:
+                        replacement: Dict[str, Any],
+                        timezone_name: str = "Asia/Singapore") -> Dict[str, Any]:
         """Replace a single non-booked itinerary section by item_id.
 
         Rules:
@@ -204,58 +360,45 @@ class ItinerarySkill(SkillBase):
                     "hint": "POST /api/trips/{id}/plan to start a new booking, "
                             "or use the recovery approval if disrupted"}
 
-        # Validate replacement has required fields
+        if hasattr(replacement, "model_dump"):
+            replacement = replacement.model_dump(mode="json")
         if not isinstance(replacement, dict):
             return {"error": "invalid_replacement",
-                    "message": "replacement must be a dict with name, kind, "
-                               "and honesty_label",
+                    "message": "replacement must contain a name and section kind",
                     "recoverable": True}
-        for required in ("name", "kind"):
-            if not replacement.get(required):
-                return {"error": "invalid_replacement",
-                        "message": f"replacement missing required field: {required}",
-                        "recoverable": True}
+        try:
+            request = ItineraryReplacementRequest.model_validate(replacement)
+        except ValidationError as exc:
+            first = exc.errors()[0] if exc.errors() else {}
+            location = ".".join(map(str, first.get("loc") or [])) or "request"
+            return {"error": "invalid_replacement",
+                    "message": f"invalid replacement field: {location}",
+                    "recoverable": True}
+        normalized = request.model_dump(mode="json")
 
         # Build the replacement item with provenance
         new_item = {
             "item_id": target_id,  # preserve the section ID
-            "name": replacement["name"],
-            "kind": replacement["kind"],
-            "source": replacement.get("source", "user_replacement"),
-            "honesty_label": replacement.get("honesty_label",
-                                              "user-replaced section"),
-            "price_range_sgd": replacement.get("price_range_sgd"),
-            "details": replacement.get("details", {}),
-            "provenance": replacement.get("provenance", {
-                "source_url": None,
+            "name": normalized["name"],
+            "kind": normalized["kind"],
+            "source": "user_replacement",
+            "honesty_label": "user-replaced section (not booked)",
+            "price_range_sgd": normalized.get("price_range_sgd"),
+            "details": normalized.get("details", {}),
+            "provenance": {
+                "source_url": normalized.get("source_url"),
                 "retrieved_date": date.today().isoformat(),
                 "researched_as_of": None,
                 "degraded": False,
-            }),
+            },
             "booked": False,
         }
 
-        # Check schedule overlap with other items
-        overlaps = []
-        new_start = (replacement.get("details") or {}).get("start_time")
-        new_end = (replacement.get("details") or {}).get("end_time")
-        if new_start and new_end:
-            for i, item in enumerate(items):
-                if i == target_idx:
-                    continue
-                item_start = (item.get("details") or {}).get("start_time")
-                item_end = (item.get("details") or {}).get("end_time")
-                if item_start and item_end:
-                    if new_start < item_end and new_end > item_start:
-                        overlaps.append({
-                            "item_id": item.get("item_id"),
-                            "name": item.get("name"),
-                            "conflict": "schedule_overlap"})
-
         # Preserve unrelated items exactly, replace only the target
-        before = dict(target_item)
+        before = deepcopy(target_item)
         updated_items = list(items)
         updated_items[target_idx] = new_item
+        summary = cls.summarize(updated_items, timezone_name)
 
         return {
             "items": updated_items,
@@ -264,6 +407,5 @@ class ItinerarySkill(SkillBase):
                 "before": before,
                 "after": new_item,
             },
-            "overlaps": overlaps,
-            "count": len(updated_items),
+            **summary,
         }
