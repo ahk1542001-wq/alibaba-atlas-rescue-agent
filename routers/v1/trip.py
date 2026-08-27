@@ -1019,9 +1019,10 @@ class TripOrchestrator:
                                recoverable=True,
                                hint="decision must be 'approve' or 'reject'; "
                                     "booking approvals carry value.option_id")
-        resolved: Dict[str, Any] = {"approved": decision == "approve"}
+        resolved: Dict[str, Any] = {}
         if isinstance(value, dict):
             resolved.update(value)
+        resolved["approved"] = (decision == "approve")
         if decision == "approve" and "option_id" not in resolved:
             raise TripApiError(422, "missing_option",
                                "booking approval requires value.option_id",

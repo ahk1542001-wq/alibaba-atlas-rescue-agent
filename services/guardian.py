@@ -35,9 +35,9 @@ async def notify(
 
     if not token or not chat_id or not getattr(settings, "telegram_live_test", False):
         return {
-            "pushed": False,
+            "simulated": True, "sent": False,
             "reason": "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not configured, or TELEGRAM_LIVE_TEST not true",
-            "mocked_payload": payload
+            "mocked_text": text
         }
 
     url = f"{TELEGRAM_API}/bot{token}/sendMessage"

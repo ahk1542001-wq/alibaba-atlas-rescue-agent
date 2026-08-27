@@ -499,7 +499,7 @@ def test_s6_stale_citation_marks_stale():
 
 def test_s6_yesterday_date_only_citation_is_stale_under_24h_policy():
     """Day-granular aging treated yesterday as fresh; real aging must not."""
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
     skill = VisaCheckSkill(web_intel=FakeWebIntel(retrieved=yesterday),
                            max_age_hours=24)
     out = _run(skill.run({"passport_country": "MM", "route": ["BKK", "SIN"]}))

@@ -1810,7 +1810,7 @@ def test_AJ13_legacy_canary(tracked_page, install_orch):
     )
     missing = [cid for cid in canary_ids
                if page.locator(f"#{cid}").count() == 0]
-    assert not missing, f"frozen canary ids missing: {missing}"
+    if missing: print("HTML:", page.content()[-1500:]); assert not missing, f"frozen canary ids missing: {missing}"
     for view in ("rescue", "search", "concierge", "radar", "trip"):
         assert page.locator(f"#view-{view}").count() == 1, view
     # byte-frozen legacy engine

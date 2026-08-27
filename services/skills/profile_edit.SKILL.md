@@ -5,6 +5,6 @@ class: ProfileEditSkill
 description: when user edits profile facts via UI or chat
 input_model: dict
 output_model: dict
-capabilities:
+allowed-tools:
   - profile_write
 ---
