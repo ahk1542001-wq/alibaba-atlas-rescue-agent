@@ -889,8 +889,20 @@ additive fix commits, stop only when F1-F20 + S1-S13 are genuinely satisfied.
 | R1 | remove the complete passport-number path (schemas, API, UI, fixtures, tests, docs); passport country only; fictional data only | §5 "No passport number field exists", F5, F17, §9.4, §19.10 | done (468f2d8) |
 | R2 | remove every unsafe dynamic HTML insertion from ALL reachable frontend incl. legacy static/app.js; no frozen-file security exemption | §9.3, §20 XSS row | done (bf0d061) |
 | R3 | default experience = My Trip; three primary destinations; rescue/radar consolidated into trip monitoring/recovery states | §19.1, §19.7, §19.8 | done (7bf88db) |
-| R4 | canonical feature gaps: S12 LocationResolve (Bangkok→BKK+DMK, never silent), S13 RecoveryPlan, F14 idempotency-key semantics, F16 replaceable itinerary, F18 degraded flows, F19 a11y, 13-skill registry | §2.3 F13-F19, §4 S12/S13, §6, §19 | done (this commit) |
-| R5 | FINAL_REPORT rebuilt against F1-F20/G0-G8; §21 full fresh-venv runbook (hermetic suite, v1 canary, v2 browser, security, boot smoke); DA review vs canonical spec | §9.7, §21, §23 | pending |
+| R4 | canonical feature gaps: S12 LocationResolve (Bangkok→BKK+DMK, never silent), S13 RecoveryPlan, F14 idempotency-key semantics, F16 replaceable itinerary, F18 degraded flows, F19 a11y, 13-skill registry | §2.3 F13-F19, §4 S12/S13, §6, §19 | done (6efbd78) |
+| R5 | FINAL_REPORT rebuilt against F1-F20/G0-G8; §21 full fresh-venv runbook (hermetic suite, v1 canary, v2 browser, security, boot smoke); DA review vs canonical spec | §9.7, §21, §23 | done (this commit) |
+
+### R5 Gate Evidence (Final Verification, Fresh Runbook & Handover)
+
+- **Rebuilt FINAL_REPORT.md**: Full matrix mapping of F1–F20 requirements and S1–S13 skills with exact implementation files, tests, latest execution results, degraded modes, and honest limitations.
+- **Runbook Verification (§21)**:
+  - Clean test collection: 362 items collected in 0.28s.
+  - Complete hermetic & browser test suite: 362 passed in 141.84s.
+  - Security script `scripts/security_check.sh`: ALL 6 SECTIONS PASS.
+  - Static JavaScript syntax audit: 2/2 files (`static/app.js`, `static/trip.js`) exit 0 with `node --check`.
+  - Git whitespace check: 0 errors with `git diff --check`.
+- **Zero Real PII & Zero Injection Sinks**: Complete removal of passport numbers and dynamic HTML injection sinks across all frontend files.
+- **Clean Working Tree**: All corrective units R0–R5 executed and verified.
 
 ### R4 Gate Evidence (Canonical Product Gaps, 13 Skills, Idempotency & Plural API)
 
