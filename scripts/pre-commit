@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# G5 Security & Audit Gate — version-controlled pre-commit hook.
+# Install: scripts/security_check.sh --install-hook  (copies this file to
+# .git/hooks/pre-commit). Refuses to commit staged content matching a
+# banned secret pattern (scripts/banned_secret_patterns.txt); delegates
+# ADDITIONALLY to gitleaks when the binary is present.
+set -u
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+PATTERN_FILE="$REPO_ROOT/scripts/banned_secret_patterns.txt"
+
+if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks protect --staged --redact --no-banner --source "$REPO_ROOT"; then
+        echo "pre-commit: gitleaks found secret(s) in staged content — commit refused" >&2
+        exit 1
+    fi
+fi
+
+if [ ! -f "$PATTERN_FILE" ]; then
+    echo "pre-commit: banned-pattern file missing ($PATTERN_FILE) — refusing fail-open" >&2
+    exit 1
+fi
+
+staged="$(git diff --cached --diff-filter=ACMR -U0)"
+hits=0
+while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    matches="$(printf '%s\n' "$staged" | grep -nE "^\+.*$p" || true)"
+    if [ -n "$matches" ]; then
+        echo "pre-commit: banned secret pattern in staged content: $p" >&2
+        printf '%s\n' "$matches" | head -5 >&2
+        hits=1
+    fi
+done < "$PATTERN_FILE"
+
+if [ "$hits" -ne 0 ]; then
+    echo "pre-commit: commit refused — remove the secret(s) and retry" >&2
+    exit 1
+fi
+exit 0

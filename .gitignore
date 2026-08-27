@@ -3,6 +3,8 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .env
+*.env*
+!.env.example
 .venv/
 venv/
 *.log
@@ -12,3 +14,4 @@ data/profiles/
 data/mock_victor.json
 .DS_Store
 .superpowers/
+.qoder/

@@ -76,10 +76,10 @@ test_skills_manifest).
 - Evidence: PNGs + browser console capture with zero errors.
 
 ### G5 Security & Audit Gate
-- [ ] gitleaks pre-commit hook; banned-pattern grep over tracked tree returns zero
-- [ ] dependency advisory scan of new deps
-- [ ] XSS check (textContent/createElement only), pydantic boundary validation, profile chmod verified
-- Evidence: `scripts/security_check.sh` output.
+- [x] gitleaks pre-commit hook; banned-pattern grep over tracked tree returns zero
+- [x] dependency advisory scan of new deps
+- [x] XSS check (textContent/createElement only), pydantic boundary validation, profile chmod verified
+- Evidence: `scripts/security_check.sh` output (G5 gate section below).
 
 ### G6 Cleanup & Report Gate
 - [ ] dead/experimental code deleted; `git status` shows intentional files only
@@ -159,6 +159,11 @@ Fresh evidence is captured per gate commit; pointers below stay durable.
 | G4.6 endpoints GET/POST /api/trip/{id}/safety[/recheck\|/acknowledge\|/monitor] | `routers/v1/trip.py` | `tests/test_safety.py` API section | G4.6 gate commit pytest output |
 | G4.6 SKILL.md manifests (loader rules + zero capability drift) | `services/safety/safety_research.SKILL.md`, `services/safety/safety_monitor.SKILL.md` | `tests/test_safety.py::test_safety_manifests_pass_loader_rules_and_have_no_capability_drift` | G4.6 gate commit pytest output |
 | G4.6 My-trip Safety card UI (beginner language, foreign-advice labeling, Check again, no numeric score) | `static/index.html`, `static/trip.js`, `static/styles.css` (append-only) | `tests/test_ui_trip.py` 6 G4.6 flows | G4.6 gate commit pytest output |
+| G5 secret scan (banned patterns over tracked tree ZERO; pre-commit hook on staged content, gitleaks-delegating when installed) | `scripts/security_check.sh`, `scripts/pre-commit`, `scripts/banned_secret_patterns.txt` | hook live-fire proof (fake AWS-shaped key refused) + section 1/3 of the gate script | G5 gate commit security_check.sh output |
+| G5 forbidden-file/ignore coverage (*.env*, data/profiles/, mock_victor, screenshots never tracked) | `.gitignore` (hardened: `*.env*` + `!.env.example`, `.qoder/`) | section 2 of the gate script (check-ignore probes) | G5 gate commit security_check.sh output |
+| G5 XSS sink audit (usage-shape sinks; trip.js strict zero, frozen app.js informational) | `scripts/security_check.sh` section 4 | `tests/test_ui_trip.py` XSS-inert payload flow + gate script | G5 gate commit security_check.sh output |
+| G5 pydantic boundary + privacy contracts (masking, consent, chmod 600, PII-free envelopes/logs, safety-contract field ban) | `tests/test_privacy.py` (35 tests) | the suite itself | G5 gate commit pytest output |
+| G5 dependency advisory scan | `.venv` (pip-audit) | `pip-audit` over the installed venv | G5 gate commit security_check.sh output |
 
 ## G2 Devil's Advocate Remediation (against gate commit 2a3715a)
 
@@ -686,4 +691,65 @@ non-UI suite:                              281 passed in 47.89s
                                            (272 gate + 9 new regressions)
 UI suite (tests/test_ui_trip.py):          38 passed in 94.04s
 node --check static/trip.js / app.js:      exit 0
+```
+
+## G5 Security & Audit Gate
+
+Scope: secrets scan, dependency audit, XSS/injection/input validation, and
+profile privacy checks. Delivered as a single reproducible evidence
+producer, `scripts/security_check.sh`, plus a version-controlled pre-commit
+hook. Frozen files and pre-existing tests untouched.
+
+Delivered:
+
+- `scripts/security_check.sh` — six-section gate evidence producer
+  (`--install-hook` copies the hook into `.git/hooks/`). Exits non-zero on
+  any FAIL so it can guard CI at G6.
+- `scripts/pre-commit` + `scripts/banned_secret_patterns.txt` — the
+  version-controlled hook: refuses staged content matching a banned secret
+  pattern (AWS key id, private-key block, GitHub/Slack/OpenAI tokens,
+  URL-embedded credentials) and ADDITIONALLY delegates to gitleaks when the
+  binary is installed. Fails closed if the pattern file is missing.
+- `.gitignore` hardened: `*.env*` with `!.env.example` negation (covers
+  `.env.local`/`.env.backup` variants the old single `.env` line missed)
+  and `.qoder/` local tool state.
+- `tests/test_privacy.py` — 35 hermetic privacy/boundary tests committed
+  (was an untracked G5 leftover): mask_passport vectors, consent-gated
+  persistence, chmod 600, masked-only API/disk bytes, PII-free error
+  envelopes + app logs, cross-user aliasing refusal, safety-contract field
+  ban, official-URL hardening, inert hostile content.
+
+Honesty notes:
+
+- gitleaks binary is NOT installed on this host. The gate is the built-in
+  banned-pattern scan (identical pattern set in hook + tree scan); the hook
+  auto-delegates to gitleaks the moment it is installed. Recorded honestly
+  in the gate output NOTE and in DECISIONS.tsv.
+- Dependency audit: `pip-audit` over the venv reports the runtime deps
+  clean; the only findings were two advisories against `pip` itself
+  (26.1.1), resolved by upgrading the venv's pip to 26.2.1.
+- XSS audit targets USAGE-shape sinks (`.innerHTML =`,
+  `insertAdjacentHTML(`, `document.write(`, `eval(`) so comment text that
+  merely mentions a sink is not a false positive. `static/trip.js` (owned)
+  carries ZERO sinks; frozen legacy `static/app.js` reports its sink lines
+  informationally (canary-covered, sha256-pinned by AJ13).
+- Hook live-fire proof: staging a file whose line carries a fake
+  AWS-shaped key (the `AKIA` prefix + 16 uppercase-alphanumerics shape;
+  literal redacted here so the live hook never refuses this doc) is
+  REFUSED by the hook and the commit does not land; the probe was then
+  removed.
+
+Gate evidence (TZ=UTC, fresh runs):
+
+```
+scripts/security_check.sh:                 ALL SECTIONS PASS
+  1/6 secret scan (tracked tree):          zero banned-pattern hits
+  2/6 forbidden files / ignore coverage:   all PASS
+  3/6 precommit hook + staged scan:        installed, clean
+  4/6 XSS sink audit:                      trip.js zero sinks
+  5/6 privacy/boundary suite:              35 passed
+  6/6 pip-audit:                           No known vulnerabilities found
+hook live-fire:                            fake AWS key refused (exit 1)
+non-UI suite (incl. privacy):              316 passed in 47.78s
+UI suite (tests/test_ui_trip.py):          38 passed in 85.95s
 ```
