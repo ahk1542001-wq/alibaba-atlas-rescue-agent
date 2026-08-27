@@ -1430,6 +1430,17 @@ def test_AJ08_recovery_separate_approval(tracked_page, install_orch):
     outcome = page.locator('[data-testid="aj-recovery-outcome"]')
     expect(outcome).to_be_visible(timeout=20000)
     assert outcome.inner_text().strip()
+    expect(page.locator('[data-testid="aj-recovery-original-receipt"]')) \
+        .to_be_visible(timeout=20000)
+    expect(page.locator('[data-testid="aj-recovery-replacement-receipt"]')) \
+        .to_be_visible(timeout=20000)
+    expect(page.locator('[data-testid="aj-recovery-rights"]')) \
+        .to_contain_text("Passenger rights")
+    expect(page.locator('[data-testid="aj-recovery-monitor"]')) \
+        .to_contain_text("Monitoring the replacement flight")
+    itinerary = page.locator('[data-testid="trip-itinerary"]')
+    expect(itinerary).to_contain_text("cancelled/replaced")
+    expect(itinerary).to_contain_text("booked replacement flight")
     page.screenshot(path=str(SHOTS / "g45_aj08_recovery.png"))
 
 

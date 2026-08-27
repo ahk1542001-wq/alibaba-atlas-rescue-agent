@@ -2238,6 +2238,49 @@
                 : 'Keeping your original plan. No replacement was booked.';
             panel.appendChild(outcome);
         }
+        var receipts = recovery.receipts || {};
+        if (receipts.original || receipts.replacement) {
+            var evidence = el('div', 'aj-recovery-evidence');
+            evidence.appendChild(el('h5', 'aj-recovery-evidence-title',
+                'Sandbox booking records'));
+            if (receipts.original) {
+                var originalReceipt = el('div', 'aj-recovery-receipt');
+                tid(originalReceipt, 'aj-recovery-original-receipt');
+                originalReceipt.appendChild(el('span', 'aj-recovery-receipt-label',
+                    'Original record'));
+                originalReceipt.appendChild(el('strong', '',
+                    receipts.original.pnr || 'Reference unavailable'));
+                evidence.appendChild(originalReceipt);
+            }
+            if (receipts.replacement) {
+                var replacementReceipt = el('div', 'aj-recovery-receipt is-replacement');
+                tid(replacementReceipt, 'aj-recovery-replacement-receipt');
+                replacementReceipt.appendChild(el('span', 'aj-recovery-receipt-label',
+                    'Replacement record'));
+                replacementReceipt.appendChild(el('strong', '',
+                    receipts.replacement.pnr || 'Reference unavailable'));
+                evidence.appendChild(replacementReceipt);
+            }
+            panel.appendChild(evidence);
+        }
+        var rights = recovery.rights || ((((s || {}).outputs || {}).rights) || null);
+        if (rights) {
+            var rightsLine = el('p', 'aj-recovery-rights',
+                rights.regime === 'NONE'
+                    ? 'Passenger rights: no automatic regime matched this route. ' +
+                      (rights.note || '')
+                    : 'Passenger rights: ' + rights.regime +
+                      (rights.legal_citation ? ' · ' + rights.legal_citation : ''));
+            tid(rightsLine, 'aj-recovery-rights');
+            panel.appendChild(rightsLine);
+        }
+        if (recovery.monitor && recovery.monitor.armed) {
+            var monitorLine = el('p', 'aj-recovery-monitor',
+                'Monitoring the replacement flight under ' +
+                (recovery.monitor.pnr || 'the replacement record') + '.');
+            tid(monitorLine, 'aj-recovery-monitor');
+            panel.appendChild(monitorLine);
+        }
         if (recovery.sandbox_note) {
             panel.appendChild(el('p', 'aj-sandbox-note', recovery.sandbox_note));
         }
@@ -2254,7 +2297,14 @@
             invalidatePolls();
             var payload = { decision: decision };
             if (decision === 'approve') payload.value = { option_id: Trip.recoverySelectedId };
-            var headers = { 'Idempotency-Key': generateUUID() };
+            var headers = {};
+            if (decision === 'approve') {
+                if (!Trip.approvalKeys[approval.approval_id]) {
+                    Trip.approvalKeys[approval.approval_id] = generateUUID();
+                }
+                headers['Idempotency-Key'] =
+                    Trip.approvalKeys[approval.approval_id];
+            }
             await api('/api/trip/' + Trip.tripId + '/approvals/' + approval.approval_id,
                       jsonOpts('POST', payload, headers));
             addChat('agent', decision === 'approve'

@@ -5,9 +5,8 @@ snapshot. Reuses RescueEngine / Atlas search patterns without ever booking
 prior to explicit user approval at the recovery gate.
 """
 
-import time
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -64,8 +63,14 @@ class RecoveryPlanSkill(SkillBase):
         origin = str(opt_data.get("dep", {}).get("airport") or event.get("origin") or "BKK").upper()
         destination = str(opt_data.get("arr", {}).get("airport") or event.get("destination") or "SIN").upper()
 
-        # Search alternatives
-        res = self._atlas.search_flights(origin, destination, date="2026-09-29")
+        departure_time = str((opt_data.get("dep") or {}).get("time") or "")
+        travel_date = departure_time[:10] if len(departure_time) >= 10 \
+            else str(event.get("date") or date.today().isoformat())
+        original_id = opt_data.get("id")
+
+        # Search alternatives through the injected Atlas boundary. The date
+        # comes from the original BookingRecord; no fixed demo date is used.
+        res = self._atlas.search_flights(origin, destination, travel_date)
         if hasattr(res, "__await__"):
             raw_offers = await res
         else:
@@ -79,8 +84,11 @@ class RecoveryPlanSkill(SkillBase):
             ).model_dump(mode="json")
 
         recovery_options: List[RecoveryOption] = []
-        for i, offer in enumerate(raw_offers[:3]):
+        for offer in raw_offers:
             norm = normalize_offer(offer)
+            if norm.get("id") == original_id:
+                continue
+            i = len(recovery_options)
             pkg_type = "FASTEST_RECOVERY" if i == 0 else ("CHEAPEST" if i == 1 else "SAME_AIRLINE")
             recovery_options.append(RecoveryOption(
                 option_id=norm["id"],
@@ -89,18 +97,38 @@ class RecoveryPlanSkill(SkillBase):
                 reason=f"{pkg_type.replace('_', ' ').title()} alternative departing at {norm['dep']['time']}",
                 farelock_available=True,
             ))
+            if len(recovery_options) >= 3:
+                break
 
-        primary_opt = recovery_options[0].option
+        if not recovery_options:
+            return RecoveryPlanResult(
+                trip_id=trip_id,
+                status="no_alternatives_available",
+                recovery_options=[],
+                approval_request=None,
+            ).model_dump(mode="json")
+
+        option_snapshots = [
+            option.option.model_dump(mode="json") for option in recovery_options]
         approval_id = f"appr-recov-{uuid.uuid4().hex[:8]}"
         approval = ApprovalRequest(
             approval_id=approval_id,
             trip_id=trip_id,
-            node_name="recovery_plan",
+            node_name="recovery_booking",
             purpose="recovery_booking",
-            immutable_option=primary_opt.model_dump(mode="json"),
-            price_snapshot=primary_opt.price.model_dump(mode="json"),
+            options=[{
+                "id": option.option_id,
+                "label": option.option.flight_no,
+                "reason": option.reason,
+            } for option in recovery_options],
+            immutable_option={"options": option_snapshots},
+            price_snapshot={"options": [
+                {"id": option["id"], "price": option.get("price")}
+                for option in option_snapshots
+            ]},
             created_at=datetime.now(timezone.utc).isoformat(),
-            expires_at=datetime.fromtimestamp(time.time() + 1800, timezone.utc).isoformat(),
+            expires_at=(datetime.now(timezone.utc) + timedelta(minutes=30))
+            .isoformat(),
         )
 
         res = RecoveryPlanResult(

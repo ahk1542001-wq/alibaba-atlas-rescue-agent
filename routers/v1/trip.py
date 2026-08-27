@@ -26,7 +26,8 @@ import json
 import re
 import time
 import uuid
-from datetime import date, datetime, timezone
+from copy import deepcopy
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -52,17 +53,18 @@ from services.research_coordinator import ResearchCoordinator
 from services.rights_engine import airports_to_countries
 from services.safety.policy import normalize_country
 from services.skills import load_skill_registry
-from services.skills.base import SkillBase
+from services.skills.base import SkillBase, SkillError
 from services.skills.clarify_loop import ClarifyLoopSkill
 from services.skills.disruption_monitor import DisruptionMonitorSkill
 from services.skills.flight_book import FlightBookSkill
-from services.skills.flight_search import FlightSearchSkill, normalize_offer
+from services.skills.flight_search import FlightSearchSkill
 from services.skills.goal_intake import GoalIntakeSkill, _extract_dates, \
     _find_city
 from services.skills.guardian_push import GuardianPushSkill
 from services.skills.itinerary import ItinerarySkill
 from services.skills.location_resolve import LocationResolveSkill
 from services.skills.recovery_plan import RecoveryPlanSkill
+from services.skills.rights_check import RightsCheckSkill
 from services.skills.safety_monitor import SafetyMonitorSkill
 from services.skills.safety_research import SafetyResearchSkill
 from services.skills.visa_check import VisaCheckSkill
@@ -369,6 +371,7 @@ class TripOrchestrator:
         ex.register_skill("itinerary", ItinerarySkill())
         ex.register_skill("location_resolve", LocationResolveSkill())
         ex.register_skill("recovery_plan", RecoveryPlanSkill(atlas=atlas_client))
+        ex.register_skill("rights_check", RightsCheckSkill())
         if safety_service is not None:
             ex.register_skill("safety_research", safety_service.research)
             ex.register_skill("safety_monitor", safety_service.monitor)
@@ -857,69 +860,142 @@ class TripOrchestrator:
                                         "value.option_id")
             resolved: Dict[str, Any] = {"approved": decision == "approve",
                                         "kind": "recovery_booking"}
-            
-            # Extract option ID and validate expiry
+
             if approval.expires_at:
-                from datetime import datetime, timezone
-                if datetime.now(timezone.utc) > datetime.fromisoformat(approval.expires_at):
-                    raise TripApiError(400, "approval_expired", "This recovery option has expired.", recoverable=True)
+                expiry = _parse_iso(approval.expires_at)
+                if expiry and datetime.now(timezone.utc) >= expiry:
+                    raise TripApiError(
+                        410, "approval_expired",
+                        "This recovery approval has expired.",
+                        recoverable=True,
+                        hint="refresh the disruption options before booking")
 
             if decision == "approve":
                 oid = value.get("option_id") if isinstance(value, dict) else None
                 rec_opts = (trip.context.get("recovery") or {}).get("options") or []
-                selected_opt = next((o for o in rec_opts if o.get("id") == oid or (o.get("option") or {}).get("id") == oid), None)
-                
+                selected_opt = next((o for o in rec_opts
+                                     if o.get("id") == oid
+                                     or (o.get("option") or {}).get("id") == oid),
+                                    None)
                 if not oid or not selected_opt:
                     raise TripApiError(
                         422, "missing_option",
-                        "recovery approval requires value.option_id from the replacement options", 
+                        "recovery approval requires value.option_id from the replacement options",
                         recoverable=True)
-                
+
                 resolved["option_id"] = oid
-                opt_data = selected_opt.get("option") or selected_opt
+                opt_data = deepcopy(selected_opt.get("option") or selected_opt)
+                approval.immutable_option = deepcopy(opt_data)
+                approval.price_snapshot = deepcopy(opt_data.get("price"))
                 origin = (opt_data.get("dep") or {}).get("airport") or ""
                 destination = (opt_data.get("arr") or {}).get("airport") or ""
-                
-                # Gap 2: Execute REAL recovery rebooking
+
+                # Recovery crosses the exact same safety boundary as the
+                # initial booking. A previous clearance is refreshed when
+                # stale and never silently reused as an override.
+                await self._booking_safety_precheck(trip)
+                original_receipt = deepcopy(trip.context.get("flight_book") or {})
                 try:
                     booking_res = await self.executor._skills["flight_book"].run({
                         "trip_id": trip_id,
                         "option_id": oid,
                         "origin": origin,
                         "destination": destination,
+                        "option": opt_data,
+                        "passenger": trip.context.get("profile") or {},
                     }, trip.context)
-                    resolved["booking"] = booking_res
-                    
-                    # Store distinct recovery receipt, preserving original booking
-                    trip.context["recovery_booking"] = booking_res
-                    
-                    # Add to itinerary and arm monitoring
-                    itin = trip.context.get("itinerary") or {"items": []}
-                    if "items" in itin:
-                        # Find and mark original flight as replaced
-                        for item in itin["items"]:
-                            if item.get("source") == "atlas_real":
-                                item["honesty_label"] = "replaced flight"
-                        
-                        # Add new flight
-                        dep = opt_data.get("dep", {})
-                        arr = opt_data.get("arr", {})
-                        new_flt = {
-                            "item_id": f"itin-flt-{(opt_data.get('flight_no') or 'x')[:8]}",
-                            "name": f"{opt_data.get('carrier', '')} {opt_data.get('flight_no', '')} {dep.get('airport', '?')}→{arr.get('airport', '?')}".strip(),
-                            "kind": "flight",
-                            "source": "atlas_real",
-                            "honesty_label": "booked replacement flight (Atlas sandbox record)",
-                            "details": {"pnr": booking_res.get("pnr"), "dep_time": dep.get("time"), "arr_time": arr.get("time"), "status": booking_res.get("status")},
-                            "provenance": {"source_url": None, "retrieved_date": None, "researched_as_of": None, "degraded": False},
-                            "booked": True,
-                        }
-                        itin["items"].insert(0, new_flt)
-                        trip.context["itinerary"] = itin
-                        
-                except Exception as e:
-                    # In case of skill error, let it propagate as GraphError/TripApiError
-                    raise
+                except SkillError as exc:
+                    raise TripApiError(
+                        422, exc.code, exc.message,
+                        recoverable=exc.recoverable,
+                        hint=_HINTS.get(exc.code) or exc.message)
+                except Exception as exc:  # provider may have accepted before timeout
+                    resolved["booking_outcome"] = "uncertain"
+                    resolved["provider_error"] = type(exc).__name__
+                    rec = trip.context.get("recovery") or {}
+                    rec["resolved"] = resolved
+                    rec["booking_outcome"] = "uncertain"
+                    rec["note"] = (
+                        "The replacement provider response was uncertain. "
+                        "No automatic retry will create another order; "
+                        "reconcile the Sandbox booking before trying again.")
+                    trip.context["recovery"] = rec
+                    async with trip.lock:
+                        if approval in trip.pending_approvals:
+                            trip.pending_approvals.remove(approval)
+                        approval.resolved_value = resolved
+                        trip.status = "failed"
+                        trip.current = None
+                    self._record(
+                        trip, "recovery_booking", "flight_book", "FAILED", 0.0,
+                        {"error_code": "provider_outcome_uncertain",
+                         "message": rec["note"], "recoverable": True})
+                    res = self.resume_result(trip_id)
+                    res["recovery"] = rec
+                    if ledger_key and payload_hash:
+                        self._idempotency_ledger[ledger_key] = (
+                            payload_hash, res)
+                    return res
+
+                if not booking_res.get("booking"):
+                    raise TripApiError(
+                        502, "incomplete_booking_receipt",
+                        "the Sandbox booking response did not include the "
+                        "immutable replacement option record",
+                        recoverable=True,
+                        hint="do not treat this response as a confirmed replacement")
+
+                rights = await self.executor._skills["rights_check"].run({
+                    "origin_airport": origin,
+                    "destination_airport": destination,
+                    "event": (trip.context.get("recovery") or {}).get("event"),
+                }, trip.context)
+                monitor = await self.executor._skills["disruption_monitor"].run({
+                    "pnr": booking_res.get("pnr"),
+                    "trip_id": trip_id,
+                    "flight_ids": [opt_data.get("flight_no")],
+                }, trip.context)
+
+                trip.context["recovery_booking"] = booking_res
+                trip.context["rights"] = rights
+                trip.context["disruption_monitor"] = monitor
+                rec = trip.context.get("recovery") or {}
+                receipts = rec.setdefault("receipts", {})
+                receipts["original"] = original_receipt
+                receipts["replacement"] = deepcopy(booking_res)
+                rec["rights"] = rights
+                rec["monitor"] = monitor
+                trip.context["recovery"] = rec
+
+                itin = trip.context.get("itinerary") or {"items": []}
+                items = itin.setdefault("items", [])
+                for item in items:
+                    if item.get("kind") == "flight" \
+                            and item.get("source") == "atlas_real":
+                        item["honesty_label"] = (
+                            "original booked flight — cancelled/replaced")
+                        details = item.setdefault("details", {})
+                        details["status"] = "CANCELLED_REPLACED"
+                replacement_item = ItinerarySkill._flight_item(
+                    booking_res["booking"])
+                if replacement_item:
+                    replacement_item["honesty_label"] = (
+                        "booked replacement flight (Atlas sandbox record)")
+                    items.insert(0, replacement_item)
+                summary = ItinerarySkill.summarize(
+                    items, itin.get("timezone") or
+                    ItinerarySkill._timezone_for_booking(booking_res["booking"]))
+                itin.update(summary)
+                trip.context["itinerary"] = itin
+
+                resolved.update({
+                    "booking": booking_res,
+                    "booking_outcome": "confirmed",
+                    "original_receipt": original_receipt,
+                    "replacement_receipt": deepcopy(booking_res),
+                    "rights": rights,
+                    "monitor": monitor,
+                })
 
             async with trip.lock:
                 if approval in trip.pending_approvals:
@@ -1328,6 +1404,12 @@ class TripOrchestrator:
         recovery = ctx.get("recovery")
         if recovery:
             outputs["recovery"] = recovery
+        recovery_booking = ctx.get("recovery_booking")
+        if recovery_booking:
+            outputs["recovery_booking"] = recovery_booking
+        rights = ctx.get("rights")
+        if rights:
+            outputs["rights"] = rights
         # Task #13: safety assessment + change events surface in trip state
         outputs["safety_enabled"] = self.safety is not None
         safety = ctx.get("safety")
@@ -1410,6 +1492,8 @@ class TripOrchestrator:
         recovery: Dict[str, Any] = {
             "event": event, "original": original, "options": [],
             "degraded": False, "note": "",
+            "receipts": {"original": deepcopy(booking),
+                         "replacement": None},
             "sandbox_note": "Replacement options come from the Atlas Sandbox "
                             "— a safe practice environment with researched "
                             "mock data.",
@@ -1458,15 +1542,14 @@ class TripOrchestrator:
                              "safety_research", "FAILED", 0.0,
                              {"error": type(safety_error).__name__})
         if dep.get("airport") and arr.get("airport"):
-            date_iso = str(dep.get("time") or "")[:10] \
-                or date.today().isoformat()
             try:
-                offers = await self.atlas.search_flights(
-                    dep["airport"], arr["airport"], date_iso)
-                for offer in (offers or [])[:4]:
-                    option = normalize_offer(offer)
-                    if option.get("id") == original.get("id"):
-                        continue
+                plan = await self.executor._skills["recovery_plan"].run({
+                    "trip_id": trip.trip_id,
+                    "booking": (booking.get("booking") or {}),
+                    "event": event,
+                }, trip.context)
+                for row in plan.get("recovery_options") or []:
+                    option = deepcopy(row.get("option") or {})
                     option["reason"] = self._recovery_reason(option, original)
                     recovery["options"].append(option)
             except Exception as exc:  # noqa: BLE001 — hostile upstream
@@ -1476,6 +1559,7 @@ class TripOrchestrator:
                     "no options are shown rather than invented.")
         trip.context["recovery"] = recovery
         if recovery["options"]:
+            option_snapshot = deepcopy(recovery["options"])
             approval = ApprovalRequest(
                 approval_id=f"{trip.trip_id}:rec1",
                 node_name="recovery_booking",
@@ -1483,7 +1567,19 @@ class TripOrchestrator:
                           "label": f"{o.get('carrier', '')} "
                                    f"{o.get('flight_no', '')}".strip()}
                          for o in recovery["options"]],
-                created_at=_now_iso())
+                created_at=_now_iso(),
+                trip_id=trip.trip_id,
+                purpose="recovery_booking",
+                immutable_option={"options": option_snapshot},
+                price_snapshot={
+                    "options": [
+                        {"id": o.get("id"),
+                         "price": deepcopy(o.get("price"))}
+                        for o in option_snapshot
+                    ]
+                },
+                expires_at=(datetime.now(timezone.utc) + timedelta(minutes=30))
+                .isoformat())
             trip.pending_approvals.append(approval)
             trip.status = "awaiting_approval"
             trip.current = "recovery_booking"

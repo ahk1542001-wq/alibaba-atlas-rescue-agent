@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -9,6 +10,40 @@ from routers.v1.trip import get_trip_orchestrator
 from services.skills.recovery_plan import RecoveryPlanSkill
 from services.skills.itinerary import ItinerarySkill
 from tests.test_e2e_trip_journey import _no_llm
+
+
+class RecoveryAtlas(FakeAtlas):
+    def __init__(self):
+        super().__init__()
+        self.search_count = 0
+        self.create_count = 0
+
+    async def search_flights(self, origin, destination, date_, passengers=1,
+                             **kwargs):
+        self.search_count += 1
+        self.calls.append(("search", origin, destination, date_))
+        recovery = self.search_count > 1
+        return [{
+            "offer_id": "off_recovery_2" if recovery else "off_initial_1",
+            "airline_code": "SQ", "airline": "Singapore Airlines",
+            "flight_number": "SQ714" if recovery else "SQ712",
+            "origin": origin, "destination": destination,
+            "departure_time": f"{date_} {'15:30' if recovery else '09:30'}",
+            "arrival_time": f"{date_} {'17:00' if recovery else '11:00'}",
+            "duration_minutes": 150,
+            "price_usd": 230.0 if recovery else 210.0,
+            "currency": "USD",
+        }]
+
+    async def create_booking_order(self, offer_id, passenger, **kwargs):
+        self.create_count += 1
+        self.calls.append(("create", offer_id))
+        return {
+            "order_id": f"ORD-{self.create_count}",
+            "pnr": f"ATLAS-R{self.create_count:05d}",
+            "status": "CONFIRMED", "offer_id": offer_id,
+            "booking_timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
 # 1. API Missing Fields & Confirmations
 def test_gap1_api_confirmations_and_plan(harness):
@@ -147,6 +182,105 @@ def test_gap3_initial_booking_atomic_idempotency(harness):
             )
             assert conflict.status_code == 409
             assert conflict.json()["error"]["code"] == "idempotency_conflict"
+
+    _run(flow())
+
+
+def test_gap2_full_recovery_preserves_evidence_and_is_atomic(harness):
+    atlas = RecoveryAtlas()
+    harness(atlas=atlas)
+
+    async def flow():
+        async with _client() as client:
+            user_id = "user_recovery_full"
+            await client.put(
+                f"/api/profile/{user_id}/passport_country",
+                json={"value": "MM"},
+            )
+            start = await client.post("/api/trips", json={
+                "goal_text": (
+                    "Plan my complete trip from BKK to SIN on 2026-09-29"
+                ),
+                "user_id": user_id,
+            })
+            assert start.status_code == 200, start.text
+            trip_id = start.json()["trip_id"]
+            approvals = (await client.get(
+                f"/api/trips/{trip_id}/approvals")).json()["approvals"]
+            initial = next(a for a in approvals
+                           if a["node_name"] == "approve_booking")
+            initial_id = initial["options"][0]["id"]
+            booked = await client.post(
+                f"/api/trips/{trip_id}/approvals/{initial['approval_id']}",
+                json={"decision": "approve",
+                      "value": {"option_id": initial_id}},
+                headers={"Idempotency-Key": "recovery-original-001"},
+            )
+            assert booked.status_code == 200, booked.text
+            original = booked.json()["booking"]
+            assert original["booking"]["option"]["id"] == initial_id
+
+            disrupted = await client.post(
+                f"/api/trips/{trip_id}/simulate-disruption",
+                json={"scenario": "cancellation", "flight_number": "SQ712",
+                      "reason": "Weather test"},
+            )
+            assert disrupted.status_code == 200, disrupted.text
+
+            approvals = (await client.get(
+                f"/api/trips/{trip_id}/approvals")).json()["approvals"]
+            recovery = next(a for a in approvals
+                            if a["node_name"] == "recovery_booking")
+            assert recovery["purpose"] == "recovery_booking"
+            assert recovery["trip_id"] == trip_id
+            assert recovery["immutable_option"]["options"]
+            assert recovery["price_snapshot"]["options"]
+            assert recovery["expires_at"]
+            recovery_id = recovery["options"][0]["id"]
+
+            payload = {"decision": "approve",
+                       "value": {"option_id": recovery_id}}
+            missing = await client.post(
+                f"/api/trips/{trip_id}/approvals/{recovery['approval_id']}",
+                json=payload,
+            )
+            assert missing.status_code == 422
+            assert missing.json()["error"]["code"] == "missing_idempotency_key"
+
+            atlas.calls.clear()
+            headers = {"Idempotency-Key": "recovery-booking-001"}
+
+            async def approve_recovery():
+                return await client.post(
+                    f"/api/trips/{trip_id}/approvals/{recovery['approval_id']}",
+                    json=payload, headers=headers)
+
+            first, replay = await asyncio.gather(
+                approve_recovery(), approve_recovery())
+            assert first.status_code == replay.status_code == 200
+            assert first.json() == replay.json()
+            assert len([c for c in atlas.calls if c[0] == "create"]) == 1
+
+            state = (await client.get(
+                f"/api/trips/{trip_id}/state")).json()
+            outputs = state["outputs"]
+            replacement = outputs["recovery_booking"]
+            assert replacement["booking"]["option"]["id"] == recovery_id
+            receipts = outputs["recovery"]["receipts"]
+            assert receipts["original"]["pnr"] == original["pnr"]
+            assert receipts["replacement"]["pnr"] == replacement["pnr"]
+            assert receipts["original"]["pnr"] != receipts["replacement"]["pnr"]
+            assert outputs["rights"]["regime"] == "NONE"
+            assert outputs["recovery"]["monitor"]["armed"] is True
+            assert outputs["recovery"]["monitor"]["pnr"] == replacement["pnr"]
+
+            flight_items = [i for i in outputs["itinerary"]["items"]
+                            if i["kind"] == "flight"]
+            assert any("cancelled/replaced" in i["honesty_label"]
+                       for i in flight_items)
+            assert any(i["honesty_label"] ==
+                       "booked replacement flight (Atlas sandbox record)"
+                       for i in flight_items)
 
     _run(flow())
 
