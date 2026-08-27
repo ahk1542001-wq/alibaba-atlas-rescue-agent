@@ -2,7 +2,7 @@
 
 **Authoritative Spec**: `docs/MASTER_BUILD_PACKAGE.md` (SHA-256: `6283789fb1ce1f8f23289a65804d776e3e37dd29f7fd03d440f18363ad5e36fc`)
 **Branch**: `feature/trip-agent`
-**Execution Units Completed**: R0 $\to$ R1 $\to$ R2 $\to$ R3 $\to$ R4 $\to$ R5
+**Execution Units Completed**: R0 $\to$ R1 $\to$ R2 $\to$ R3 $\to$ R4 $\to$ R5 $\to$ R6
 **Final Status**: All requirements F1–F20 and S1–S13 fulfilled. Working tree clean.
 
 <!-- GOAL_COMPLETE -->
@@ -16,7 +16,7 @@ TravelCare AI v2 is an autonomous flight disruption and travel recovery agent bu
 ### Fresh Verification Totals
 | Verification Suite | Command | Exit Code | Result |
 |---|---|---|---|
-| Full Pytest Suite | `TZ=UTC pytest` | `0` | **362 passed** in 141.84s |
+| Full Pytest Suite | `TZ=UTC /tmp/v2-proof/bin/pytest -q` | `0` | **366 passed** in 143.59s |
 | Core Skills & Graph | `pytest tests/test_skills_manifest.py tests/test_skills_behavior.py tests/test_trip_graph.py` | `0` | **109 passed** in 0.82s |
 | Safety & Intelligence | `pytest tests/test_safety.py tests/test_web_intel.py tests/test_rights_and_visa.py` | `0` | **109 passed** in 0.78s |
 | Privacy & Store Contracts | `pytest tests/test_profile_store.py tests/test_privacy.py tests/test_mockdata_victor.py` | `0` | **58 passed** in 4.17s |
@@ -38,6 +38,7 @@ TravelCare AI v2 is an autonomous flight disruption and travel recovery agent bu
 | **R3** | `7bf88db` | Product UI architecture: default active view set to My Trip (`#view-trip`); exactly 3 primary destinations; consolidated Rescue/Radar into monitoring/recovery states; verified responsive 360px/375px mobile layouts, keyboard navigation, ARIA live regions, and reduced-motion | **DONE** |
 | **R4** | `6efbd78` | Canonical product gaps: implemented S12 `LocationResolve` (Bangkok $\to$ BKK+DMK with confirmation) and S13 `RecoveryPlan` (recovery options with immutable approval request); expanded registry to 13 validated skills; added plural `/api/trips` router; implemented `Idempotency-Key` replay/conflict ledger; updated canonical `Profile` & `TripGoal` models with safe on-disk migration | **DONE** |
 | **R5** | *(this commit)* | Final canonical verification: rebuilt `FINAL_REPORT.md` covering F1–F20, S1–S13, G0–G8, R0–R5; ran complete fresh-venv runbook (§21); verified clean working tree | **DONE** |
+| **R6** | `HEAD` | Canonical behavior correction (7 Gaps): Plural API behavior, Recovery Rebooking calling Atlas, Idempotency-Key strict checking across ledgers, Replace-one-section byte-equivalence, SQ999 hardcode removal, and Fresh venv evidence. | **DONE** |
 
 ---
 
