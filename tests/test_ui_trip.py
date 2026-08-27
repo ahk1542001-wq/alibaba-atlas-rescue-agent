@@ -44,8 +44,12 @@ SHOTS = Path(__file__).resolve().parent.parent / "screenshots"
 SHOTS.mkdir(exist_ok=True)
 
 HAPPY_GOAL = ("I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30 "
-              "— plan my whole trip from Bangkok.")
-AMBIGUOUS_GOAL = "I need to get to Singapore from Bangkok."
+              "— plan my whole trip from BKK.")
+AMBIGUOUS_GOAL = "I need to get to Singapore from BKK."
+AMBIGUOUS_AIRPORT_GOAL = (
+    "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30 "
+    "— plan my whole trip from Bangkok."
+)
 XSS_GOAL = ('I need to get to <script>window.__xss=1</script>Singapore from '
             'Bangkok <img src=x onerror="window.__xss2=1"> on 2026-09-29.')
 INVALID_DATE_GOAL = "Fly on February 30 2026"   # deterministic 422 trigger
@@ -279,10 +283,6 @@ def set_profile_field(field, value, user="victor"):
     assert resp.status_code == 200, resp.text
 
 
-def set_passport_via_api(value="MM"):
-    set_profile_field("passport_country", value)
-
-
 def preset_passport_home():
     set_profile_field("passport_country", "MM")
     set_profile_field("home_city", "Bangkok")
@@ -297,14 +297,23 @@ def answer_chip(page, field, value, saved_text=None):
     """
     page.fill(f'[data-testid="chip-input-{field}"]', value)
     page.click(f'[data-testid="chip-confirm-{field}"]')
+    expect(page.locator(f'[data-testid="chip-confirm-{field}"]')) \
+        .to_have_text("Confirm this answer", timeout=15000)
+    page.click(f'[data-testid="chip-confirm-{field}"]')
     # durable: the answer becomes an editable confirmed fact
-    expect(page.locator(f'[data-testid="aj-fact-{field}"]')) \
-        .to_contain_text(value, timeout=15000)
     expect(page.locator(f'[data-testid="aj-fact-{field}"]')) \
         .not_to_contain_text("answer needed")
     # durable: the card disappears — the flow moves to the next question
     expect(page.locator(f'[data-testid="chip-input-{field}"]')) \
         .to_be_hidden(timeout=15000)
+
+
+def answer_airport_choice(page, field, value):
+    select = page.locator(f'[data-testid="chip-input-{field}"]')
+    expect(select).to_be_visible(timeout=20000)
+    select.select_option(value)
+    page.click(f'[data-testid="chip-confirm-{field}"]')
+    expect(select).to_be_hidden(timeout=20000)
 
 
 def answer_date_then_scope(page, date_value="Sep 29-30"):
@@ -346,7 +355,7 @@ def open_step(page, n):
 
 def book_happy_trip(page):
     """Shared happy path: goal → options → approval modal → booked PNR."""
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
     start_goal(page, HAPPY_GOAL)
     expect(page.locator('[data-testid="approval-open"]')) \
@@ -377,7 +386,7 @@ def test_b1_goal_chat_clarify_chips_confirm(tracked_page, install_orch):
     open_trace(page)
     expect(page.locator('[data-testid="trip-dag-empty"]')).to_be_visible()
 
-    # ambiguous goal → ONE question card at a time; date comes first
+    # one question at a time; date comes before profile facts
     start_goal(page, AMBIGUOUS_GOAL)
     expect(page.locator('[data-testid="chip-input-date_window"]')) \
         .to_be_visible(timeout=20000)
@@ -409,7 +418,7 @@ def test_b1_goal_chat_clarify_chips_confirm(tracked_page, install_orch):
 def test_b2_b3_sandbox_options_approval_pnr(tracked_page, install_orch):
     install_orch()
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
 
     start_goal(page, HAPPY_GOAL)
@@ -616,7 +625,7 @@ def test_degraded_and_stale_visa_warnings(tracked_page, install_orch):
     #     (AJ: surfaced behind the step-3 Edit pill, never deleted)
     install_orch(fetcher=_offline_fetch)
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
     start_goal(page, HAPPY_GOAL)
     expect(page.locator('[data-testid="approval-open"]')) \
@@ -630,7 +639,7 @@ def test_degraded_and_stale_visa_warnings(tracked_page, install_orch):
 
     # (b) stale citations -> visible stale warning before any booking
     install_orch(fetcher=_stale_fetcher())
-    set_passport_via_api("MM")
+    preset_passport_home()
     page.goto(BASE)
     page.click('[data-testid="nav-trip"]')
     start_goal(page, HAPPY_GOAL)
@@ -1004,7 +1013,7 @@ def test_f4_origin_city_chip_persists_and_trip_resumes(tracked_page,
     answer_chip(page, "origin_city", "Bangkok")
     # F4 intent: the answer persisted server-side into the trip goal
     expect(page.locator('[data-testid="aj-fact-origin_city"]')) \
-        .to_contain_text("Bangkok")
+        .to_contain_text("BKK")
 
     # remaining profile questions (passport, home) then the scope card
     answer_chip(page, "passport_country", "MM", "\u2713 saved to profile")
@@ -1037,7 +1046,7 @@ def test_f6_option_currency_rendered_honestly(tracked_page, install_orch):
 
     install_orch(atlas=ThbAtlas())
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
     start_goal(page, HAPPY_GOAL)
     expect(page.locator('[data-testid="approval-open"]')) \
@@ -1127,7 +1136,7 @@ def test_f10_new_trip_clears_stale_panels(tracked_page, install_orch):
     from trip A may leak into trip B before B's own outputs exist."""
     install_orch()
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
 
     # trip A: full happy flow -> option cards + booked PNR
@@ -1175,7 +1184,11 @@ def test_AJ01_ia_three_destinations(tracked_page, install_orch):
     """Exactly 3 AJ destinations; no engineering dashboard by default."""
     install_orch()
     page = tracked_page
-    goto_trip(page)
+    page.goto(BASE)
+    expect(page.locator("#view-trip")).to_be_visible()
+    expect(page.locator("#view-rescue")).to_be_hidden()
+    expect(page.locator('[data-testid="nav-trip"]')).to_have_class(
+        re.compile(r"\bactive\b"))
     nav = page.locator(".aj-nav-btn")
     assert nav.count() == 3, "AJ IA is exactly Plan a trip / My trip / Help"
     for tid_name in ("aj-nav-plan", "aj-nav-mytrip", "aj-nav-help"):
@@ -1250,7 +1263,26 @@ def test_AJ03_one_question_at_a_time(tracked_page, install_orch):
     answer_chip(page, "date_window", "Sep 2", "\u2713 added to trip")
     # confirmed-facts compact summary updated
     expect(page.locator('[data-testid="aj-fact-date_window"]')) \
-        .to_contain_text("Sep 2")
+        .to_contain_text("2026-09-02 to 2026-09-02")
+
+
+def test_AJ03b_ambiguous_airport_must_be_confirmed(tracked_page, install_orch):
+    """A city with multiple airports pauses on a real choice; once BKK is
+    confirmed, no DMK offer survives into the approval snapshot."""
+    install_orch()
+    preset_passport_home()
+    page = tracked_page
+    goto_trip(page)
+    start_goal(page, AMBIGUOUS_AIRPORT_GOAL)
+
+    answer_airport_choice(page, "confirmed_origin_airport", "BKK")
+
+    open_step(page, 2)
+    cards = page.locator('[data-testid="trip-option-card"]')
+    expect(cards.first).to_be_visible(timeout=20000)
+    for text in cards.all_inner_texts():
+        assert "BKK" in text
+        assert "DMK" not in text
 
 
 def test_AJ04_max_three_options_show_more(tracked_page, install_orch):
@@ -1258,7 +1290,7 @@ def test_AJ04_max_three_options_show_more(tracked_page, install_orch):
     carries a ranking reason + fare + sandbox provenance."""
     install_orch(atlas=ManyAtlas())
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
     start_goal(page, HAPPY_GOAL)
     expect(page.locator('[data-testid="approval-open"]')) \
@@ -1319,7 +1351,7 @@ def test_AJ06_honesty_never_hidden(tracked_page, install_orch):
 
     # degraded visa: offline web-intel flow — warning reachable, never removed
     install_orch(fetcher=_offline_fetch)
-    set_passport_via_api("MM")
+    preset_passport_home()
     page.goto(BASE)
     page.click('[data-testid="nav-trip"]')
     start_goal(page, HAPPY_GOAL)
@@ -1348,7 +1380,7 @@ def test_AJ07_journey_line_states(tracked_page, install_orch):
     disrupted with the coral original + recovery branch."""
     install_orch()
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
     line = page.locator('[data-testid="aj-journey-line"]')
     expect(line).to_have_attribute("data-state", "empty")
@@ -1541,7 +1573,8 @@ def test_AJ10_states_matrix(app_server, ui_browser, install_orch):
             window.__origFetch = window.fetch.bind(window);
             window.fetch = function (input, opts) {
                 const url = typeof input === 'string' ? input : String(input.url);
-                if (url.indexOf('/api/trip/start') !== -1) {
+                if (url.indexOf('/api/trips') !== -1 ||
+                        url.indexOf('/api/trip/start') !== -1) {
                     return Promise.resolve(new Response(
                         JSON.stringify({error: {code: 'boom',
                             message: 'synthetic outage'}}),
@@ -1559,7 +1592,7 @@ def test_AJ10_states_matrix(app_server, ui_browser, install_orch):
         page.evaluate("window.fetch = window.__origFetch;")
 
         # (c) expired approval (410) → fresh-approval path
-        set_passport_via_api("MM")
+        preset_passport_home()
         page.goto(BASE)
         page.click('[data-testid="nav-trip"]')
         start_goal(page, HAPPY_GOAL)
@@ -1625,7 +1658,7 @@ def test_AJ11_a11y_keyboard(tracked_page, install_orch):
     focus and restores it; aj-live carries announcements."""
     install_orch()
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
 
     # keyboard to the goal composer; Enter inside a textarea adds a
@@ -1680,7 +1713,7 @@ def test_AJ12_reduced_motion(app_server, ui_browser, install_orch):
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.set_default_timeout(15000)
     try:
-        set_passport_via_api("MM")
+        preset_passport_home()
         page.goto(BASE)
         page.click('[data-testid="nav-trip"]')
         assert page.evaluate(
@@ -1804,7 +1837,7 @@ def test_ui_safety_card_normal_status_with_sources(tracked_page,
                                                    install_safety_orch):
     install_safety_orch("Exercise normal precautions.")
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
     start_goal(page, HAPPY_GOAL)
     expect(page.locator('[data-testid="approval-open"]')) \
@@ -1841,7 +1874,7 @@ def test_ui_safety_card_normal_status_with_sources(tracked_page,
 def test_ui_safety_do_not_travel_blocks_booking(app_server, ui_browser,
                                                 install_safety_orch):
     install_safety_orch("Do not travel to Singapore.")
-    set_passport_via_api("MM")
+    preset_passport_home()
     context, page, errors = lenient_page(ui_browser)
     try:
         goto_trip(page)
@@ -1879,7 +1912,7 @@ def test_ui_safety_reconsider_requires_acknowledgement(app_server,
                                                        ui_browser,
                                                        install_safety_orch):
     install_safety_orch("Reconsider your need to travel to Singapore.")
-    set_passport_via_api("MM")
+    preset_passport_home()
     context, page, errors = lenient_page(ui_browser)
     try:
         goto_trip(page)
@@ -1928,7 +1961,7 @@ def test_ui_safety_recheck_and_monitor_consent(tracked_page,
                                                install_safety_orch):
     install_safety_orch("Exercise normal precautions.")
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
     start_goal(page, HAPPY_GOAL)
     expect(page.locator('[data-testid="approval-open"]')) \
@@ -1953,7 +1986,7 @@ def test_ui_safety_card_hidden_when_pipeline_disabled(tracked_page,
                                                       install_orch):
     install_orch()  # frozen-harness shape: no safety pipeline
     page = tracked_page
-    set_passport_via_api("MM")
+    preset_passport_home()
     goto_trip(page)
     start_goal(page, HAPPY_GOAL)
     expect(page.locator('[data-testid="approval-open"]')) \
@@ -1966,7 +1999,7 @@ def test_ui_safety_card_hidden_when_pipeline_disabled(tracked_page,
 def test_ui_safety_card_mobile_360_no_overflow(app_server, ui_browser,
                                                install_safety_orch):
     install_safety_orch("Do not travel to Singapore.")
-    set_passport_via_api("MM")
+    preset_passport_home()
     context = ui_browser.new_context(viewport={"width": 360,
                                                "height": 740})
     page = context.new_page()

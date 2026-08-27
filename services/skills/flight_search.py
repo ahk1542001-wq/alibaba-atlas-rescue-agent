@@ -60,7 +60,15 @@ class FlightSearchSkill(SkillBase):
 
         offers = await self._atlas.search_flights(
             origin, destination, str(travel_date), passengers=passengers)
-        options: List[Dict[str, Any]] = [normalize_offer(o) for o in offers]
+        options: List[Dict[str, Any]] = []
+        filtered_mismatched_routes = 0
+        for offer in offers:
+            option = normalize_offer(offer)
+            if (option["dep"]["airport"].strip().upper() != origin or
+                    option["arr"]["airport"].strip().upper() != destination):
+                filtered_mismatched_routes += 1
+                continue
+            options.append(option)
         # rank: shortest duration first, price as tiebreaker (S4 procedure)
         options.sort(key=lambda o: (o["duration_min"], o["price"]["amount"]))
         # Honesty (G4-DA-fix F5): report the requested date and LABEL any
@@ -86,6 +94,7 @@ class FlightSearchSkill(SkillBase):
             "source_url": f"atlas-sandbox://search/{origin}-{destination}",
             "freshness_state": "fresh",
             "count": len(options),
+            "filtered_mismatched_routes": filtered_mismatched_routes,
             "requested_date": requested_date,
             "date_note": date_note,
         }

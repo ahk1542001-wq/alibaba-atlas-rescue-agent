@@ -119,7 +119,48 @@ def test_gap1_api_confirmations_and_plan(harness):
             assert p_res.json()["status"] in ("completed", "failed", "awaiting_approval")
 
     _run(flow())
-        
+
+
+def test_confirmed_passport_rebuilds_visa_and_booking_snapshot(harness):
+    atlas = FakeAtlas()
+    harness(atlas=atlas)
+
+    async def flow():
+        async with _client() as client:
+            start = await client.post("/api/trips", json={
+                "goal_text": (
+                    "Book a flight from BKK to SIN on 2026-09-29, flights only"
+                ),
+                "user_id": "confirmation-refresh",
+            })
+            assert start.status_code == 200, start.text
+            trip_id = start.json()["trip_id"]
+
+            proposal = await client.post(
+                f"/api/trips/{trip_id}/clarifications",
+                json={"answers": {"passport_country": "MM"}},
+            )
+            chip = next(c for c in proposal.json()["confirmation_chips"]
+                        if c["field"] == "passport_country")
+            confirmed = await client.post(
+                f"/api/trips/{trip_id}/confirmations/{chip['chip_id']}",
+                json={"decision": "confirm"},
+            )
+            assert confirmed.status_code == 200, confirmed.text
+            state = confirmed.json()["state"]
+            assert state["outputs"]["visa_check"]["passport_country"] == "MM"
+            assert state["outputs"]["visa_check"]["passport_unknown"] is False
+            approval = next(a for a in state["pending_approvals"]
+                            if a["node_name"] == "approve_booking")
+            assert approval["options"]
+            assert all(o["dep"]["airport"] == "BKK"
+                       and o["arr"]["airport"] == "SIN"
+                       for o in approval["options"])
+            assert any(n["name"] == "confirmation_replan"
+                       for n in state["nodes"])
+
+    _run(flow())
+
 
 def test_gap3_initial_booking_atomic_idempotency(harness):
     atlas = FakeAtlas()

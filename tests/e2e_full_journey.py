@@ -1,7 +1,8 @@
 """Full-journey browser E2E for the TravelCare AI pivot build.
 
 Covers the whole demo use case in a real Chromium:
-  1. Homepage empty state
+  1. Legacy Rescue destination empty state (opened explicitly from the
+     beginner-friendly Trip Agent landing page)
   2. Add Flight modal (user-typed data, no prefills; MM passport default)
   3. Simulate Disruption -> banner, reasoning trail, packages + visa badges,
      compensation card, Claims Autopilot panel (honest no-regime verdict on
@@ -43,6 +44,7 @@ with sync_playwright() as p:
 
     # ---------- 1. homepage ----------
     page.goto(BASE)
+    page.click('[data-testid="nav-rescue"]')
     check("homepage loads with empty state", lambda: expect(
         page.locator("#empty-state h2")).to_contain_text("No active disruption"))
     check("health badge live status", lambda: expect(
@@ -152,7 +154,7 @@ with sync_playwright() as p:
         page.wait_for_selector(".typing-dots", state="detached", timeout=90000)
         reply = page.locator("#chat-messages .msg-bubble.msg-ai").last.inner_text()
         assert len(reply) > 40, f"concierge reply too short: {reply!r}"
-    check("concierge replies via live Qwen", concierge)
+    check("concierge replies via configured LLM or deterministic fallback", concierge)
 
     # ---------- 7. search ----------
     def search():

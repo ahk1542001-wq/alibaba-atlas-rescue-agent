@@ -64,7 +64,7 @@ atlas-flight auth login            # one-time Atlas Sandbox auth
 ### 3. Test
 ```bash
 .venv/bin/python -m pytest tests/test_rights_and_visa.py -v   # 19 unit tests
-.venv/bin/python tests/e2e_full_journey.py                    # 14-step browser E2E
+.venv/bin/python tests/e2e_full_journey.py                    # 14-step legacy browser canary
 ```
 
 ---

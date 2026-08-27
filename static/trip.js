@@ -35,11 +35,14 @@
 
     // One-question-at-a-time card order + static allow-list (§4: question
     // cards key off this map; hostile field names fall back to generic).
-    var FIELD_ORDER = ['origin_city', 'dest_city', 'date_window',
+    var FIELD_ORDER = ['origin_city', 'confirmed_origin_airport', 'dest_city',
+                       'confirmed_destination_airport', 'date_window',
                        'passport_country', 'home_city', 'expiry'];
     var FIELD_WHY = {
         origin_city: 'Needed to search flights from the right airport.',
+        confirmed_origin_airport: 'Needed so we search only the airport you choose.',
         dest_city: 'Needed to find flights to the right place.',
+        confirmed_destination_airport: 'Needed so we arrive at the airport you choose.',
         date_window: 'Needed to check flights on the right days.',
         passport_country: 'Needed to check entry requirements for you.',
         home_city: 'Helps us plan trips that start from your home.',
@@ -47,7 +50,9 @@
     };
     var FACT_LABELS = {
         origin_city: 'From',
+        confirmed_origin_airport: 'Departure airport',
         dest_city: 'To',
+        confirmed_destination_airport: 'Arrival airport',
         date_window: 'Dates',
         passport_country: 'Passport country',
         home_city: 'Home city',
@@ -263,7 +268,7 @@
                      null, null);
         announce('Working on your plan.');
         try {
-            var data = await api('/api/trip/start', jsonOpts('POST', {
+            var data = await api('/api/trips', jsonOpts('POST', {
                 goal_text: text, user_id: USER_ID
             }));
             invalidatePolls();          // any in-flight poll is for the old trip
@@ -540,6 +545,7 @@
     function deriveStep(s) {
         if (!Trip.tripId || !s) return 1;
         var out = s.outputs || {};
+        if (firstUnansweredQuestion(s)) return 1;
         if (out.recovery || findApproval(s, 'recovery_booking')) return 5;
         if (out.booking) return 5;
         if (findApproval(s, 'approve_booking')) return 4;
@@ -717,9 +723,39 @@
         return null;
     }
 
-    function firstUnansweredQuestion(s) {
+    function clarificationQuestions(s) {
         var clarify = ((s && s.outputs) || {}).clarify || null;
-        var questions = (clarify && clarify.questions) || [];
+        var questions = ((clarify && clarify.questions) || []).map(function (q) {
+            var copy = Object.assign({}, q);
+            copy.required = q.field === 'passport_country' &&
+                !!findApproval(s, 'approve_booking');
+            return copy;
+        });
+        ((s && s.confirmation_chips) || []).forEach(function (pending) {
+            if (pending.state !== 'pending') return;
+            var replacement = {
+                field: pending.field,
+                question: pending.message || ('Confirm ' + pending.field),
+                chip_id: pending.chip_id,
+                proposed_value: pending.proposed_value,
+                options: pending.options || [],
+                required: pending.field === 'confirmed_origin_airport' ||
+                    pending.field === 'confirmed_destination_airport' ||
+                    (pending.field === 'passport_country' &&
+                     !!findApproval(s, 'approve_booking'))
+            };
+            var found = -1;
+            for (var p = 0; p < questions.length; p++) {
+                if (questions[p].field === pending.field) { found = p; break; }
+            }
+            if (found === -1) questions.push(replacement);
+            else questions[found] = Object.assign({}, questions[found], replacement);
+        });
+        return questions;
+    }
+
+    function firstUnansweredQuestion(s) {
+        var questions = clarificationQuestions(s);
         for (var i = 0; i < FIELD_ORDER.length; i++) {
             for (var j = 0; j < questions.length; j++) {
                 var q = questions[j];
@@ -768,6 +804,7 @@
         var isProfile = PROFILE_CHIP_FIELDS.indexOf(field) !== -1;
         var card = el('div', 'trip-chip aj-question-card');
         card.setAttribute('data-chip-field', field);
+        if (q.chip_id) card.setAttribute('data-confirmation-chip-id', q.chip_id);
         tid(card, 'trip-chip-' + field);
         card.setAttribute('role', 'group');
         var qid = 'aj-q-' + (FIELD_ORDER.indexOf(field) !== -1
@@ -787,9 +824,27 @@
         }
 
         var row = el('div', 'trip-chip-row');
-        var input = el('input', 'trip-chip-input aj-question-input');
-        input.type = 'text';
-        input.placeholder = field === 'passport_country' ? 'e.g. MM' : 'your answer';
+        var input;
+        if ((q.options || []).length) {
+            input = el('select', 'trip-chip-input aj-question-input');
+            var placeholder = el('option', '', 'Choose one');
+            placeholder.value = ''; placeholder.disabled = true;
+            placeholder.selected = true;
+            input.appendChild(placeholder);
+            q.options.forEach(function (value) {
+                var opt = el('option', '', String(value));
+                opt.value = String(value);
+                input.appendChild(opt);
+            });
+        } else {
+            input = el('input', 'trip-chip-input aj-question-input');
+            input.type = 'text';
+            input.placeholder = field === 'passport_country' ? 'e.g. MM' : 'your answer';
+        }
+        if (q.proposed_value != null) {
+            input.value = confirmationValue(q.proposed_value);
+            card.setAttribute('data-confirmation-proposed', input.value);
+        }
         tid(input, 'chip-input-' + field);
         input.setAttribute('data-testid-aj', 'aj-question-input');
         if (Trip.deferredValue[field] !== undefined) {
@@ -808,11 +863,16 @@
         card.appendChild(row);
 
         var footer = el('div', 'aj-question-footer');
-        var back = el('button', 'aj-question-back', 'Back');
-        back.type = 'button';
-        tid(back, 'aj-question-back');
-        back.addEventListener('click', function () { deferQuestion(field); });
-        footer.appendChild(back);
+        if (q.required) {
+            footer.appendChild(el('span', 'aj-question-required',
+                'Required before a booking can be approved.'));
+        } else {
+            var back = el('button', 'aj-question-back', 'Back');
+            back.type = 'button';
+            tid(back, 'aj-question-back');
+            back.addEventListener('click', function () { deferQuestion(field); });
+            footer.appendChild(back);
+        }
         card.appendChild(footer);
         wrap.appendChild(card);
         input.focus();
@@ -844,47 +904,73 @@
         }
     }
 
+    function confirmationValue(value) {
+        if (value && typeof value === 'object' && value.start) {
+            return value.start + (value.end ? ' to ' + value.end : '');
+        }
+        return String(value == null ? '' : value);
+    }
+
     async function confirmChip(field, chip, input, btn) {
         var value = input.value.trim();
         if (!value) { input.focus(); return; }
         btn.disabled = true;
         try {
-            if (PROFILE_CHIP_FIELDS.indexOf(field) !== -1) {
-                await api('/api/profile/' + USER_ID + '/' + field,
-                          jsonOpts('PUT', { value: value, source: 'user' }));
-                btn.textContent = '\u2713 saved to profile';
-            } else {
-                // G4-DA-fix F4: trip-goal answers persist server-side and
-                // resume a trip that failed on the now-complete route.
+            var confirmationId = chip.getAttribute('data-confirmation-chip-id');
+            if (!confirmationId) {
                 invalidatePolls();
-                var ack = await api('/api/trip/' + Trip.tripId + '/clarify-answers',
-                                    jsonOpts('POST', { field: field, value: value }));
-                var shown = (ack && ack.clarify && ack.clarify.value != null)
-                    ? (typeof ack.clarify.value === 'string'
-                           ? ack.clarify.value
-                           : ((ack.clarify.value.start || '') + '\u2192' +
-                              (ack.clarify.value.end || '')))
-                    : value;
-                btn.textContent = '\u2713 added to trip';
-                addChat('agent', (FACT_LABELS[field] || field) + ': ' + shown +
-                                 ' \u2014 added to the trip plan.');
+                var answers = {};
+                answers[field] = value;
+                var proposal = await api(
+                    '/api/trips/' + Trip.tripId + '/clarifications',
+                    jsonOpts('POST', { answers: answers }));
+                var pending = (proposal.confirmation_chips || []).find(
+                    function (candidate) { return candidate.field === field; });
+                if (!pending) throw new Error('The confirmation could not be prepared.');
+                confirmationId = pending.chip_id;
+                var proposed = confirmationValue(pending.proposed_value);
+                chip.setAttribute('data-confirmation-chip-id', confirmationId);
+                if (proposed) {
+                    input.value = proposed;
+                    chip.setAttribute('data-confirmation-proposed', proposed);
+                }
+                btn.textContent = 'Confirm this answer';
+                btn.disabled = false;
+                input.focus();
+                announce('Check the answer, then confirm it to continue.');
+                return;
             }
+            invalidatePolls();
+            var proposedValue = chip.getAttribute('data-confirmation-proposed');
+            var decision = proposedValue !== null && value === proposedValue
+                ? 'confirm' : 'corrected';
+            var decisionBody = { decision: decision };
+            if (decision === 'corrected') decisionBody.corrected_value = value;
+            var ack = await api(
+                '/api/trips/' + Trip.tripId + '/confirmations/' +
+                encodeURIComponent(confirmationId),
+                jsonOpts('POST', decisionBody));
+            btn.textContent = '\u2713 confirmed';
             chip.classList.add('confirmed');
             input.disabled = true;
             Trip.answeredChips[field] = true;   // answered → never re-ask
             Trip.answeredFacts[field] = value;
             delete Trip.deferredValue[field];
-            if (PROFILE_CHIP_FIELDS.indexOf(field) !== -1) {
-                addChat('agent', (FACT_LABELS[field] || field) + ': ' + value +
-                                 ' \u2014 saved to your details.');
-            }
+            addChat('agent', (FACT_LABELS[field] || field) + ': ' + value +
+                             (PROFILE_CHIP_FIELDS.indexOf(field) !== -1
+                                 ? ' \u2014 confirmed and saved to your details.'
+                                 : ' \u2014 confirmed for this trip.'));
             if (Trip.lastState) renderFacts(Trip.lastState);
             refreshProfile();
             // a chip answer can resume a terminal (failed) trip — the watcher
             // was stopped on the terminal render, so restart it; otherwise a
             // single poll picks the change up
-            if (Trip.terminal) { Trip.terminal = false; startWatching(); }
-            else { pollState(); }
+            if (ack && ack.state) {
+                Trip.terminal = false;
+                renderState(ack.state);
+            } else if (Trip.terminal) {
+                Trip.terminal = false; startWatching();
+            } else { pollState(); }
         } catch (err) {
             btn.disabled = false;
             btn.textContent = 'Retry';

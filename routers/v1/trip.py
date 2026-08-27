@@ -1207,6 +1207,47 @@ class TripOrchestrator:
                 if q.get("field") != field]
         self._sync_clarify_surface(trip)
 
+    async def _replan_after_confirmation(self, trip, field: str) -> None:
+        """Refresh every route/safety-dependent output after a confirmed fact.
+
+        The initial graph may already have produced search and visa previews
+        while the traveler was answering clarification cards.  A confirmed
+        passport or airport therefore invalidates those previews and any
+        approval snapshot derived from them.  Rebuilding the reversible plan
+        keeps the eventual booking gate tied to the confirmed facts.
+        """
+        if field not in ("passport_country", *_AIRPORT_CONFIRM_FIELDS):
+            return
+        if trip.context.get("flight_book"):
+            return
+        if any(a.node_name == "scope_clarification"
+               for a in trip.pending_approvals):
+            return
+        seed = self._seeds.get(trip.trip_id)
+        if not seed:
+            return
+        rs = RequestedServices(**seed["requested_services"])
+        rest = self._build_plan_rest(seed, rs)
+        async with trip.lock:
+            trip.pending_approvals = [
+                approval for approval in trip.pending_approvals
+                if approval.node_name == "scope_clarification"]
+            for key in ("flight_search", "visa_check", "approve_booking",
+                        "disruption_monitor", "hotel_research",
+                        "activities_research", "local_transport_research",
+                        "itinerary"):
+                trip.context.pop(key, None)
+            trip.nodes = rest
+            trip.nodes_by_name = {node.name: node for node in rest}
+            trip.status = "pending"
+            trip.current = None
+        self._record(trip, "confirmation_replan", "clarify_loop",
+                     "COMPLETED", 0.0, {"confirmed_field": field})
+        if rest:
+            await self._run_guarded(trip.trip_id)
+        else:
+            trip.status = "completed"
+
     async def resolve_confirmation(self, trip_id: str, chip_id: str,
                                    decision: str,
                                    corrected_value: Any = None) -> Dict[str, Any]:
@@ -1271,6 +1312,7 @@ class TripOrchestrator:
                 chip.corrected_value = value if decision == "corrected" else None
                 chip.state = "corrected" if decision == "corrected" \
                     else "confirmed"
+                await self._replan_after_confirmation(trip, field)
             surface = self.confirmation_surface(trip_id)
             return {
                 "chip_id": chip_id,
@@ -1426,6 +1468,7 @@ class TripOrchestrator:
         if safety_events:
             outputs["safety_events"] = safety_events
         snapshot["outputs"] = outputs
+        snapshot.update(self.confirmation_surface(trip_id))
         return snapshot
 
     def resume_result(self, trip_id: str) -> Dict[str, Any]:

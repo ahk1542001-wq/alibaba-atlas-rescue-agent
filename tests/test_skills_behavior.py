@@ -336,6 +336,36 @@ def test_flight_search_wraps_atlas_with_sandbox_provenance():
     assert out["retrieved_date"]  # research provenance stamped
 
 
+def test_flight_search_never_returns_a_different_airport_than_requested():
+    class MixedAirportAtlas:
+        async def search_flights(self, origin, destination, travel_date,
+                                 passengers=1):
+            common = {
+                "departure_time": "2026-09-29 09:30",
+                "arrival_time": "2026-09-29 12:30",
+                "duration_minutes": 180,
+                "price_usd": 100,
+                "currency": "USD",
+                "airline_code": "ZZ",
+                "flight_number": "ZZ100",
+            }
+            return [
+                dict(common, offer_id="wrong-origin", origin="DMK",
+                     destination="SIN"),
+                dict(common, offer_id="right-route", origin="BKK",
+                     destination="SIN"),
+                dict(common, offer_id="wrong-destination", origin="BKK",
+                     destination="KUL"),
+            ]
+
+    skill = FlightSearchSkill(atlas=MixedAirportAtlas())
+    out = _run(skill.run({"origin": "BKK", "destination": "SIN",
+                          "date": "2026-09-29", "passengers": 1}))
+
+    assert [option["id"] for option in out["options"]] == ["right-route"]
+    assert out["count"] == 1
+
+
 def test_flight_search_invalid_input_raises_recoverable():
     skill = FlightSearchSkill(atlas=FakeAtlas())
     with pytest.raises(SkillError) as ei:

@@ -16,7 +16,7 @@
 <body>
     <!-- SIDEBAR -->
     <div id="sidebar">
-        <div class="nav-icon active" data-label="Rescue Hub" data-view="rescue" data-testid="nav-rescue" onclick="switchView('rescue', this)">
+        <div class="nav-icon" data-label="Rescue Hub" data-view="rescue" data-testid="nav-rescue" onclick="switchView('rescue', this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
         </div>
         <div class="nav-icon" data-label="Search" data-view="search" data-testid="nav-search" onclick="switchView('search', this)">
@@ -28,7 +28,7 @@
         <div class="nav-icon" data-label="Radar" data-view="radar" data-testid="nav-radar" onclick="switchView('radar', this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 19 5"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>
         </div>
-        <div class="nav-icon" data-label="Trip Agent" data-view="trip" data-testid="nav-trip" onclick="switchView('trip', this)">
+        <div class="nav-icon active" data-label="Trip Agent" data-view="trip" data-testid="nav-trip" onclick="switchView('trip', this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17h4l3-9h4l3 9h4"/><circle cx="7" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><path d="M12 2v3M9.5 3.5 11 5M14.5 3.5 13 5"/></svg>
         </div>
     </div>
@@ -54,7 +54,7 @@
         <!-- CONTENT -->
         <div id="content">
             <!-- RESCUE HUB VIEW -->
-            <div id="view-rescue" class="view active">
+            <div id="view-rescue" class="view">
                 <div id="empty-state">
                     <h2>No active disruption</h2>
                     <p>Your flights are being monitored. The Autonomous Rescue Agent will activate instantly if any disruption is detected.</p>
@@ -240,7 +240,7 @@
             </div>
 
             <!-- TRIP AGENT VIEW (G4 — additive; logic lives in static/trip.js) -->
-            <div id="view-trip" class="view">
+            <div id="view-trip" class="view active">
                 <!-- ATLAS JOURNEY shell (G4.5 — additive). Legacy surfaces are
                      transplanted into these step cards by static/trip.js; every
                      legacy id/testid stays in the DOM exactly once. -->
@@ -658,7 +658,7 @@
 
     <!-- MOBILE BOTTOM NAV -->
     <div id="bottom-nav">
-        <div class="bottom-nav-item active" data-label="Rescue" data-view="rescue" data-testid="mnav-rescue" onclick="switchView('rescue', this)">
+        <div class="bottom-nav-item" data-label="Rescue" data-view="rescue" data-testid="mnav-rescue" onclick="switchView('rescue', this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             <span>Rescue</span>
         </div>
@@ -674,7 +674,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 19 5"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>
             <span>Radar</span>
         </div>
-        <div class="bottom-nav-item" data-label="Trip Agent" data-view="trip" data-testid="mnav-trip" onclick="switchView('trip', this)">
+        <div class="bottom-nav-item active" data-label="Trip Agent" data-view="trip" data-testid="mnav-trip" onclick="switchView('trip', this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17h4l3-9h4l3 9h4"/><circle cx="7" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/></svg>
             <span>Trip</span>
         </div>
