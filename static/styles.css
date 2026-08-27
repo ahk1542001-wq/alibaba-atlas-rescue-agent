@@ -2361,6 +2361,105 @@
     text-transform: uppercase; color: var(--aj-teal-ink); margin-bottom: 6px;
 }
 
+/* --- itinerary folio + inline section replacement ------------------- */
+.aj-itin-summary {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px; padding: 10px; margin-bottom: 6px;
+    border: 1px solid var(--aj-mist); border-radius: var(--aj-radius);
+    background: var(--aj-card);
+}
+.aj-itin-metric {
+    min-width: 0; padding: 9px 11px; border-radius: 9px;
+    background: var(--aj-canvas); display: flex; flex-direction: column; gap: 3px;
+}
+.aj-itin-metric.is-good { background: var(--aj-seafoam); }
+.aj-itin-metric.is-warn { background: var(--aj-amber-bg); }
+.aj-itin-metric-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--aj-ink-muted);
+}
+.aj-itin-metric-value {
+    color: var(--aj-ink); font-size: 13px; overflow-wrap: anywhere;
+}
+.aj-itin-replace {
+    min-height: 36px; padding: 6px 13px; border-radius: 999px;
+    border: 1px solid var(--aj-teal); background: var(--aj-card);
+    color: var(--aj-teal-ink); font-family: inherit; font-size: 13px;
+    font-weight: 700; cursor: pointer;
+}
+.aj-itin-replace:hover { background: var(--aj-seafoam); }
+.aj-itin-editor {
+    flex: 1 0 100%; box-sizing: border-box; margin-top: 4px; padding: 14px;
+    border: 1px solid var(--aj-mist); border-left: 4px solid var(--aj-teal);
+    border-radius: 10px; background: var(--aj-card);
+}
+.aj-itin-editor-intro {
+    margin: 0 0 12px; color: var(--aj-ink-muted); font-size: 13.5px;
+}
+.aj-itin-editor-grid {
+    display: grid; grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr)
+        minmax(120px, 1fr) minmax(120px, 1fr); gap: 10px;
+}
+.aj-itin-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.aj-itin-field-label { color: var(--aj-ink-muted); font-size: 12px; font-weight: 700; }
+.aj-itin-input {
+    width: 100%; min-height: 42px; box-sizing: border-box; padding: 8px 10px;
+    border: 1.5px solid var(--aj-mist); border-radius: 8px;
+    background: var(--aj-canvas); color: var(--aj-ink); font: 14px inherit;
+}
+.aj-itin-feedback { min-height: 20px; margin: 8px 0 0; color: var(--aj-amber-ink); font-size: 13px; }
+.aj-itin-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.aj-itin-cancel, .aj-itin-save {
+    min-height: 42px; padding: 8px 16px; border-radius: 999px;
+    font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.aj-itin-cancel {
+    border: 1.5px solid var(--aj-mist); background: var(--aj-card);
+    color: var(--aj-ink-muted);
+}
+.aj-itin-save { border: 1.5px solid var(--aj-teal); background: var(--aj-teal); color: #fff; }
+.aj-itin-save:hover:not(:disabled) { background: var(--aj-teal-ink); }
+.aj-itin-editor button:disabled { opacity: 0.6; cursor: wait; }
+.aj-itin-replace:focus-visible, .aj-itin-input:focus-visible,
+.aj-itin-cancel:focus-visible, .aj-itin-save:focus-visible {
+    outline: 2px solid var(--aj-teal); outline-offset: 2px;
+}
+
+.aj-recovery-evidence {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px; padding: 12px; border: 1px solid var(--aj-mist);
+    border-radius: var(--aj-radius); background: var(--aj-card);
+}
+.aj-recovery-evidence-title { grid-column: 1 / -1; margin: 0; font-size: 13px; }
+.aj-recovery-receipt {
+    display: flex; flex-direction: column; gap: 4px; min-width: 0;
+    padding: 10px; border-radius: 8px; background: var(--aj-coral-bg);
+}
+.aj-recovery-receipt.is-replacement { background: var(--aj-seafoam); }
+.aj-recovery-receipt-label { color: var(--aj-ink-muted); font-size: 11px; font-weight: 700; }
+.aj-recovery-receipt strong { font-family: var(--aj-mono); overflow-wrap: anywhere; }
+.aj-recovery-rights, .aj-recovery-monitor {
+    margin: 0; padding: 9px 11px; border-radius: 8px;
+    background: var(--aj-canvas); color: var(--aj-ink-muted); font-size: 13px;
+}
+
+@media (max-width: 720px) {
+    .aj-itin-summary,
+    .aj-itin-editor-grid,
+    .aj-recovery-evidence {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .aj-recovery-evidence-title { grid-column: 1; }
+    .aj-itin-editor-actions { flex-direction: column-reverse; }
+    .aj-itin-cancel, .aj-itin-save { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .aj-itin-replace, .aj-itin-cancel, .aj-itin-save {
+        transition: none;
+    }
+}
+
 /* --- recovery surface (spec §2.6) ---------------------------------------- */
 
 .aj-recovery { display: flex; flex-direction: column; gap: 12px; margin: 14px 0; }
@@ -2641,4 +2740,3 @@
         transition: none;
     }
 }
-

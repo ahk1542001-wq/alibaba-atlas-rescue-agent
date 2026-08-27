@@ -1444,6 +1444,40 @@ def test_AJ08_recovery_separate_approval(tracked_page, install_orch):
     page.screenshot(path=str(SHOTS / "g45_aj08_recovery.png"))
 
 
+def test_AJ08b_itinerary_replace_inline(tracked_page, install_orch):
+    """A traveler can replace one suggested section in place; the booked
+    flight stays immutable and the summary refreshes without a page reset."""
+    install_orch()
+    page = tracked_page
+    book_happy_trip(page)
+
+    summary = page.locator('[data-testid="aj-itinerary-summary"]')
+    expect(summary).to_be_visible(timeout=20000)
+    expect(summary).to_contain_text("Asia/Singapore")
+    expect(summary).to_contain_text("Budget")
+
+    flight = page.locator('.trip-itin-flight').first
+    expect(flight).to_be_visible()
+    assert flight.locator('[data-testid="aj-itinerary-replace"]').count() == 0
+
+    replace = page.locator('[data-testid="aj-itinerary-replace"]').first
+    expect(replace).to_be_visible()
+    replace.click()
+    editor = page.locator('[data-testid="aj-itinerary-editor"]')
+    expect(editor).to_be_visible()
+    name = page.locator('[data-testid="aj-itinerary-name"]')
+    name.fill("Quiet Garden Hotel")
+    page.locator('[data-testid="aj-itinerary-price-low"]').fill("160")
+    page.locator('[data-testid="aj-itinerary-price-high"]').fill("220")
+    page.click('[data-testid="aj-itinerary-save"]')
+
+    expect(page.locator('[data-testid="trip-itinerary"]')) \
+        .to_contain_text("Quiet Garden Hotel", timeout=20000)
+    expect(page.locator('[data-testid="aj-itinerary-editor"]')) \
+        .to_have_count(0)
+    expect(summary).to_contain_text("Plan check")
+
+
 def test_AJ09_profile_drawer_privacy(tracked_page, install_orch):
     """Drawer opens from the top bar; consent gate first; safe fields
     only; explicit privacy exclusion statement (canonical §5/§19.10)."""

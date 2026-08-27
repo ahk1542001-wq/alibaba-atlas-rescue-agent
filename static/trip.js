@@ -94,6 +94,8 @@
         renderedDagSig: '',
         renderedOptionIds: null,
         renderedItineraryCount: -1,
+        renderedItinerarySig: '',
+        itineraryEditorId: null,
         approval: null,          // current approve_booking approval object
         recoveryApproval: null,  // current recovery_booking approval object
         selectedOptionId: null,
@@ -278,6 +280,8 @@
             Trip.renderedDagSig = '';
             Trip.renderedOptionIds = null;  // null sentinel: force re-render
             Trip.renderedItineraryCount = -1;
+            Trip.renderedItinerarySig = '';
+            Trip.itineraryEditorId = null;
             Trip.answeredChips = {};
             Trip.answeredFacts = {};
             Trip.deferredSkip = {};
@@ -2039,13 +2043,23 @@
 
     // --- itinerary: day-grouped, first 6 items + Show more (Decision D4) --------
 
-    function renderItinerary(s) {
+    function renderItinerary(s, preserveCap) {
         var itinerary = ((s && s.outputs) || {}).itinerary || null;
         var container = byId('trip-itinerary');
         var items = (itinerary && itinerary.items) || [];
-        if (items.length === Trip.renderedItineraryCount) return;
+        var signature = JSON.stringify({
+            items: items.map(function (item) {
+                return [item.item_id, item.name, item.kind, item.honesty_label,
+                        item.price_range_sgd, item.details];
+            }),
+            timezone: itinerary && itinerary.timezone,
+            budget: itinerary && itinerary.budget,
+            validation: itinerary && itinerary.validation
+        });
+        if (signature === Trip.renderedItinerarySig) return;
+        Trip.renderedItinerarySig = signature;
         Trip.renderedItineraryCount = items.length;
-        Trip.shownItin = 6;
+        if (!preserveCap) Trip.shownItin = 6;
         clear(container);
         if (items.length === 0) {
             var itinEmpty = el('div', 'trip-empty',
@@ -2054,10 +2068,36 @@
             container.appendChild(itinEmpty);
             return;
         }
-        buildItinerary(container, items, Trip.shownItin, s);
+        buildItinerary(container, itinerary, Trip.shownItin, s);
     }
 
-    function buildItinerary(container, items, cap, s) {
+    function buildItinerary(container, itinerary, cap, s) {
+        var items = (itinerary && itinerary.items) || [];
+        var summary = el('div', 'aj-itin-summary');
+        tid(summary, 'aj-itinerary-summary');
+        var timezoneName = itinerary.timezone || 'Timezone not available';
+        var budget = (itinerary.budget || {}).total_range_sgd || [0, 0];
+        var validation = itinerary.validation || {};
+        var issueCount = ['overlaps', 'invalid_ranges', 'invalid_prices',
+                          'transfer_warnings', 'check_in_warnings']
+            .reduce(function (total, key) {
+                return total + ((validation[key] || []).length);
+            }, 0);
+        function metric(label, value, tone) {
+            var box = el('div', 'aj-itin-metric' + (tone ? ' is-' + tone : ''));
+            box.appendChild(el('span', 'aj-itin-metric-label', label));
+            box.appendChild(el('strong', 'aj-itin-metric-value', value));
+            return box;
+        }
+        summary.appendChild(metric('Timezone', timezoneName));
+        summary.appendChild(metric('Budget',
+            budget[0] || budget[1] ? sgdRange(budget) : 'No sourced total'));
+        summary.appendChild(metric('Plan check',
+            issueCount ? issueCount + ' item' + (issueCount === 1 ? '' : 's') +
+                ' need review' : 'No timing conflicts',
+            issueCount ? 'warn' : 'good'));
+        container.appendChild(summary);
+
         // Honest grouping without fabricated dates: the booked flight is the
         // travel day; researched items have no dates in the data, so they go
         // under "During your stay" (never invented day numbers).
@@ -2093,11 +2133,8 @@
     }
 
     function renderItineraryForce(s) {
-        var container = byId('trip-itinerary');
-        var items = ((((s && s.outputs) || {}).itinerary) || {}).items || [];
-        clear(container);
-        buildItinerary(container, items, Trip.shownItin, s);
-        Trip.renderedItineraryCount = items.length;
+        Trip.renderedItinerarySig = '';
+        renderItinerary(s, true);
     }
 
     function itineraryRow(item, s) {
@@ -2127,8 +2164,133 @@
         } else if (item.kind !== 'flight') {
             right.appendChild(el('span', 'trip-itin-price trip-itin-noprice', 'price not sourced'));
         }
+        if (!item.booked && item.kind !== 'flight') {
+            var replace = el('button', 'aj-itin-replace', 'Replace');
+            replace.type = 'button';
+            tid(replace, 'aj-itinerary-replace');
+            replace.setAttribute('aria-expanded',
+                Trip.itineraryEditorId === item.item_id ? 'true' : 'false');
+            replace.addEventListener('click', function () {
+                Trip.itineraryEditorId = item.item_id;
+                renderItineraryForce(s);
+                var editor = byId('aj-itin-editor-' + item.item_id);
+                if (editor) {
+                    var first = editor.querySelector('input');
+                    if (first) first.focus();
+                }
+            });
+            right.appendChild(replace);
+        }
         row.appendChild(right);
+        if (Trip.itineraryEditorId === item.item_id) {
+            row.appendChild(itineraryEditor(item, s));
+        }
         return row;
+    }
+
+    function itineraryEditor(item, s) {
+        var form = el('form', 'aj-itin-editor');
+        form.id = 'aj-itin-editor-' + item.item_id;
+        tid(form, 'aj-itinerary-editor');
+
+        function field(labelText, input, testId) {
+            var fieldWrap = el('label', 'aj-itin-field');
+            fieldWrap.appendChild(el('span', 'aj-itin-field-label', labelText));
+            tid(input, testId);
+            fieldWrap.appendChild(input);
+            return fieldWrap;
+        }
+
+        var intro = el('p', 'aj-itin-editor-intro',
+            'Change only this suggestion. Your booked flight stays unchanged.');
+        form.appendChild(intro);
+        var grid = el('div', 'aj-itin-editor-grid');
+        var name = el('input', 'aj-itin-input');
+        name.type = 'text'; name.required = true; name.maxLength = 160;
+        name.value = item.name || '';
+        grid.appendChild(field('Name', name, 'aj-itinerary-name'));
+
+        var kind = el('select', 'aj-itin-input');
+        ['hotel', 'activity', 'local_transport'].forEach(function (value) {
+            var option = el('option', '',
+                value === 'local_transport' ? 'Local transport' :
+                value.charAt(0).toUpperCase() + value.slice(1));
+            option.value = value;
+            if (value === item.kind) option.selected = true;
+            kind.appendChild(option);
+        });
+        grid.appendChild(field('Type', kind, 'aj-itinerary-kind'));
+
+        var range = item.price_range_sgd || [];
+        var low = el('input', 'aj-itin-input');
+        low.type = 'number'; low.min = '0'; low.step = '1';
+        low.value = range.length === 2 ? String(range[0]) : '';
+        grid.appendChild(field('Budget from (SGD)', low,
+                               'aj-itinerary-price-low'));
+        var high = el('input', 'aj-itin-input');
+        high.type = 'number'; high.min = '0'; high.step = '1';
+        high.value = range.length === 2 ? String(range[1]) : '';
+        grid.appendChild(field('Budget to (SGD)', high,
+                               'aj-itinerary-price-high'));
+        form.appendChild(grid);
+
+        var feedback = el('p', 'aj-itin-feedback');
+        feedback.setAttribute('aria-live', 'polite');
+        form.appendChild(feedback);
+        var actions = el('div', 'aj-itin-editor-actions');
+        var cancel = el('button', 'aj-itin-cancel', 'Cancel');
+        cancel.type = 'button'; tid(cancel, 'aj-itinerary-cancel');
+        cancel.addEventListener('click', function () {
+            Trip.itineraryEditorId = null;
+            renderItineraryForce(s);
+        });
+        var save = el('button', 'aj-itin-save', 'Save changes');
+        save.type = 'submit'; tid(save, 'aj-itinerary-save');
+        actions.appendChild(cancel); actions.appendChild(save);
+        form.appendChild(actions);
+
+        form.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            var lowText = low.value.trim();
+            var highText = high.value.trim();
+            if ((lowText && !highText) || (!lowText && highText)) {
+                feedback.textContent = 'Enter both budget values, or leave both blank.';
+                return;
+            }
+            var price = null;
+            if (lowText && highText) {
+                price = [Number(lowText), Number(highText)];
+                if (!Number.isFinite(price[0]) || !Number.isFinite(price[1]) ||
+                        price[0] < 0 || price[1] < price[0]) {
+                    feedback.textContent = 'The “to” budget must be at least the “from” budget.';
+                    return;
+                }
+            }
+            save.disabled = true;
+            cancel.disabled = true;
+            feedback.textContent = 'Saving this section…';
+            var body = {
+                name: name.value.trim(),
+                kind: kind.value,
+                details: item.details || {}
+            };
+            if (price) body.price_range_sgd = price;
+            try {
+                var result = await api(
+                    '/api/trips/' + Trip.tripId + '/itinerary/sections/' +
+                    encodeURIComponent(item.item_id) + '/replace',
+                    jsonOpts('POST', body));
+                Trip.itineraryEditorId = null;
+                Trip.renderedItinerarySig = '';
+                renderState(result.state);
+                announce('Itinerary section replaced. Budget and timing checks updated.');
+            } catch (err) {
+                feedback.textContent = plainError(err);
+                save.disabled = false;
+                cancel.disabled = false;
+            }
+        });
+        return form;
     }
 
     // --- recovery surface (spec §8.6; SEPARATE approval) ------------------------
