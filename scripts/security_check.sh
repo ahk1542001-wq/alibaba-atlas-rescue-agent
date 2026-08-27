@@ -14,6 +14,8 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 cd "$ROOT"
 
 FAILURES=0
+PY=".venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3 || command -v python)"
 ok()   { printf 'PASS  %s\n' "$1"; }
 bad()  { printf 'FAIL  %s\n' "$1"; FAILURES=$((FAILURES + 1)); }
 note() { printf 'NOTE  %s\n' "$1"; }
@@ -105,7 +107,7 @@ note "static/app.js is FROZEN (legacy rescue UI, sha256-pinned by AJ13, canary-c
 
 # ---------------------------------------------------------------- 5/6
 section "5/6 pydantic boundary validation + privacy contracts (pytest)"
-if TZ=UTC .venv/bin/python -m pytest tests/test_privacy.py -q; then
+if TZ=UTC "$PY" -m pytest tests/test_privacy.py -q; then
     ok "privacy/boundary suite green"
 else
     bad "privacy/boundary suite failed"
@@ -113,8 +115,11 @@ fi
 
 # ---------------------------------------------------------------- 6/6
 section "6/6 dependency advisory scan"
-if [ -x .venv/bin/pip-audit ]; then
-    if .venv/bin/pip-audit --progress-spinner off; then
+AUDIT=""
+[ -x .venv/bin/pip-audit ] && AUDIT=".venv/bin/pip-audit"
+[ -z "$AUDIT" ] && command -v pip-audit >/dev/null 2>&1 && AUDIT="pip-audit"
+if [ -n "$AUDIT" ]; then
+    if $AUDIT --progress-spinner off; then
         ok "pip-audit: no known vulnerabilities in the venv"
     else
         bad "pip-audit reported known vulnerabilities (see table above)"

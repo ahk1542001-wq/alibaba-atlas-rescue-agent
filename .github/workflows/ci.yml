@@ -2,12 +2,12 @@ name: CI Test Suite
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, feature/trip-agent ]
   pull_request:
     branches: [ main, master ]
 
 jobs:
-  test:
+  core:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -18,11 +18,46 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set up Node (for the JS syntax gate)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install Dependencies
         run: |
-          pip install uv
-          uv pip install --system fastapi uvicorn pydantic httpx python-dotenv pytest pytest-asyncio
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pip-audit
 
-      - name: Run Pytest Test Suite
+      - name: Security & Audit Gate
+        run: bash scripts/security_check.sh
+
+      - name: Run Non-UI Test Suite
+        run: TZ=UTC python -m pytest tests/ -q --ignore=tests/test_ui_trip.py
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node (for the JS syntax gate)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Dependencies
         run: |
-          pytest test_rescue_agent.py -v
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run UI Test Suite (port 8050)
+        run: TZ=UTC python -m pytest tests/test_ui_trip.py -q

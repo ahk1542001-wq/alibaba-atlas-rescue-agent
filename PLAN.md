@@ -82,9 +82,11 @@ test_skills_manifest).
 - Evidence: `scripts/security_check.sh` output (G5 gate section below).
 
 ### G6 Cleanup & Report Gate
-- [ ] dead/experimental code deleted; `git status` shows intentional files only
-- [ ] CI workflow repaired to run the `tests/` suite
-- Evidence: CI run log; clean status output.
+- [x] dead/experimental code deleted; `git status` shows intentional files only
+- [x] CI workflow repaired to run the `tests/` suite
+- Evidence: CI run log (deferred — branch is local-only by package rule;
+  YAML validated, commands proven locally); clean status output;
+  `FINAL_REPORT.md` (interim, finalized at G8).
 
 ### G7 Mock-Data Pass
 - [ ] `data/mock_victor.json` real values supplied by owner; `[mockdata]` suites re-run
@@ -752,4 +754,45 @@ scripts/security_check.sh:                 ALL SECTIONS PASS
 hook live-fire:                            fake AWS key refused (exit 1)
 non-UI suite (incl. privacy):              316 passed in 47.78s
 UI suite (tests/test_ui_trip.py):          38 passed in 85.95s
+```
+
+## G6 Cleanup & Report Gate
+
+Scope: dead/experimental code removed, CI repaired to run the `tests/`
+suite, and the §9.7 self-report written. Frozen files and pre-existing
+tests untouched.
+
+Delivered:
+
+- Cleanup sweep over the full `git ls-files` inventory: NO dead code,
+  dead routes, or stale scaffolding found. Every router is registered in
+  `main.py`; every skill pair is manifest-governed; the only docs are the
+  live build package plus historical specs. Untracked scratch
+  (`screenshots/`, `e2e_screenshots/`, `__pycache__/`, `.qoder/`,
+  `.pytest_cache/`) is gitignored and never committed. Honest result, not
+  a forced deletion (spec rule 5: subtract — but subtract only what is
+  actually dead).
+- `.github/workflows/ci.yml` REPAIRED: the prior workflow targeted a
+  nonexistent `test_rescue_agent.py` with an incomplete dep set. It now
+  runs the real `tests/` suite in two jobs — `core` (security gate +
+  non-UI suite under TZ=UTC) and `ui` (Playwright chromium on port 8050).
+  YAML validated; each command proven locally. The first REAL CI run is
+  deferred to push time (branch is local-only by package rule) — recorded
+  honestly in FINAL_REPORT.md.
+- `scripts/security_check.sh` made CI-capable: resolves the Python
+  interpreter and pip-audit from the venv OR the ambient PATH, so it runs
+  both in the dev venv and on a fresh runner.
+- `FINAL_REPORT.md` written (interim): stages G0..G6 with evidence
+  pointers, F1..F12 acceptance table, test counts, security findings +
+  resolutions, top-10 decisions, cleanup list, limitations, and honest
+  remaining risks. Finalized at G8 with the G7 outcome + fresh-boot smoke.
+
+Gate evidence (TZ=UTC, fresh runs):
+
+```
+scripts/security_check.sh (CI-capable):    ALL SECTIONS PASS
+non-UI suite (incl. privacy):              316 passed
+UI suite (tests/test_ui_trip.py):          38 passed
+ci.yml YAML:                               valid; jobs = core, ui
+git status after sweep:                    intentional files only
 ```
