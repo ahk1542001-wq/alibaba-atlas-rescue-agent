@@ -25,6 +25,7 @@ import-only). Owner correction (C) enforced here:
   route has NO user override.
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -54,6 +55,7 @@ class FlightBookSkill(SkillBase):
         # (trip_id, option_id) -> result; per-trip scoping means cross-trip
         # option reuse can never replay a foreign trip's PNR (G2-DA fix)
         self._booked: Dict[tuple, Dict[str, Any]] = {}
+        self._booking_locks: Dict[tuple, asyncio.Lock] = {}
 
     async def run(self, payload: Dict[str, Any],
                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -138,50 +140,50 @@ class FlightBookSkill(SkillBase):
                     "— refresh web-intel citations before booking",
                     recoverable=True)
 
-        # --- refresh + reverify immediately before ordering (C) -------------
-        verification = await self._atlas.verify_fare(option_id)
-        if not verification.get("verified"):
-            raise SkillError("fare_unverified",
-                             f"fare '{option_id}' failed re-verification; "
-                             "booking refused", recoverable=True)
-
-        # --- idempotent retry: SAME trip + SAME option -> same PNR, zero extra
-        # booking calls. Lookup sits AFTER every safety gate (G2-DA fix): a
-        # replay can never skip visa/passport/fare checks.
         idempotency_key = (trip_id, option_id)
-        if idempotency_key in self._booked:
-            replay = dict(self._booked[idempotency_key])
-            replay["idempotent_replay"] = True
-            return replay
+        lock = self._booking_locks.setdefault(idempotency_key, asyncio.Lock())
+        async with lock:
+            # Refresh and reverify inside the per-booking lock. Concurrent
+            # identical calls cannot both cross the provider-create boundary.
+            verification = await self._atlas.verify_fare(option_id)
+            if not verification.get("verified"):
+                raise SkillError("fare_unverified",
+                                 f"fare '{option_id}' failed re-verification; "
+                                 "booking refused", recoverable=True)
 
-        passenger = payload.get("passenger") or {}
-        order = await self._atlas.create_booking_order(
-            option_id,
-            {"name": passenger.get("name", ""),
-             "price_usd": ((payload.get("option") or {}).get("price") or {})
-                          .get("amount")},
-        )
+            if idempotency_key in self._booked:
+                replay = dict(self._booked[idempotency_key])
+                replay["idempotent_replay"] = True
+                return replay
 
-        option_dump = payload.get("option")
-        option = FlightOption(**option_dump) if option_dump else None
-        record = BookingRecord(
-            pnr=order["pnr"],
-            option=option,
-            status=order.get("status", "CONFIRMED"),
-            booked_at=order.get("booking_timestamp")
-            or datetime.now(timezone.utc).isoformat(),
-            monitor_armed=True,
-        ) if option else None
+            passenger = payload.get("passenger") or {}
+            order = await self._atlas.create_booking_order(
+                option_id,
+                {"name": passenger.get("name", ""),
+                 "price_usd": ((payload.get("option") or {}).get("price") or {})
+                              .get("amount")},
+            )
 
-        result = {
-            "pnr": order["pnr"],
-            "order_id": order.get("order_id"),
-            "status": order.get("status", "CONFIRMED"),
-            "booking": record.model_dump(mode="json") if record else None,
-            "fare_verified_at": verification.get("verified_at"),
-            "monitor_armed": True,
-            "idempotent_replay": False,
-            "provenance": "sandbox",
-        }
-        self._booked[idempotency_key] = result
-        return result
+            option_dump = payload.get("option")
+            option = FlightOption(**option_dump) if option_dump else None
+            record = BookingRecord(
+                pnr=order["pnr"],
+                option=option,
+                status=order.get("status", "CONFIRMED"),
+                booked_at=order.get("booking_timestamp")
+                or datetime.now(timezone.utc).isoformat(),
+                monitor_armed=True,
+            ) if option else None
+
+            result = {
+                "pnr": order["pnr"],
+                "order_id": order.get("order_id"),
+                "status": order.get("status", "CONFIRMED"),
+                "booking": record.model_dump(mode="json") if record else None,
+                "fare_verified_at": verification.get("verified_at"),
+                "monitor_armed": True,
+                "idempotent_replay": False,
+                "provenance": "sandbox",
+            }
+            self._booked[idempotency_key] = result
+            return result

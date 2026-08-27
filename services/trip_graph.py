@@ -25,8 +25,9 @@ volatile fields (latency/timestamps) via mask_volatile().
 
 import asyncio
 import time
+from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ConfigDict
@@ -328,11 +329,27 @@ class TripGraphExecutor:
     async def _execute_node(self, trip: Trip, spec: NodeSpec) -> str:
         # ---- GATE_PAUSE: suspend before any irreversible/expensive action ----
         if spec.gate:
+            options = _lookup(
+                trip.context, spec.input_map.get("options", "")) or []
+            initial_booking = spec.name == "approve_booking"
             approval = ApprovalRequest(
                 approval_id=f"{trip.trip_id}:{len(trip.trace) + 1:03d}",
                 node_name=spec.name,
-                options=_lookup(trip.context, spec.input_map.get("options", "")) or [],
+                options=deepcopy(options),
                 created_at=_now_iso(),
+                trip_id=trip.trip_id,
+                purpose="initial_booking" if initial_booking else None,
+                immutable_option={"options": deepcopy(options)}
+                if initial_booking else None,
+                price_snapshot={
+                    "options": [
+                        {"id": option.get("id"),
+                         "price": deepcopy(option.get("price"))}
+                        for option in options if isinstance(option, dict)
+                    ]
+                } if initial_booking else None,
+                expires_at=(datetime.now(timezone.utc) + timedelta(minutes=30))
+                .isoformat() if initial_booking else None,
             )
             trip.pending_approvals.append(approval)
             trip.status = "awaiting_approval"

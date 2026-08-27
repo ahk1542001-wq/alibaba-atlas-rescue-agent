@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from main import app
@@ -84,68 +86,69 @@ def test_gap1_api_confirmations_and_plan(harness):
     _run(flow())
         
 
-def test_gap2_and_gap3_recovery_rebooking_and_idempotency(harness):
-    import uuid
+def test_gap3_initial_booking_atomic_idempotency(harness):
     atlas = FakeAtlas()
-    orch = harness(atlas=atlas)
-    
+    harness(atlas=atlas)
+
     async def flow():
         async with _client() as client:
-            await client.put("/api/profile/user_recovery/passport_country", json={"value": "SGP"})
-            
-    _run(flow())
-    trip_id = _run(orch.start("Yangon to Singapore Oct 15", "user_recovery"))
-    
-    trip = orch.executor.get(trip_id)
-    if trip.current == "scope_clarification":
-        appr_id = trip.pending_approvals[0].approval_id
-        _run(orch.resolve(trip_id, appr_id, "flight_only", None))
-        
-    if trip.current == "flight_book":
-        appr_id = trip.pending_approvals[0].approval_id
-        opts = trip.context.get("flight_search", {}).get("options", [])
-        if opts:
-            oid = opts[0]["id"]
-            
-            # GAP 3: Require Idempotency-Key
-            with pytest.raises(Exception) as exc:
-                _run(orch.resolve(trip_id, appr_id, "approve", {"option_id": oid}))
-            assert "missing_idempotency_key" in str(exc.value)
-            
-            # Call with key
-            ikey = str(uuid.uuid4())
-            _run(orch.resolve(trip_id, appr_id, "approve", {"option_id": oid}, idempotency_key=ikey))
-            
-    # Trigger recovery
-    trip.context["flight_book"] = {"booking": {"pnr": "PNR1", "option": {"flight_no": "TG100"}}}
-    _run(orch.simulate_disruption(trip_id, {"flight_number": "TG100", "scenario": "cancellation", "simulated": True}))
-    
-    # Wait for recovery plan approval
-    if trip.current == "recovery_booking":
-        rec = trip.context.get("recovery", {})
-        opts = rec.get("options", [])
-        if opts:
-            rec_oid = opts[0]["id"]
-            appr_id = trip.pending_approvals[0].approval_id
-            
-            # Idempotency is required here too
-            with pytest.raises(Exception) as exc:
-                _run(orch.resolve(trip_id, appr_id, "approve", {"option_id": rec_oid}))
-            assert "missing_idempotency_key" in str(exc.value)
-            
-            # Reset spy calls to isolate the recovery boundary
+            user_id = "user_atomic"
+            await client.put(
+                f"/api/profile/{user_id}/passport_country",
+                json={"value": "MM"},
+            )
+            start = await client.post("/api/trips", json={
+                "goal_text": (
+                    "Book a flight from BKK to SIN on 2026-09-29, flights only"
+                ),
+                "user_id": user_id,
+            })
+            assert start.status_code == 200, start.text
+            trip_id = start.json()["trip_id"]
+            approvals = (await client.get(
+                f"/api/trips/{trip_id}/approvals")).json()["approvals"]
+            gate = next(a for a in approvals
+                        if a["node_name"] == "approve_booking")
+            assert gate["purpose"] == "initial_booking"
+            assert gate["trip_id"] == trip_id
+            assert gate["expires_at"]
+            assert gate["immutable_option"]["options"] == gate["options"]
+            option_id = gate["options"][0]["id"]
+
+            payload = {"decision": "approve",
+                       "value": {"option_id": option_id}}
+            missing = await client.post(
+                f"/api/trips/{trip_id}/approvals/{gate['approval_id']}",
+                json=payload,
+            )
+            assert missing.status_code == 422
+            assert missing.json()["error"]["code"] == "missing_idempotency_key"
+
             atlas.calls.clear()
-            
-            ikey2 = str(uuid.uuid4())
-            _run(orch.resolve(trip_id, appr_id, "approve", {"option_id": rec_oid}, idempotency_key=ikey2))
-            
-            # GAP 2: Must have called Atlas EXACTLY ONCE for booking creation
+            headers = {"Idempotency-Key": "initial-booking-key-001"}
+
+            async def approve_once():
+                return await client.post(
+                    f"/api/trips/{trip_id}/approvals/{gate['approval_id']}",
+                    json=payload, headers=headers)
+
+            first, replay = await asyncio.gather(approve_once(), approve_once())
+            assert first.status_code == replay.status_code == 200
+            assert first.json() == replay.json()
             creates = [c for c in atlas.calls if c[0] == "create"]
             assert len(creates) == 1
-            
-            # Check itinerary
-            itin = trip.context.get("itinerary", {}).get("items", [])
-            assert any(i.get("honesty_label") == "booked replacement flight (Atlas sandbox record)" for i in itin)
+            assert first.json()["booking"]["booking"]["option"]["id"] == option_id
+
+            conflict = await client.post(
+                f"/api/trips/{trip_id}/approvals/{gate['approval_id']}",
+                json={"decision": "approve",
+                      "value": {"option_id": "different-option"}},
+                headers=headers,
+            )
+            assert conflict.status_code == 409
+            assert conflict.json()["error"]["code"] == "idempotency_conflict"
+
+    _run(flow())
 
 
 def test_gap4_itinerary_replace_section():

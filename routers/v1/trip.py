@@ -383,6 +383,7 @@ class TripOrchestrator:
         self._seeds: Dict[str, Dict[str, Any]] = {}
         # (trip_id:approval_id:key) -> (payload_hash, stored_response)
         self._idempotency_ledger: Dict[str, Any] = {}
+        self._idempotency_locks: Dict[str, asyncio.Lock] = {}
 
     # -- helpers -----------------------------------------------------------------
 
@@ -761,6 +762,18 @@ class TripOrchestrator:
     async def resolve(self, trip_id: str, approval_id: str,
                       decision: str, value: Any,
                       idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        if not idempotency_key:
+            return await self._resolve_once(
+                trip_id, approval_id, decision, value, idempotency_key)
+        lock_key = f"{trip_id}:{approval_id}:{idempotency_key}"
+        lock = self._idempotency_locks.setdefault(lock_key, asyncio.Lock())
+        async with lock:
+            return await self._resolve_once(
+                trip_id, approval_id, decision, value, idempotency_key)
+
+    async def _resolve_once(self, trip_id: str, approval_id: str,
+                            decision: str, value: Any,
+                            idempotency_key: Optional[str] = None) -> Dict[str, Any]:
         trip = self._trip_or_404(trip_id)
         
         # Fast path for idempotency replay
@@ -802,8 +815,10 @@ class TripOrchestrator:
                                     "GET /api/trip/{id}/approvals")
 
         # Gap 3: Enforce Idempotency-Key for booking approvals
-        is_booking_approval = approval.purpose in ("initial_booking", "recovery_booking") or approval.node_name in ("flight_book", "recovery_booking")
-        if is_booking_approval and not idempotency_key:
+        is_booking_approval = approval.purpose in (
+            "initial_booking", "recovery_booking") or approval.node_name in (
+                "approve_booking", "flight_book", "recovery_booking")
+        if is_booking_approval and decision == "approve" and not idempotency_key:
             raise TripApiError(
                 422, "missing_idempotency_key",
                 "Idempotency-Key header is required for booking approvals",
@@ -938,6 +953,17 @@ class TripOrchestrator:
                                hint="pick one of the approval option ids "
                                     "listed in GET /api/trip/{id}/approvals")
         if decision == "approve":
+            selected = next((option for option in approval.options
+                             if isinstance(option, dict)
+                             and option.get("id") == resolved["option_id"]), None)
+            if selected is None:
+                raise TripApiError(
+                    422, "unknown_option",
+                    "the selected option is not part of this approval snapshot",
+                    recoverable=True,
+                    hint="choose an option id listed on this approval")
+            approval.immutable_option = selected
+            approval.price_snapshot = selected.get("price")
             # Task #13: deterministic safety precheck BEFORE booking resumes
             # (do_not_travel blocks outright; reconsider_travel needs the
             # separate risk acknowledgement; unable_to_verify retries once).

@@ -280,7 +280,8 @@ def test_happy_full_trip_no_personal_data_live_sandbox(harness):
             resp = await client.post(
                 f"/api/trip/{trip_id}/approvals/{gate['approval_id']}",
                 json={"decision": "approve",
-                      "value": {"option_id": option_ids[0]}})
+                      "value": {"option_id": option_ids[0]}},
+                headers={"Idempotency-Key": "happy-booking-001"})
             assert resp.status_code == 200, resp.text
             body = resp.json()
             assert body["status"] == "completed"
@@ -465,7 +466,8 @@ def test_stale_visa_blocks_booking_recoverably(harness, mode):
             resp = await client.post(
                 f"/api/trip/{trip_id}/approvals/{gate['approval_id']}",
                 json={"decision": "approve",
-                      "value": {"option_id": gate["options"][0]["id"]}})
+                      "value": {"option_id": gate["options"][0]["id"]}},
+                headers={"Idempotency-Key": f"stale-booking-{mode}"})
             assert resp.status_code == 200, resp.text
             body = resp.json()
             assert body["status"] == "failed"

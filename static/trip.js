@@ -98,6 +98,7 @@
         recoveryApproval: null,  // current recovery_booking approval object
         selectedOptionId: null,
         recoverySelectedId: null,
+        approvalKeys: {},        // approval id -> stable retry key
         pnrShown: false,
         busy: false,
         // G4-DA-fix F1/F2: race-safety + lifecycle
@@ -284,6 +285,7 @@
             Trip.shownOptions = 3;
             Trip.shownItin = 6;
             Trip.recoverySelectedId = null;
+            Trip.approvalKeys = {};
             resetTripSurfaces();        // per-trip panels never leak across trips
             // provisional services from a STARTER tap belong to THIS trip —
             // restore them after the reset (typed goals carry none)
@@ -1524,8 +1526,14 @@
             var payload = { decision: decision };
             if (decision === 'approve') payload.value = { option_id: Trip.selectedOptionId };
             var headers = {};
-            if (Trip.approval && (Trip.approval.node_name === 'flight_book' || Trip.approval.purpose === 'initial_booking')) {
-                headers['Idempotency-Key'] = generateUUID();
+            if (Trip.approval && (Trip.approval.node_name === 'approve_booking' ||
+                    Trip.approval.node_name === 'flight_book' ||
+                    Trip.approval.purpose === 'initial_booking')) {
+                var approvalId = Trip.approval.approval_id;
+                if (!Trip.approvalKeys[approvalId]) {
+                    Trip.approvalKeys[approvalId] = generateUUID();
+                }
+                headers['Idempotency-Key'] = Trip.approvalKeys[approvalId];
             }
             var result = await api('/api/trip/' + Trip.tripId + '/approvals/' + Trip.approval.approval_id,
                                    jsonOpts('POST', payload, headers));
