@@ -542,7 +542,6 @@ class AtlasClient:
             "status": "CONFIRMED",
             "offer_id": offer_id,
             "passenger_name": passenger.get("name", ""),
-            "passport_number": passenger.get("passport", ""),
             "payment_status": "SETTLED_VIA_ATLAS_BALANCE",
             "amount_paid_usd": passenger.get("price_usd", 145.00),
             "baggage_confirmed": baggage_addon or "30kg Priority Allowance Included",

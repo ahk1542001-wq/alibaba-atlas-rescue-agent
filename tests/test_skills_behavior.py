@@ -604,9 +604,9 @@ def test_s10_payload_never_carries_passport_number(monkeypatch):
     monkeypatch.setattr(settings, "telegram_bot_token", "")
     skill = GuardianPushSkill()
     out = _run(skill.run({"event": "booking", "payload": {
-        "pnr": "ABC123", "passport_number": "MD1234567", "passport_no": "MD1234567",
+        "pnr": "ABC123", "passport_number": "SENTINEL-PASS-001", "passport_no": "SENTINEL-PASS-001",
         "name": "Victor"}}))
-    assert "MD1234567" not in json.dumps(out)
+    assert "SENTINEL-PASS-001" not in json.dumps(out)
 
 
 # --- S11 disruption_monitor ---------------------------------------------------------------------------
@@ -942,13 +942,13 @@ def test_blocked_route_journey_reroutes_and_never_completes_booking(tmp_path):
 def test_sanitize_payload_recurses_into_lists_and_tuples():
     safe = sanitize_payload({
         "pnr": "ABC123",
-        "passengers": [{"passport_no": "MD1234567", "name": "Victor"},
-                       {"passport_number": "MD7654321", "name": "Vera"}],
-        "docs": ({"national_id": "N-42"}, "plain"),
-        "deep": {"rows": [{"nested": [{"document_number": "D-1"}]}]},
+        "passengers": [{"passport_no": "SENTINEL-PASS-001", "name": "Victor"},
+                       {"passport_number": "SENTINEL-PASS-002", "name": "Vera"}],
+        "docs": ({"national_id": "SENTINEL-NID-42"}, "plain"),
+        "deep": {"rows": [{"nested": [{"document_number": "SENTINEL-DOC-1"}]}]},
     })
     dumped = json.dumps(safe, default=str)
-    for secret in ("MD1234567", "MD7654321", "N-42", "D-1"):
+    for secret in ("SENTINEL-PASS-001", "SENTINEL-PASS-002", "SENTINEL-NID-42", "SENTINEL-DOC-1"):
         assert secret not in dumped
     assert safe["passengers"][0]["name"] == "Victor"  # innocent fields survive
     assert safe["pnr"] == "ABC123"

@@ -383,14 +383,12 @@ class TripOrchestrator:
             citations=[]))
 
     def _profile_ctx(self, profile) -> Dict[str, Any]:
-        """Trip context view of the profile — EMPTY for new users by design;
-        the demo fixture is opt-in and never auto-loaded (correction A)."""
-        name_field = profile.fields.get("name")
+        """Trip context view of the profile — SAFE fields only (canonical
+        §5/F17): passport country and home city. No passport number, legal
+        identity, or payment data is ever collected or passed on."""
         return {
             "passport_country": profile.identity.passport_country,
-            "passport_no_masked": profile.identity.passport_no_masked,
             "home_city": profile.identity.home_city,
-            "name": name_field.value if name_field else "",
         }
 
     # -- safety intelligence pipeline (Task #13) ----------------------------

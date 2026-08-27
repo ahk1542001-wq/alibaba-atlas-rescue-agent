@@ -105,13 +105,12 @@ nonexistent `test_rescue_agent.py`) — nothing else removed.
   build environment; safety tests are hermetic via injected transports
   and per-source availability is reported honestly. Next: run a
   live-source smoke when network policy allows.
-- `data/mock_victor.json` still carries placeholders (owner fills real
-  values; file gitignored) — G7 executed its contracted owner-absent
-  branch: the `[mockdata]` suite (`tests/test_mockdata_victor.py`,
-  5 tests) skips gracefully with honest reasons, and its full run-path
-  (API journey + browser flow) is proven against synthetic fixtures,
-  injectable via `MOCKDATA_FIXTURE=<path>`. Owner's only remaining
-  action: fill the fixture and rerun `pytest -m mockdata`.
+- `data/mock_victor.json` placeholder protocol (G7) was superseded in R1
+  by canonical tracked fictional fixtures `data/demo_profile.json` and
+  `data/demo_trip_goal.json` (`victor-demo`, §12). The complete passport-number
+  product path is removed: no passport numbers, government IDs, or payment
+  details are ever requested, stored, masked, or used. All `[mockdata]` and
+  hermetic suites run green against fictional data.
 - gitleaks binary absent on the build host (built-in scanner gates
   instead; hook upgrades transparently).
 - CI repaired but the branch is local-only by package rule — the first

@@ -885,12 +885,21 @@ additive fix commits, stop only when F1-F20 + S1-S13 are genuinely satisfied.
 
 | Unit | Scope | Canonical basis | Status |
 |---|---|---|---|
-| R0 | canonical spec installed as repo authority; DECISIONS.tsv migrated to 5 columns | docs/MASTER_BUILD_PACKAGE.md §0-§23 | done (this commit) |
-| R1 | remove the complete passport-number path (schemas, API, UI, fixtures, tests, docs); passport country only; fictional data only | §5 "No passport number field exists", F5, F17, §9.4, §19.10 | pending |
+| R0 | canonical spec installed as repo authority; DECISIONS.tsv migrated to 5 columns | docs/MASTER_BUILD_PACKAGE.md §0-§23 | done (6358606) |
+| R1 | remove the complete passport-number path (schemas, API, UI, fixtures, tests, docs); passport country only; fictional data only | §5 "No passport number field exists", F5, F17, §9.4, §19.10 | done (this commit) |
 | R2 | remove every unsafe dynamic HTML insertion from ALL reachable frontend incl. legacy static/app.js; no frozen-file security exemption | §9.3, §20 XSS row | pending |
 | R3 | default experience = My Trip; three primary destinations; rescue/radar consolidated into trip monitoring/recovery states | §19.1, §19.7, §19.8 | pending |
 | R4 | canonical feature gaps: S12 LocationResolve (Bangkok→BKK+DMK, never silent), S13 RecoveryPlan, F14 idempotency-key semantics, F16 replaceable itinerary, F18 degraded flows, F19 a11y, 13-skill registry | §2.3 F13-F19, §4 S12/S13, §6, §19 | pending |
 | R5 | FINAL_REPORT rebuilt against F1-F20/G0-G8; §21 full fresh-venv runbook (hermetic suite, v1 canary, v2 browser, security, boot smoke); DA review vs canonical spec | §9.7, §21, §23 | pending |
+
+### R1 Gate Evidence (Privacy Remediation & Fictional Fixtures)
+
+- **Complete passport-number removal**: Zero schemas, API endpoints, UI controls, fixtures, or stored profile models contain passport-number fields. `models/schemas.py`, `routers/v1/profile.py`, `routers/v1/bookings.py`, `routers/v1/trip.py`, `services/atlas_client.py`, and `services/profile_store.py` strictly enforce the safe field allowlist (`SAFE_PROFILE_FIELDS`).
+- **Boundary rejection**: `FORBIDDEN_PROFILE_FIELDS` (`passport_no`, `passport_number`, `expiry`, `national_id`, `payment_card`, etc.) and unknown non-allowlisted fields are refused with `400 forbidden_profile_field` / `400 unknown_profile_field` without echoing raw payloads.
+- **ProfileStore hardening & migration**: `ProfileStore.set_field` and `delete_field` enforce allowlists; `ProfileStore.get_or_create` automatically sanitizes legacy on-disk profiles on load.
+- **Tracked fictional fixtures**: Installed `data/demo_profile.json` and `data/demo_trip_goal.json` (`victor-demo`, §12). Removed `data/mock_victor.json` placeholder protocol.
+- **UI privacy & safe fields**: `static/index.html` and `static/trip.js` updated with permanent exclusion notice: *"Passport number, payment details, and legal identity are not stored by this demo. Only safe preferences (passport country, home city, cabin, budget, and similar) are kept — with your consent."* Removed dead masked input branches.
+- **Test suite verification**: Full test collection 354/354 tests, 0 collection errors; full test suite (hermetic + e2e + mockdata + UI Playwright) 354 passed in 142s; static JS syntax check 2/2 passed; `scripts/security_check.sh` all 6 sections PASS; `git diff --check` clean.
 
 Frozen-file note for the corrective sequence: canonical §16.2 keeps
 rights_engine.py, visa_guard.py, and AGENTS.md/.env contents frozen; it

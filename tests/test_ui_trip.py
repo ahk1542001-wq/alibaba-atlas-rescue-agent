@@ -499,7 +499,7 @@ def test_b4_dag_panel_node_growth_within_1s(tracked_page, install_orch):
 # --- B5: profile editor — edit, save, masked passport display ----------------------
 
 
-def test_b5_profile_editor_and_masked_passport(tracked_page, install_orch):
+def test_b5_profile_editor_and_safe_fields(tracked_page, install_orch):
     install_orch()
     page = tracked_page
     goto_trip(page)
@@ -515,16 +515,16 @@ def test_b5_profile_editor_and_masked_passport(tracked_page, install_orch):
     expect(page.locator('[data-testid="profile-value-home_city"]')) \
         .to_have_text("Bangkok")
 
-    # passport number is stored + displayed masked, never raw
-    page.click('[data-testid="profile-edit-passport_no"]')
-    page.fill('[data-testid="profile-input-passport_no"]', "MD1234567")
-    page.click('[data-testid="profile-save-passport_no"]')
-    expect(page.locator('[data-testid="profile-value-passport_no"]')) \
-        .to_have_text("MD*****67")
-    row_text = page.locator('[data-testid="profile-row-passport_no"]').inner_text()
-    assert "MD1234567" not in row_text.replace("MD*****67", ""), row_text
-    whole = page.content()
-    assert "MD1234567" not in whole, "raw passport leaked into the DOM"
+    # edit passport_country (safe field only)
+    page.click('[data-testid="profile-edit-passport_country"]')
+    page.fill('[data-testid="profile-input-passport_country"]', "MM")
+    page.click('[data-testid="profile-save-passport_country"]')
+    expect(page.locator('[data-testid="profile-value-passport_country"]')) \
+        .to_have_text("MM")
+
+    # canonical F17: no passport number field or row exists in the UI
+    assert page.locator('[data-testid="profile-row-passport_no"]').count() == 0
+    assert page.locator('[data-testid="profile-input-passport_no"]').count() == 0
 
     # consent toggle round-trips through POST /api/profile/victor/consent
     page.check('[data-testid="profile-consent"]')
@@ -1358,8 +1358,8 @@ def test_AJ08_recovery_separate_approval(tracked_page, install_orch):
 
 
 def test_AJ09_profile_drawer_privacy(tracked_page, install_orch):
-    """Drawer opens from the top bar; consent gate first; masked passport
-    only; explicit privacy statement."""
+    """Drawer opens from the top bar; consent gate first; safe fields
+    only; explicit privacy exclusion statement (canonical §5/§19.10)."""
     install_orch()
     page = tracked_page
     goto_trip(page)
@@ -1377,19 +1377,20 @@ def test_AJ09_profile_drawer_privacy(tracked_page, install_orch):
     }""")
     assert order & 4, "consent note must precede the profile rows"  # FOLLOWING
 
-    # privacy statement: what is NEVER stored unmasked
+    # privacy statement: passport number, payment details, legal identity are NOT stored
     expect(page.locator('[data-testid="aj-profile-privacy-note"]')) \
-        .to_contain_text("never store")
-    expect(page.locator('[data-testid="aj-profile-privacy-note"]')) \
-        .to_contain_text("masked")
+        .to_contain_text("Passport number, payment details, and legal identity are not stored by this demo")
 
-    # masked passport only, raw never in the DOM
-    page.click('[data-testid="profile-edit-passport_no"]')
-    page.fill('[data-testid="profile-input-passport_no"]', "MD1234567")
-    page.click('[data-testid="profile-save-passport_no"]')
-    expect(page.locator('[data-testid="profile-value-passport_no"]')) \
-        .to_have_text("MD*****67")
-    assert "MD1234567" not in page.content()
+    # safe fields only: edit & save cabin
+    page.click('[data-testid="profile-edit-cabin"]')
+    page.fill('[data-testid="profile-input-cabin"]', "economy")
+    page.click('[data-testid="profile-save-cabin"]')
+    expect(page.locator('[data-testid="profile-value-cabin"]')) \
+        .to_have_text("economy")
+
+    # no passport number row or field in the DOM
+    assert page.locator('[data-testid="profile-row-passport_no"]').count() == 0
+    assert "passport_no" not in page.content()
 
     # close restores (dialog semantics)
     page.click('[data-testid="aj-profile-close"]')

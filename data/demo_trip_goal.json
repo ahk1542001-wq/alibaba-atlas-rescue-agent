@@ -1,0 +1,16 @@
+{
+  "goal_id": "demo-goal-wit-sg",
+  "raw_text": "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 — plan my whole trip.",
+  "origin_city": "Bangkok",
+  "origin_airport_candidates": ["BKK", "DMK"],
+  "confirmed_origin_airport": "BKK",
+  "dest_city": "Singapore",
+  "destination_airport_candidates": ["SIN"],
+  "confirmed_destination_airport": "SIN",
+  "venue": "Marina Bay Sands",
+  "date_window": {"start": "2026-09-28", "end": "2026-09-30"},
+  "passengers": 1,
+  "budget_hint": "THB 15000-30000",
+  "purpose": "Attend WiT Singapore",
+  "missing_fields": []
+}

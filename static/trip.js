@@ -2340,22 +2340,23 @@
         untrapDialog(byId('aj-profile-drawer'));
     }
 
-    // --- profile editor (F5: view/edit/delete, masked passport) ----------------
+    // --- profile editor (F5/F17: safe fields only — this demo NEVER stores a
+    // passport number, expiry, legal identity, or payment data) ---------------
 
     var PROFILE_ROWS = [
         { key: 'passport_country', group: 'identity', label: 'Passport country' },
-        { key: 'passport_no', group: 'identity', label: 'Passport number', masked: true },
-        { key: 'expiry', group: 'identity', label: 'Passport expiry' },
         { key: 'home_city', group: 'identity', label: 'Home city' },
+        { key: 'preferred_origin_airport', group: 'prefs', label: 'Preferred origin airport' },
         { key: 'cabin', group: 'prefs', label: 'Cabin' },
         { key: 'diet', group: 'prefs', label: 'Diet' },
         { key: 'budget_range', group: 'prefs', label: 'Budget range' },
+        { key: 'display_currency', group: 'prefs', label: 'Display currency' },
+        { key: 'accessibility_notes', group: 'prefs', label: 'Accessibility notes' },
         { key: 'airlines_like', group: 'prefs', label: 'Preferred airlines', list: true }
     ];
 
     function profileValue(profile, spec) {
         if (spec.group === 'identity') {
-            if (spec.masked) return profile.identity.passport_no_masked || '';
             return profile.identity[spec.key] || '';
         }
         if (spec.group === 'prefs') {
@@ -2420,15 +2421,13 @@
         tid(row, 'profile-row-' + spec.key);
         row.setAttribute('data-testid-aj', 'aj-profile-field-' + spec.key);
         var label = el('div', 'trip-profile-label', spec.label);
-        var valueEl = el('div', 'trip-profile-value' + (spec.masked ? ' trip-profile-masked' : ''),
-                         value || '\u2014');
+        var valueEl = el('div', 'trip-profile-value', value || '\u2014');
         tid(valueEl, 'profile-value-' + spec.key);
-        if (spec.masked) valueEl.setAttribute('data-masked', 'true');
         var actions = el('div', 'trip-profile-actions');
 
         var input = el('input', 'trip-profile-input');
         input.type = 'text';
-        input.placeholder = spec.masked ? 'new passport number (stored masked)' : (value || '');
+        input.placeholder = value || '';
         tid(input, 'profile-input-' + spec.key);
         input.hidden = true;
 

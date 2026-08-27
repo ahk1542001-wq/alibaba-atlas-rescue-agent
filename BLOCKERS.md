@@ -88,3 +88,5 @@ Entry template:
   canonical feature gaps incl. F13 LocationResolve; FINAL_REPORT rebuild
   + full fresh-venv runbook + DA review).
 - Status: OPEN (tracked via R1–R5)
+
+- [2026-08-27] G3-E2E atlas sandbox unreachable: live CLI probe returned no offers for BKK->SIN at test time — happy-path E2E ran on the documented curated fallback (provenance 'sandbox'); nothing was fabricated.

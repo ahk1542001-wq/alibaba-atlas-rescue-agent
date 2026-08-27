@@ -234,7 +234,9 @@ def test_happy_full_trip_no_personal_data_live_sandbox(harness):
             # (a) new users start EMPTY — the demo fixture never auto-loads
             prof = (await client.get("/api/profile/g3_user")).json()
             assert prof["identity"]["passport_country"] in (None, "")
-            assert prof["identity"]["passport_no_masked"] in (None, "")
+            # canonical F17: no passport-number field exists anywhere
+            assert "passport_no_masked" not in prof["identity"]
+            assert "passport_no" not in json.dumps(prof)
 
             # generic passport country only — NO personal data anywhere
             put = await client.put("/api/profile/g3_user/passport_country",
@@ -587,31 +589,49 @@ def test_provider_failure_degrades_recoverably(harness):
     _run(flow())
 
 
-def test_profile_api_contract_masks_and_enforces_source(harness):
+def test_profile_api_contract_refuses_passport_and_enforces_source(harness):
+    """Canonical R1 contract: NO passport number is ever requested,
+    accepted, masked, or stored — forbidden shapes get a recoverable §6
+    refusal; safe fields carry enforced source tags."""
     orch = harness()
     store_root = Path(orch.store.root)
     raw_passport = "MD1234567"
 
     async def flow():
         async with _client() as client:
-            # empty-by-default profile
+            # empty-by-default profile; no passport-number field exists
             first = (await client.get("/api/profile/priv_user")).json()
-            assert first["identity"]["passport_no_masked"] in (None, "")
+            assert "passport_no_masked" not in first["identity"]
 
-            # laundered source is enforced to "user" server-side
+            # passport-number shape is REFUSED at the boundary (never
+            # accepted, masked, or stored); the value is never echoed
             put = await client.put(
                 "/api/profile/priv_user/passport_no",
                 json={"value": raw_passport, "source": "ai_inferred"})
+            assert put.status_code == 400
+            err = put.json()["error"]
+            assert err["code"] == "forbidden_profile_field"
+            assert err["recoverable"] is True
+            assert raw_passport not in put.text
+            for alias in ("passport_number", "expiry"):
+                refused = await client.put(
+                    f"/api/profile/priv_user/{alias}",
+                    json={"value": raw_passport, "source": "user"})
+                assert refused.status_code == 400
+                assert refused.json()["error"]["code"] == \
+                    "forbidden_profile_field"
+
+            # laundered source on a SAFE field is enforced to "user"
+            put = await client.put(
+                "/api/profile/priv_user/home_city",
+                json={"value": "Bangkok", "source": "ai_inferred"})
             assert put.status_code == 200
             assert put.json()["source"] == "user"
-            profile = put.json()["profile"]
-            assert profile["identity"]["passport_no_masked"] == "MD*****67"
-            assert raw_passport not in json.dumps(profile)
 
             # consent gate: nothing on disk without store_local
             assert not list(store_root.glob("priv_user.json"))
 
-            # consent + masked persistence; raw bytes never hit disk
+            # consent + safe persistence; the canary never reaches disk
             consent = await client.post("/api/profile/priv_user/consent",
                                         json={"store_local": True})
             assert consent.status_code == 200
@@ -621,7 +641,6 @@ def test_profile_api_contract_masks_and_enforces_source(harness):
             assert disk, "consented profile must persist"
             blob = disk[0].read_text(encoding="utf-8")
             assert raw_passport not in blob
-            assert "MD*****67" in blob
 
             # pref field round-trip + delete clears (file survives)
             await client.put("/api/profile/priv_user/diet",
@@ -691,7 +710,7 @@ def test_start_validation_and_hostile_payloads(harness):
 
 def test_put_values_are_validated_before_assignment_and_persist(harness):
     """F1: PUT must rebuild the pydantic models before assigning, so hostile
-    values (int cabin, non-date expiry) are refused with the §6 envelope and
+    values (int cabin, non-list airlines_like) are refused with the §6 envelope and
     can never corrupt the profile on disk."""
     orch = harness()
     store_root = Path(orch.store.root)
@@ -705,18 +724,18 @@ def test_put_values_are_validated_before_assignment_and_persist(harness):
             assert err["code"] == "invalid_profile_request"
             assert err["recoverable"] is True
 
-            bad_expiry = await client.put("/api/profile/val_user/expiry",
-                                          json={"value": "not-a-date"})
-            assert bad_expiry.status_code == 400
-            assert bad_expiry.json()["error"]["code"] == \
+            bad_airlines = await client.put("/api/profile/val_user/airlines_like",
+                                            json={"value": "not-a-list"})
+            assert bad_airlines.status_code == 400
+            assert bad_airlines.json()["error"]["code"] == \
                 "invalid_profile_request"
 
-            # valid values keep working (incl. ISO date coercion)
+            # valid values keep working
             ok = await client.put("/api/profile/val_user/cabin",
                                   json={"value": "business"})
             assert ok.status_code == 200
-            ok2 = await client.put("/api/profile/val_user/expiry",
-                                   json={"value": "2027-01-01"})
+            ok2 = await client.put("/api/profile/val_user/passport_country",
+                                   json={"value": "MM"})
             assert ok2.status_code == 200
 
             # corruption must be impossible: consent + persist, attempt an
@@ -732,6 +751,7 @@ def test_put_values_are_validated_before_assignment_and_persist(harness):
             profile = fresh.get_or_create("val_user")  # raises if corrupt
             assert profile.prefs.cabin == "business"
             assert profile.prefs.diet == "vegetarian"
+            assert profile.identity.passport_country == "MM"
 
     _run(flow())
 
@@ -766,8 +786,8 @@ def test_corrupt_on_disk_profile_degrades_to_recoverable_envelope(harness):
 
 
 def test_put_passport_no_non_string_refused_with_envelope(harness):
-    """F2: a non-string passport number must hit a boundary type guard
-    (§6 envelope), never mask_passport's len() TypeError -> bare 500."""
+    """F2 / R1: passport_no shape is refused at boundary with forbidden_profile_field;
+    safe identity fields reject non-string values with invalid_profile_request."""
     harness()
 
     async def flow():
@@ -776,9 +796,9 @@ def test_put_passport_no_non_string_refused_with_envelope(harness):
                                     json={"value": 12345678})
             assert resp.status_code == 400
             err = resp.json()["error"]
-            assert err["code"] == "invalid_profile_request"
+            assert err["code"] == "forbidden_profile_field"
             assert err["recoverable"] is True
-            # same guard covers the other identity-shaped fields
+            # same guard covers the safe identity-shaped fields for non-string values
             for field, value in (("passport_country", 99),
                                  ("home_city", ["Bangkok"])):
                 bad = await client.put(f"/api/profile/pass_user/{field}",

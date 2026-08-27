@@ -15,7 +15,6 @@ async def execute_rescue_booking(req: BookingRequest):
             offer_id=req.offer_id,
             passenger={
                 "name": req.passenger_name,
-                "passport": req.passport_number,
                 "price_usd": req.price_usd
             },
             baggage_addon=req.baggage_addon,

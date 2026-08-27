@@ -106,7 +106,6 @@ class RescuePackage(BaseModel):
 class BookingRequest(BaseModel):
     offer_id: str
     passenger_name: str
-    passport_number: Optional[str] = None
     baggage_addon: Optional[str] = "30kg Priority Included"
     seat_selected: Optional[str] = "12A"
     price_usd: float
@@ -162,19 +161,24 @@ class AgentTelemetry(BaseModel):
 # ---------------------------------------------------------------------------
 # TravelCare v2 contracts (MASTER_BUILD_PACKAGE.md §5) — append-only block.
 # Existing models above stay untouched.
+#
+# CANONICAL PRIVACY CONTRACT (R1 reconciliation): NO passport number field
+# exists in any v2 contract — no requesting, accepting, transmitting,
+# masking, storing, displaying, or testing of passport numbers. Passport
+# COUNTRY is sufficient for the demo, visa logic, and route risk.
 # ---------------------------------------------------------------------------
 
-def mask_passport(passport_no: str) -> str:
-    """Mask a passport number; never echoes raw characters for short inputs.
-
-    mask_passport("MD1234567") -> "MD*****67" (first2+last2 only when the
-    input is >=8 chars, where that reveals less than half). Inputs shorter
-    than 8 chars are fully redacted to a fixed-shape star string — a 5-char
-    secret must not survive as 4 visible characters (DA-review fix).
-    """
-    if len(passport_no) < 8:
-        return "*" * len(passport_no)
-    return f"{passport_no[:2]}{'*' * (len(passport_no) - 4)}{passport_no[-2:]}"
+# Canonical safe-field allowlist (§5 Profile). Every other profile field —
+# especially passport-number/expiry/government-ID/payment shapes — is
+# rejected at the boundary.
+SAFE_PROFILE_FIELDS = frozenset({
+    "passport_country", "home_city", "preferred_origin_airport", "cabin",
+    "airlines_like", "diet", "budget_range", "display_currency",
+    "accessibility_notes"})
+FORBIDDEN_PROFILE_FIELDS = frozenset({
+    "passport_no", "passport_number", "passport", "expiry", "national_id",
+    "document_number", "full_name", "legal_name", "name", "date_of_birth",
+    "payment_card", "card_number"})
 
 
 class DateWindow(BaseModel):
@@ -244,10 +248,9 @@ class WebIntelCitation(BaseModel):
 
 
 class ProfileIdentity(BaseModel):
-    """Identity block — every field optional so new profiles start empty."""
+    """Identity block — SAFE fields only (canonical §5): passport country
+    and home city. No passport number, expiry, or legal identity exists."""
     passport_country: Optional[str] = None
-    passport_no_masked: Optional[str] = None
-    expiry: Optional[date] = None
     home_city: Optional[str] = None
 
 
@@ -256,6 +259,9 @@ class ProfilePrefs(BaseModel):
     airlines_like: List[str] = []
     diet: Optional[str] = None
     budget_range: Optional[str] = None
+    preferred_origin_airport: Optional[str] = None
+    display_currency: Optional[str] = None
+    accessibility_notes: Optional[str] = None
 
 
 class ProfileFieldValue(BaseModel):

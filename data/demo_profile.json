@@ -1,0 +1,11 @@
+{
+  "user_id": "victor-demo",
+  "passport_country": {"value": "MM", "source": "user", "updated_at": "2026-08-26T09:00:00+07:00", "confirmation": "confirmed"},
+  "home_city": {"value": "Bangkok", "source": "user", "updated_at": "2026-08-26T09:00:00+07:00", "confirmation": "confirmed"},
+  "preferred_origin_airport": {"value": "BKK", "source": "user", "updated_at": "2026-08-26T09:00:00+07:00", "confirmation": "confirmed"},
+  "cabin": {"value": "economy", "source": "user", "updated_at": "2026-08-26T09:00:00+07:00", "confirmation": "confirmed"},
+  "budget_range": {"value": "THB 15000-30000", "source": "user", "updated_at": "2026-08-26T09:00:00+07:00", "confirmation": "confirmed"},
+  "display_currency": {"value": "SGD", "source": "user", "updated_at": "2026-08-26T09:00:00+07:00", "confirmation": "confirmed"},
+  "consent": {"store_local": true},
+  "schema_version": 1
+}

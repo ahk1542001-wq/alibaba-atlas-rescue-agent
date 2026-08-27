@@ -64,14 +64,14 @@ if [ -z "$env_tracked" ]; then
 else
     bad "env file(s) tracked: $env_tracked"
 fi
-for p in "data/profiles/" "data/mock_victor.json" "screenshots/" "e2e_screenshots/"; do
+for p in "data/profiles/" "screenshots/" "e2e_screenshots/"; do
     if git ls-files -- "$p" | grep -q .; then
         bad "$p is tracked"
     else
         ok "$p not tracked"
     fi
 done
-for probe in .env .env.local .env.backup data/profiles/x.json data/mock_victor.json screenshots/x.png; do
+for probe in .env .env.local .env.backup data/profiles/x.json screenshots/x.png; do
     if git check-ignore -q "$probe"; then
         ok "gitignore covers $probe"
     else

@@ -1,14 +1,15 @@
 """Profile store (contract phase, G1) — JSON-backed per-user profiles.
 
-Contract (MASTER_BUILD_PACKAGE.md §5/F5):
+Contract (canonical MASTER_BUILD_PACKAGE.md §5/F5/F17, R1 reconciliation):
 - storage: data/profiles/{user_id}.json (root injectable for tests)
 - atomic write: tempfile in the same dir + os.replace, then os.chmod 0o600
 - field-level get/set/delete with source tags (user | ai_inferred)
 - delete clears the field; it NEVER deletes the file
 - consent{store_local} gates persistence: nothing hits disk without consent
-- passport numbers are masked in every display/export/persist path
+- NO passport number is ever requested, accepted, masked, stored, or
+  exported — passport-number-shaped fields are REJECTED at the boundary
 - new-user profiles start EMPTY — no default identity values, and nothing
-  auto-loads the opt-in victor demo fixture
+  auto-loads any demo fixture
 """
 
 import json
@@ -19,16 +20,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from models.schemas import Profile, ProfileFieldValue, mask_passport
+from models.schemas import (FORBIDDEN_PROFILE_FIELDS, SAFE_PROFILE_FIELDS,
+                            Profile, ProfileFieldValue)
 
 DEFAULT_ROOT = Path(__file__).resolve().parent.parent / "data" / "profiles"
 
 # DA-review fix: reject user_ids that could alias onto another user's file
 _USER_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
-
-# DA-review fix: passport-shaped fields are masked on the GENERIC field path
-# too, so set_field("user", "passport_no", raw) can never persist raw bytes.
-_PASSPORT_FIELDS = {"passport_no", "passport_number", "passport"}
 
 
 class ProfileStore:
@@ -55,6 +53,16 @@ class ProfileStore:
         path = self._path(user_id)
         if path.exists():
             profile = Profile.model_validate_json(path.read_text(encoding="utf-8"))
+            # Old profile migration: strip any non-allowlisted / forbidden fields
+            cleaned_fields = {
+                k: v for k, v in profile.fields.items()
+                if k in SAFE_PROFILE_FIELDS and k not in FORBIDDEN_PROFILE_FIELDS
+            }
+            if len(cleaned_fields) != len(profile.fields):
+                profile.fields = cleaned_fields
+                self._memory[user_id] = profile
+                if profile.consent.store_local:
+                    self._persist(user_id)
         else:
             profile = Profile(user_id=user_id)  # starts empty, no consent
         self._memory[user_id] = profile
@@ -97,10 +105,16 @@ class ProfileStore:
 
     def set_field(self, user_id: str, name: str, value: Any, source: str) -> Profile:
         profile = self.get_or_create(user_id)
-        # DA-review fix: passport-shaped values are masked at the boundary so
-        # the generic path can never store/export a raw passport number.
-        if name in _PASSPORT_FIELDS and isinstance(value, str):
-            value = mask_passport(value)
+        # R1/P0 canonical contract: passport-number-shaped (and other
+        # identity-document/payment) fields are REJECTED at the boundary —
+        # never requested, accepted, masked, or stored.
+        if name in FORBIDDEN_PROFILE_FIELDS:
+            raise ValueError(
+                f"field '{name}' is not stored by this demo: passport "
+                "numbers, document ids, legal identity and payment data "
+                "are never collected")
+        if name not in SAFE_PROFILE_FIELDS:
+            raise ValueError(f"field '{name}' is not a recognized safe profile field")
         # ProfileFieldValue validates source against the closed set; raises ValueError
         field = ProfileFieldValue(
             value=value,
@@ -116,36 +130,37 @@ class ProfileStore:
 
     def delete_field(self, user_id: str, name: str) -> Profile:
         """Clears the field; the profile file is never deleted."""
+        if name in FORBIDDEN_PROFILE_FIELDS:
+            raise ValueError(
+                f"field '{name}' is not stored by this demo: passport "
+                "numbers, document ids, legal identity and payment data "
+                "are never collected")
+        if name not in SAFE_PROFILE_FIELDS:
+            raise ValueError(f"field '{name}' is not a recognized safe profile field")
         profile = self.get_or_create(user_id)
         profile.fields.pop(name, None)
         self._persist(user_id)
         return profile
 
-    # -- identity (masked at the boundary) -----------------------------------------
+    # -- identity (safe fields only) -----------------------------------------
 
     def set_identity(
         self,
         user_id: str,
         passport_country: Optional[str] = None,
-        passport_no: Optional[str] = None,
-        expiry: Optional[str] = None,
         home_city: Optional[str] = None,
     ) -> Profile:
         profile = self.get_or_create(user_id)
         if passport_country is not None:
             profile.identity.passport_country = passport_country
-        if passport_no is not None:
-            # raw number is masked immediately; it is never stored or exported raw
-            profile.identity.passport_no_masked = mask_passport(passport_no)
-        if expiry is not None:
-            profile.identity.expiry = expiry
         if home_city is not None:
             profile.identity.home_city = home_city
         self._persist(user_id)
         return profile
 
-    # -- display/export (always masked) -----------------------------------------------
+    # -- display/export (safe fields only) ------------------------------------
 
     def display(self, user_id: str) -> Dict[str, Any]:
-        """Export-safe view: model only ever holds the masked passport."""
+        """Export-safe view: the model holds no passport-number/expiry/
+        payment/legal-identity fields to begin with (canonical §5)."""
         return json.loads(self.get_or_create(user_id).model_dump_json())

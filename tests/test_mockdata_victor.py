@@ -1,16 +1,13 @@
-"""G7 — Victor mock-data pass ([mockdata] tag; spec §12 / PLAN G7).
+"""G7/R1 — Victor demo pass ([mockdata] tag; spec §12 / PLAN R1).
 
-Loads data/mock_victor.json (gitignored; values supplied by the owner).
-While the fixture is absent or still placeholder, the victor cases SKIP
-gracefully with an honest reason (G7 contract: graceful skip + honest
-limitation while the owner is absent). The run-path itself is proven
-against a synthetic fixture so the suite runs unchanged the day real
-values land; a custom fixture path can also be injected via the
-MOCKDATA_FIXTURE environment variable (used to prove the path without
-committing personal data).
+Loads tracked fictional fixtures:
+- data/demo_profile.json (fictional safe demo profile, user_id "victor-demo")
+- data/demo_trip_goal.json (fictional trip goal for WiT Singapore)
 
-This module commits NO personal data: the real fixture exists only on
-local disk; the synthetic one uses the established test vectors.
+Canonical privacy contract (§5/§12/F17):
+- NO passport number, expiry, legal identity, or payment data is ever stored,
+  requested, masked, or used.
+- Demo fixtures are tracked, fictional, and safe.
 """
 
 import json
@@ -25,7 +22,6 @@ import httpx
 import pytest
 
 from main import app
-from models.schemas import mask_passport
 from routers.v1.profile import set_profile_store
 from routers.v1.trip import TripOrchestrator, set_trip_orchestrator
 from services.profile_store import ProfileStore
@@ -44,77 +40,56 @@ from tests.test_e2e_trip_journey import (
 pytestmark = pytest.mark.mockdata
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-VICTOR_PATH = REPO_ROOT / "data" / "mock_victor.json"
+DEMO_PROFILE_PATH = REPO_ROOT / "data" / "demo_profile.json"
+DEMO_TRIP_GOAL_PATH = REPO_ROOT / "data" / "demo_trip_goal.json"
 BASE = "http://127.0.0.1:8050"
-_PLACEHOLDER = re.compile(r"<[^<>]+>")
-
-SYNTHETIC_FIXTURE = {
-    "user_id": "victor",
-    "identity": {"passport_country": "MM", "passport_no": "MD1234567",
-                 "expiry": "2030-01-01", "home_city": "Bangkok"},
-    "prefs": {"budget_range": "1000-3000 THB", "cabin": "economy"},
-    "trip": {"goal": "Fly Bangkok to Singapore September 29 to 30",
-             "window": {"start": "2026-09-28", "end": "2026-09-30"}},
-}
 
 
-def _fixture_path() -> Path:
-    override = os.environ.get("MOCKDATA_FIXTURE")
-    return Path(override) if override else VICTOR_PATH
+def _load_demo_profile() -> dict:
+    assert DEMO_PROFILE_PATH.exists(), f"missing {DEMO_PROFILE_PATH}"
+    return json.loads(DEMO_PROFILE_PATH.read_text(encoding="utf-8"))
 
 
-def _load(path: Path):
-    """(fixture, None) when real values exist, else (None, honest reason)."""
-    if not path.exists():
-        return None, f"fixture missing ({path.name}) — owner has not supplied it"
-    raw = path.read_text(encoding="utf-8")
-    if _PLACEHOLDER.search(raw):
-        return None, "fixture still carries placeholder values — owner absent"
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        return None, f"fixture is invalid JSON: {exc}"
-    if not (data.get("trip") or {}).get("goal"):
-        return None, "fixture incomplete (trip.goal missing)"
-    return data, None
+def _load_demo_trip_goal() -> dict:
+    assert DEMO_TRIP_GOAL_PATH.exists(), f"missing {DEMO_TRIP_GOAL_PATH}"
+    return json.loads(DEMO_TRIP_GOAL_PATH.read_text(encoding="utf-8"))
 
 
 # --- API journey ---------------------------------------------------------------
 
 
-async def _seed_profile(client, user_id: str, fixture: dict) -> None:
-    ident = fixture.get("identity") or {}
-    prefs = fixture.get("prefs") or {}
+async def _seed_profile(client, user_id: str, profile_data: dict) -> None:
     r = await client.post(f"/api/profile/{user_id}/consent",
                           json={"store_local": True})
     assert r.status_code == 200, r.text
-    for field, value in (("passport_country", ident.get("passport_country")),
-                         ("passport_no", ident.get("passport_no")),
-                         ("expiry", ident.get("expiry")),
-                         ("home_city", ident.get("home_city")),
-                         ("cabin", prefs.get("cabin"))):
-        if value:
+
+    # Seed safe fields from demo profile
+    for field in ("passport_country", "home_city", "preferred_origin_airport",
+                  "cabin", "budget_range", "display_currency"):
+        field_entry = profile_data.get(field)
+        val = field_entry.get("value") if isinstance(field_entry, dict) else field_entry
+        if val:
             r = await client.put(f"/api/profile/{user_id}/{field}",
-                                 json={"value": value})
+                                 json={"value": val})
             assert r.status_code == 200, (field, r.text)
 
 
-_API_CLARIFY_FIELDS = ("origin_city", "dest_city", "date_window")
+_API_CLARIFY_FIELDS = ("origin_city", "dest_city", "date_window", "passport_country")
 
 
-async def _answer_clarify_loop(client, trip_id: str, fixture: dict) -> None:
-    """API mirror of the UI one-at-a-time clarify loop: answer outstanding
-    trip-goal questions from the fixture facts; the orchestrator resumes a
-    trip that failed on the now-complete route (G4-DA-fix F4 semantics)."""
-    ident = fixture.get("identity") or {}
-    window = (fixture.get("trip") or {}).get("window") or {}
+async def _answer_clarify_loop(client, trip_id: str, goal_data: dict, profile_data: dict) -> None:
+    """Answer outstanding trip-goal questions from the demo facts."""
+    home = profile_data.get("home_city", {})
+    home_val = home.get("value") if isinstance(home, dict) else (home or "Bangkok")
+    window = goal_data.get("date_window") or {}
     defaults = {
-        "origin_city": ident.get("home_city") or "Bangkok",
-        "dest_city": "Singapore",
+        "origin_city": goal_data.get("origin_city") or home_val,
+        "dest_city": goal_data.get("dest_city") or "Singapore",
         "date_window": f"{window.get('start') or '2026-09-28'} - "
                        f"{window.get('end') or '2026-09-30'}",
+        "passport_country": "MM",
     }
-    for _ in range(3):
+    for _ in range(4):
         state = (await client.get(f"/api/trip/{trip_id}/state")).json()
         if state["status"] == "awaiting_approval":
             return
@@ -127,16 +102,13 @@ async def _answer_clarify_loop(client, trip_id: str, fixture: dict) -> None:
         for q in pending:
             r = await client.post(
                 f"/api/trip/{trip_id}/clarify-answers",
-                json={"field": q["field"], "value": defaults[q["field"]]})
+                json={"field": q["field"], "value": defaults.get(q["field"], "Bangkok")})
             assert r.status_code == 200, (q["field"], r.text)
 
 
-async def _journey(fixture: dict, tmp_path) -> dict:
-    """G3 happy path WITH opt-in personal data: seed the profile through
-    the §6 API (consent first), prove masked-only display, run the trip to
-    booking completion. Safety pipeline stays out of scope here (it has
-    its own hermetic suites); this mirrors the G3 harness."""
-    user_id = str(fixture.get("user_id") or "victor")
+async def _journey(profile_data: dict, goal_data: dict, tmp_path: Path) -> dict:
+    """Full trip journey using tracked fictional demo fixtures."""
+    user_id = str(profile_data.get("user_id") or "victor-demo")
     store = ProfileStore(root=tmp_path / "profiles")
     set_profile_store(store)
     orch = TripOrchestrator(
@@ -148,20 +120,20 @@ async def _journey(fixture: dict, tmp_path) -> dict:
     set_trip_orchestrator(orch)
     try:
         async with _client() as client:
-            await _seed_profile(client, user_id, fixture)
+            await _seed_profile(client, user_id, profile_data)
 
             prof = (await client.get(f"/api/profile/{user_id}")).json()
-            raw_passport = (fixture.get("identity") or {}).get("passport_no")
             blob = json.dumps(prof)
-            if raw_passport:
-                assert raw_passport not in blob, "raw passport surfaced"
-                assert mask_passport(raw_passport) in blob
+            assert "passport_no" not in blob
+            assert "passport_no_masked" not in blob
+            assert prof["identity"]["passport_country"] == "MM"
 
-            trip_id = await _start(client, fixture["trip"]["goal"], user_id)
+            goal_text = goal_data.get("raw_text") or "Fly Bangkok to Singapore Sep 29-30"
+            trip_id = await _start(client, goal_text, user_id)
             await _resolve_scope_if_paused(client, trip_id, "complete_trip")
-            await _answer_clarify_loop(client, trip_id, fixture)
-            state = (await client.get(
-                f"/api/trip/{trip_id}/state")).json()
+            await _answer_clarify_loop(client, trip_id, goal_data, profile_data)
+
+            state = (await client.get(f"/api/trip/{trip_id}/state")).json()
             assert state["status"] == "awaiting_approval", state["status"]
             names = _trace_names(state)
             assert "goal_intake" in names and "visa_check" in names
@@ -183,46 +155,39 @@ async def _journey(fixture: dict, tmp_path) -> dict:
             assert body["status"] == "completed"
             assert re.fullmatch(r"ATLAS-[0-9A-Z]{6}", body["booking"]["pnr"])
 
-            # remembered fields stay masked AFTER booking too
+            # Verify no passport number in final profile or booking
             prof = (await client.get(f"/api/profile/{user_id}")).json()
-            if raw_passport:
-                assert raw_passport not in json.dumps(prof)
+            assert "passport_no" not in json.dumps(prof)
+            assert "passport_number" not in json.dumps(body.get("booking", {}))
             return body
     finally:
         set_trip_orchestrator(None)
         set_profile_store(None)
 
 
-def test_mockdata_loader_contract(tmp_path):
-    real, reason = _load(_fixture_path())
-    if real is None:
-        assert reason  # the skip reason is always honest and non-empty
-    # synthetic real-values fixture loads
-    p = tmp_path / "victor.json"
-    p.write_text(json.dumps(SYNTHETIC_FIXTURE), encoding="utf-8")
-    data, why = _load(p)
-    assert why is None and data["user_id"] == "victor"
-    # placeholder fixture refuses honestly
-    p2 = tmp_path / "placeholder.json"
-    p2.write_text(json.dumps({"trip": {"goal": "<REAL_GOAL>"}}),
-                  encoding="utf-8")
-    assert _load(p2)[0] is None
-    # invalid JSON refuses honestly
-    p3 = tmp_path / "broken.json"
-    p3.write_text("{not json", encoding="utf-8")
-    assert "invalid JSON" in _load(p3)[1]
+def test_demo_fixtures_contract():
+    """Verify demo_profile.json and demo_trip_goal.json exist and contain fictional data only."""
+    prof = _load_demo_profile()
+    goal = _load_demo_trip_goal()
+
+    assert prof["user_id"] == "victor-demo"
+    assert prof["passport_country"]["value"] == "MM"
+    assert prof["home_city"]["value"] == "Bangkok"
+    assert "passport_no" not in prof
+    assert "passport_number" not in prof
+    assert "expiry" not in prof
+
+    assert goal["goal_id"] == "demo-goal-wit-sg"
+    assert "WiT Singapore" in goal["raw_text"]
+    assert goal["origin_city"] == "Bangkok"
+    assert goal["dest_city"] == "Singapore"
 
 
-def test_mockdata_journey_run_path_synthetic(tmp_path):
-    """The [mockdata] journey machinery, proven WITHOUT owner data."""
-    _run(_journey(SYNTHETIC_FIXTURE, tmp_path))
-
-
-def test_mockdata_victor_journey_or_honest_skip(tmp_path):
-    fixture, reason = _load(_fixture_path())
-    if fixture is None:
-        pytest.skip(f"G7 owner absent: {reason}")
-    _run(_journey(fixture, tmp_path))
+def test_mockdata_journey_run_path_demo_fixtures(tmp_path):
+    """The [mockdata] journey machinery proven with tracked fictional fixtures."""
+    prof = _load_demo_profile()
+    goal = _load_demo_trip_goal()
+    _run(_journey(prof, goal, tmp_path))
 
 
 # --- browser journey -------------------------------------------------------------
@@ -268,21 +233,18 @@ _CLARIFY_DEFAULTS = {"date_window": "Sep 29-30", "passport_country": "MM",
                      "home_city": "Bangkok"}
 
 
-def _browser_goal_to_options(fixture: dict, store) -> None:
+def _browser_goal_to_options(profile_data: dict, goal_data: dict, store) -> None:
     from playwright.sync_api import expect, sync_playwright
 
     from tests.test_ui_trip import answer_chip, goto_trip, start_goal
-    user_id = str(fixture.get("user_id") or "victor")
-    ident = fixture.get("identity") or {}
+    user_id = str(profile_data.get("user_id") or "victor-demo")
     store.set_consent(user_id, True)
-    ident_kwargs = {k: v for k, v in (
-        ("passport_country", ident.get("passport_country")),
-        ("passport_no", ident.get("passport_no"))) if v}
-    if ident_kwargs:
-        store.set_identity(user_id, **ident_kwargs)
-    if ident.get("home_city"):
-        store.set_field(user_id, "home_city", ident["home_city"],
-                        source="user")
+    pc = profile_data.get("passport_country")
+    pc_val = pc.get("value") if isinstance(pc, dict) else pc
+    hc = profile_data.get("home_city")
+    hc_val = hc.get("value") if isinstance(hc, dict) else hc
+    store.set_identity(user_id, passport_country=pc_val, home_city=hc_val)
+
     with sync_playwright() as engine:
         browser = engine.chromium.launch()
         page = browser.new_page(viewport={"width": 1280, "height": 800})
@@ -291,10 +253,8 @@ def _browser_goal_to_options(fixture: dict, store) -> None:
                 if msg.type == "error" else None)
         page.on("pageerror", lambda exc: console_errors.append(str(exc)))
         goto_trip(page)
-        start_goal(page, fixture["trip"]["goal"])
+        start_goal(page, goal_data.get("raw_text", "Fly Bangkok to Singapore Sep 29-30"))
 
-        # interleaved bounded loop: scope choice + one-at-a-time clarify
-        # cards can appear in either order depending on the goal shape
         for _ in range(12):
             scope_btn = page.locator(
                 '[data-testid="scope-choice-complete_trip"]')
@@ -315,9 +275,6 @@ def _browser_goal_to_options(fixture: dict, store) -> None:
                 break
             page.wait_for_timeout(1000)
 
-        # the journey paused at the booking gate: the approval banner (AJ)
-        # is the durable visible signal; option cards live in collapsed
-        # steps and stay hidden by design
         expect(page.locator('[data-testid="approval-open"]')
                ).to_be_visible(timeout=30000)
         assert page.locator('[data-testid="trip-option-card"]').count() >= 1
@@ -328,13 +285,8 @@ def _browser_goal_to_options(fixture: dict, store) -> None:
         browser.close()
 
 
-def test_mockdata_browser_run_path_synthetic(victor_server):
-    """The [mockdata] browser flow, proven WITHOUT owner data."""
-    _browser_goal_to_options(SYNTHETIC_FIXTURE, victor_server)
-
-
-def test_mockdata_browser_victor_or_honest_skip(victor_server):
-    fixture, reason = _load(_fixture_path())
-    if fixture is None:
-        pytest.skip(f"G7 owner absent: {reason}")
-    _browser_goal_to_options(fixture, victor_server)
+def test_mockdata_browser_run_path_demo_fixtures(victor_server):
+    """The [mockdata] browser flow proven with tracked fictional fixtures."""
+    prof = _load_demo_profile()
+    goal = _load_demo_trip_goal()
+    _browser_goal_to_options(prof, goal, victor_server)
