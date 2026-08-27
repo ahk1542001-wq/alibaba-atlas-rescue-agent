@@ -128,6 +128,19 @@ def _desafe(text: Optional[str]) -> Optional[str]:
     return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 
+def _without_urls(obj: Any) -> Any:
+    """Deep-copy of a dumped structure WITHOUT canonical_url values. URLs
+    are locators, not claims: they stay verbatim in the output but are
+    excluded from the absolute-safe scan, so a URL path containing the
+    word can never crash the engine (G4.6-DA fix F6)."""
+    if isinstance(obj, dict):
+        return {k: _without_urls(v) for k, v in obj.items()
+                if k != "canonical_url"}
+    if isinstance(obj, list):
+        return [_without_urls(v) for v in obj]
+    return obj
+
+
 def normalize_country(raw: Optional[str]) -> str:
     if not isinstance(raw, str) or not raw.strip():
         return ""
@@ -299,7 +312,7 @@ class SafetyPolicyEngine:
 
             entry: Dict[str, Any] = {
                 "source_id": ev.source_id,
-                "authority": ev.authority,
+                "authority": _desafe(ev.authority),
                 "authority_country": ev.authority_country,
                 "source_type": ev.source_type,
                 "canonical_url": ev.canonical_url,
@@ -357,7 +370,7 @@ class SafetyPolicyEngine:
             for ev in current_official:
                 disagreements.append({
                     "source_id": ev.source_id,
-                    "authority": ev.authority,
+                    "authority": _desafe(ev.authority),
                     "native_level": _desafe(ev.native_level),
                     "normalized_level": ev.normalized_level,
                     "canonical_url": ev.canonical_url,
@@ -440,7 +453,8 @@ class SafetyPolicyEngine:
             stale_warnings=stale_warnings,
         )
         # hard enforcement: no absolute "safe" may ever leave the engine
-        blob = str(assessment.model_dump(mode="json"))
+        # (canonical URLs are locators, not claims — scanned without them)
+        blob = str(_without_urls(assessment.model_dump(mode="json")))
         if contains_absolute_safe(blob):
             raise AssertionError(
                 "SafetyPolicyEngine output contained an absolute 'safe' "

@@ -641,3 +641,49 @@ Frozen-file confirmation: `git diff --name-only` limited to
 `rights_engine.py`, `visa_guard.py`, `state_graph.py`, `guardian.py`,
 `atlas_client.py`, `static/app.js`, pre-existing tests, AGENTS.md,
 README demo-flow, `.env` all untouched.
+
+### G4.6 Devil's Advocate Remediation (against gate commit dc7efc6)
+
+An independent review of the gate commit found 1 critical fail-open plus
+five further fail-open/crash paths. All six were reproduced with red
+regression tests FIRST, then fixed at the root (same TDD process as the
+G2/G3/G4 remediations). Decisions logged in `DECISIONS.tsv` under prefix
+`G4.6-DA-fix` (+ one `AUTO-` evidence-scope row).
+
+| # | Finding | Repro | Fix | Regression evidence |
+|---|---|---|---|---|
+| F1 | CRITICAL — booking proceeds after a FAILED unable_to_verify retry: `_ensure_safety(force=True)` set `verification_retried=True` regardless of the retry OUTCOME; the precheck had no utv raise; the flight_book gate honored the flag | red: precheck with every source dead → gate ctx (utv + retried=True) → FlightBookSkill returned a PNR | the skill gate blocks utv UNCONDITIONALLY; the orchestrator sets the flag only when a forced run VERIFIES (non-utv outcome); the precheck raises `safety_unverified` (422, recoverable) when the bounded retry fails | `test_da_f1_booking_refused_after_failed_unable_to_verify_retry` + rewritten `test_unable_to_verify_blocks_until_fresh_verification`, `test_unable_to_verify_gets_one_bounded_fresh_retry` (both previously PINNED the fail-open) |
+| F2 | HIGH — recovery swallowed safety-check exceptions and proceeded with ZERO assessment and zero warning | red: research.run made to throw → `_build_recovery` produced options/note without any safety signal | honest degrade: `safety_unverified` flag + visible warning note + FAILED trace record; a cached DNT assessment still blocks | `test_da_f2_recovery_degrades_honestly_when_safety_check_throws`, `test_da_f2_cached_do_not_travel_still_blocks_when_recheck_throws` |
+| F3 | HIGH — cached assessment gated booking decisions indefinitely (no TTL) | red: ttl=0 + advisory flip after the cached check → precheck trusted the stale normal | `TripOrchestrator.safety_ttl_seconds` (default 86400): the precheck forces a fresh verification when the cache is older | `test_da_f3_stale_assessment_forces_fresh_verification_at_booking` + control `test_da_f3_default_ttl_reuses_fresh_cache` |
+| F4 | MED — safety enabled but nothing assessable (no destination) → null status injected, every gate passed | red: trip without dest_city → precheck returned silently | missing evidence raises `safety_unverified` (recoverable) — policy-engine rule extended to the wiring | `test_da_f4_booking_refused_when_no_assessment_possible` |
+| F5 | MED — monitor-check exception discarded the already-computed fresh assessment (bare 500 on the recheck path) | red: monitor.check made to throw after consent | honest degrade: assessment survives, `monitor_status="check_failed"`, FAILED trace record; consent endpoint degrades too | `test_da_f5_recheck_keeps_assessment_when_monitor_check_throws` |
+| F6 | MED — hostile evidence text crashed the engine: an authority or canonical URL containing the absolute word raised the never-"safe" AssertionError → 500 on the whole safety API | red: `_ev(authority="Ministry of Safe Travel")` and a URL path containing the word | authority is `_desafe`-stripped (per-source + disagreement entries); canonical URLs — locators, preserved verbatim — are excluded from the claim scan via `_without_urls` | `test_da_f6_hostile_authority_with_absolute_safe_is_stripped_not_fatal`, `test_da_f6_url_with_safe_substring_preserved_and_engine_intact` |
+
+Scope isolation: fixes live in `routers/v1/trip.py`,
+`services/skills/flight_book.py`, `services/safety/policy.py`,
+`tests/test_safety.py` only. Frozen files (`rights_engine.py`,
+`visa_guard.py`, `state_graph.py`, `guardian.py`, `atlas_client.py`,
+`static/app.js`, pre-existing tests, AGENTS.md, README demo-flow, `.env`)
+untouched. No pre-existing test weakened: the two rewritten tests had
+PINNED the F1 fail-open semantics at gate time — their fail-closed
+replacements are the contract the gate docstring always claimed
+("unable_to_verify blocks until fresh verification").
+
+Evidence-scope note: the untracked `tests/test_privacy.py` (interrupted
+G5 work-in-progress) was excluded from these runs; its single failing
+case is a stale route-shape expectation (the app refuses every aliasing
+probe — verified by probe: `..`→404, `a%20b`→400, `a/b`→405,
+`..%2Fevil`→405 GET / 400 PUT). Owned by the G5 gate.
+
+Remediation evidence (TZ=UTC, fresh runs):
+
+```
+red phase (11 new/rewritten regressions): 9 failed / 2 controls passed
+                                          (the 2 passing controls pin
+                                          behavior the fixes must keep)
+after fixes, targeted:                     14 passed in 0.37s
+non-UI suite:                              281 passed in 47.89s
+                                           (272 gate + 9 new regressions)
+UI suite (tests/test_ui_trip.py):          38 passed in 94.04s
+node --check static/trip.js / app.js:      exit 0
+```

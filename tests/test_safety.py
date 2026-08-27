@@ -887,10 +887,15 @@ class _CountingAtlas:
 
     def __init__(self):
         self.calls = []
+        self.search_calls = []
 
     async def verify_fare(self, option_id):
         self.calls.append(("verify_fare", option_id))
         return {"verified": True, "verified_at": "2026-08-27T11:00:00Z"}
+
+    async def search_flights(self, origin, destination, date_iso):
+        self.search_calls.append((origin, destination, date_iso))
+        return []
 
     async def create_booking_order(self, option_id, passenger):
         self.calls.append(("create_booking_order", option_id))
@@ -952,7 +957,14 @@ def test_unable_to_verify_blocks_until_fresh_verification():
     with pytest.raises(SkillError) as exc:
         _run(skill.run(_book_payload(), ctx))
     assert exc.value.code == "safety_unverified" and atlas.calls == []
+    # G4.6-DA-fix F1: a FAILED retry is not a fresh verification — the
+    # gate blocks unable_to_verify unconditionally; only a VERIFIED
+    # status (anything other than unable_to_verify) lifts the block.
     ctx["safety_check"]["verification_retried"] = True
+    with pytest.raises(SkillError) as exc:
+        _run(skill.run(_book_payload(), ctx))
+    assert exc.value.code == "safety_unverified" and atlas.calls == []
+    ctx["safety_check"] = {"trip_policy_status": "normal_precautions"}
     out = _run(skill.run(_book_payload(), ctx))
     assert out["pnr"] == "PNRSAFE1"
 
@@ -1099,13 +1111,17 @@ def test_acknowledge_wrong_status_is_refused(tmp_path):
 def test_unable_to_verify_gets_one_bounded_fresh_retry(tmp_path):
     orch = _safety_orch(tmp_path, "Exercise normal precautions.")
     trip = _seed_trip(orch)
-    # kill every route: the precheck must attempt a fresh verification and
-    # then surface the honest unable_to_verify gate state
+    # kill every route: the precheck attempts one bounded fresh
+    # verification; when THAT also fails it must BLOCK the booking
+    # decision — a failed retry is not a clearance (G4.6-DA-fix F1).
     orch.safety.research._fetch = _fake_fetch({})
-    _run(orch._booking_safety_precheck(trip))
+    with pytest.raises(TripApiError) as exc:
+        _run(orch._booking_safety_precheck(trip))
+    assert exc.value.code == "safety_unverified"
+    assert exc.value.recoverable is True
     gate = trip.context["safety_check"]
     assert gate["trip_policy_status"] == "unable_to_verify"
-    assert gate["verification_retried"] is True
+    assert gate["verification_retried"] is False
 
 
 def test_monitor_consent_and_material_change_event_in_state(tmp_path):
@@ -1174,3 +1190,146 @@ def test_safety_disabled_orchestrator_returns_honest_envelope(tmp_path):
     finally:
         set_trip_orchestrator(None)
         set_profile_store(None)
+
+
+# ======================================================================
+# G4.6 DEVIL'S ADVOCATE REMEDIATION — fail-open regressions
+# ======================================================================
+
+
+def test_da_f1_booking_refused_after_failed_unable_to_verify_retry(tmp_path):
+    orch = _safety_orch(tmp_path, "Exercise normal precautions.")
+    trip = _seed_trip(orch)
+    # every official source dies -> first assessment is unable_to_verify
+    orch.safety.research._fetch = _fake_fetch({})
+    with pytest.raises(TripApiError) as exc:
+        _run(orch._booking_safety_precheck(trip))
+    assert exc.value.code == "safety_unverified"
+    # the injected gate context keeps the booking skill blocked too —
+    # zero Atlas calls, not even fare verification
+    atlas = _CountingAtlas()
+    skill = FlightBookSkill(atlas=atlas)
+    with pytest.raises(SkillError) as exc2:
+        _run(skill.run(_book_payload(),
+                       {"safety_check": trip.context["safety_check"]}))
+    assert exc2.value.code == "safety_unverified"
+    assert atlas.calls == []
+    # a genuinely fresh verification lifts the block
+    orch.safety.research._fetch = _gov_uk_fetch_now(
+        "Exercise normal precautions.")
+    _run(orch._booking_safety_precheck(trip))
+    out = _run(skill.run(_book_payload(),
+                         {"safety_check": trip.context["safety_check"]}))
+    assert out["pnr"] == "PNRSAFE1"
+
+
+def test_da_f2_recovery_degrades_honestly_when_safety_check_throws(tmp_path):
+    orch = _safety_orch(tmp_path, "Exercise normal precautions.")
+    trip = _seed_trip(orch)
+    trip.context["flight_book"] = {"booking": {"option": {
+        "dep": {"airport": "BKK", "time": "2026-09-29 09:00"},
+        "arr": {"airport": "SIN", "time": "2026-09-29 12:30"}}}}
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("simulated safety-research crash")
+    orch.safety.research.run = _boom
+    _run(orch._build_recovery(trip, {"event": "disruption"}))
+    recovery = trip.context["recovery"]
+    # NOT a silent pass: the unverified state is surfaced and recorded
+    assert recovery.get("safety_blocked") is not True
+    assert recovery["safety_unverified"] is True
+    assert "verified" in recovery["note"]
+    assert any(r.name == "recovery_safety_check_failed"
+               and r.status == "FAILED" for r in trip.trace)
+
+
+def test_da_f2_cached_do_not_travel_still_blocks_when_recheck_throws(tmp_path):
+    orch = _safety_orch(tmp_path, "Do not travel to Singapore.")
+    trip = _seed_trip(orch)
+    _run(orch._ensure_safety(trip))  # caches the do-not-travel assessment
+    trip.context["flight_book"] = {"booking": {"option": {
+        "dep": {"airport": "BKK", "time": "2026-09-29 09:00"},
+        "arr": {"airport": "SIN", "time": "2026-09-29 12:30"}}}}
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("simulated safety-research crash")
+    orch.safety.research.run = _boom
+    _run(orch._build_recovery(trip, {"event": "disruption"}))
+    recovery = trip.context["recovery"]
+    assert recovery["safety_blocked"] is True
+    assert recovery["options"] == []
+    assert trip.pending_approvals == []
+
+
+def test_da_f3_stale_assessment_forces_fresh_verification_at_booking(tmp_path):
+    orch = _safety_orch(tmp_path, "Exercise normal precautions.")
+    orch.safety_ttl_seconds = 0.0  # every booking decision re-verifies
+    trip = _seed_trip(orch)
+    _run(orch._booking_safety_precheck(trip))
+    assert trip.context["safety"]["assessment"]["trip_policy_status"] == \
+        "normal_precautions"
+    # advisory flips AFTER the cached check — the stale cache must not
+    # gate a safety-critical booking decision
+    orch.safety.research._fetch = _gov_uk_fetch_now(
+        "Do not travel to Singapore.")
+    with pytest.raises(TripApiError) as exc:
+        _run(orch._booking_safety_precheck(trip))
+    assert exc.value.code == "safety_do_not_travel"
+
+
+def test_da_f3_default_ttl_reuses_fresh_cache(tmp_path):
+    orch = _safety_orch(tmp_path, "Exercise normal precautions.")
+    trip = _seed_trip(orch)
+    _run(orch._booking_safety_precheck(trip))
+    orch.safety.research._fetch = _gov_uk_fetch_now(
+        "Do not travel to Singapore.")
+    # default 24h TTL: the just-produced assessment is still fresh, so
+    # the cached verified status is reused (no forced refetch)
+    _run(orch._booking_safety_precheck(trip))
+    assert trip.context["safety"]["assessment"]["trip_policy_status"] == \
+        "normal_precautions"
+
+
+def test_da_f4_booking_refused_when_no_assessment_possible(tmp_path):
+    orch = _safety_orch(tmp_path, "Exercise normal precautions.")
+    trip = orch.executor.start_trip("trip_no_dest", [],
+                                    {"user_id": "safety_user"})
+    trip.context["goal_intake"] = {"goal": {"origin_city": "BKK"}}
+    with pytest.raises(TripApiError) as exc:
+        _run(orch._booking_safety_precheck(trip))
+    assert exc.value.code == "safety_unverified"
+    assert exc.value.recoverable is True
+
+
+def test_da_f5_recheck_keeps_assessment_when_monitor_check_throws(tmp_path):
+    orch = _safety_orch(tmp_path, "Exercise normal precautions.")
+    trip = _seed_trip(orch)
+    on = _run(orch.safety_monitor(trip.trip_id, True))
+    assert on["monitor_enabled"] is True
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("simulated monitor crash")
+    orch.safety.monitor.check = _boom
+    payload = _run(orch.safety_recheck_with_monitor(trip.trip_id))
+    # the fresh assessment survives the monitor failure — honest degrade
+    assert payload["assessment"]["overall_status"] == "normal_precautions"
+    assert payload["monitor_status"] == "check_failed"
+
+
+def test_da_f6_hostile_authority_with_absolute_safe_is_stripped_not_fatal():
+    ev = _ev(authority="Ministry of Safe Travel")
+    assessment = _engine().assess(_query(), [ev])
+    entry = assessment.assessments_per_source[0]
+    assert not contains_absolute_safe(str(entry["authority"]))
+    assert "[claim removed]" in entry["authority"]
+    assert assessment.trip_policy_status == "normal_precautions"
+
+
+def test_da_f6_url_with_safe_substring_preserved_and_engine_intact():
+    url = ("https://www.gov.uk/foreign-travel-advice/"
+           "singapore-safe-practices")
+    ev = _ev(canonical_url=url)
+    assessment = _engine().assess(_query(), [ev])
+    entry = assessment.assessments_per_source[0]
+    assert entry["canonical_url"] == url  # verbatim — never mangled
+    assert assessment.trip_policy_status == "normal_precautions"

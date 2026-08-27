@@ -240,6 +240,18 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_iso(raw: Any) -> Optional[datetime]:
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 class SafetyService:
     """Task #13 glue: research skill + consent-gated monitor + push path.
 
@@ -283,8 +295,13 @@ class TripOrchestrator:
     the TripGraphExecutor registry (cross-trip isolation is proven there)."""
 
     def __init__(self, profile_store=None, atlas=None, web_intel=None,
-                 llm_chat=None, safety_service: Optional[Any] = None) -> None:
+                 llm_chat=None, safety_service: Optional[Any] = None,
+                 safety_ttl_seconds: float = 24 * 3600) -> None:
         self.store = profile_store or get_profile_store()
+        # G4.6-DA fix F3: a cached assessment older than this TTL never
+        # gates a safety-critical booking decision — the precheck forces a
+        # fresh verification instead (default = the 24h advisory window).
+        self.safety_ttl_seconds = float(safety_ttl_seconds)
         # FAIL-CLOSED executor (G3-DA fix F5): the three runtime-registered
         # research adapters become explicit capability-empty registry entries
         # (documented exemption, §14.4), so allow_unmanifested_skills stays
@@ -432,7 +449,11 @@ class TripOrchestrator:
         })
         safety_ctx.setdefault("risk_acknowledged", False)
         if force:
-            safety_ctx["verification_retried"] = True
+            # G4.6-DA fix F1: the flag records the OUTCOME of the fresh
+            # verification attempt — a retry that still yields
+            # unable_to_verify verified NOTHING and never clears the block.
+            safety_ctx["verification_retried"] = (
+                assessment.get("trip_policy_status") != "unable_to_verify")
         trip.context["safety"] = safety_ctx
         self._record(trip, "safety_check", "safety_research", "COMPLETED",
                      0.0, {"overall_status": assessment.get("overall_status"),
@@ -469,11 +490,30 @@ class TripOrchestrator:
         """Runs BEFORE a booking approval resolves. do_not_travel blocks
         outright (approval never makes the risk go away); reconsider_travel
         halts until the separate risk acknowledgement exists; unable_to_
-        verify gets ONE bounded fresh-verification retry."""
+        verify gets ONE bounded fresh-verification retry and BLOCKS when
+        the retry fails — a failed retry is not a clearance (G4.6-DA fix
+        F1). A cached assessment older than safety_ttl_seconds never gates
+        a booking decision (F3); missing evidence is never a pass (F4)."""
         if self.safety is None:
             return
         safety_ctx = await self._ensure_safety(trip)
         assessment = safety_ctx.get("assessment") or {}
+        # F3: staleness guard — refresh BEFORE trusting the cached status
+        checked_at = _parse_iso(safety_ctx.get("checked_at"))
+        if assessment and checked_at is not None:
+            age = (datetime.now(timezone.utc) - checked_at).total_seconds()
+            if age > self.safety_ttl_seconds:
+                safety_ctx = await self._ensure_safety(trip, force=True)
+                assessment = safety_ctx.get("assessment") or {}
+        # F4: safety pipeline enabled but nothing was assessable (e.g. the
+        # route is still unknown) — missing evidence blocks, never passes.
+        if not assessment:
+            raise TripApiError(
+                422, "safety_unverified",
+                "Booking paused: the destination's safety status could not "
+                "be checked because no destination is known for this trip "
+                "yet. Missing evidence never counts as a clearance.",
+                recoverable=True, hint=_HINTS["safety_unverified"])
         status = assessment.get("trip_policy_status")
         if status == "unable_to_verify" \
                 and not safety_ctx.get("verification_retried"):
@@ -502,6 +542,18 @@ class TripOrchestrator:
                 "booking approval. Acknowledging this warning does not "
                 "remove the risk.", recoverable=True,
                 hint=_HINTS["safety_acknowledgement_required"])
+        if status == "unable_to_verify":
+            # G4.6-DA fix F1: the bounded retry FAILED — still unverified.
+            unverified = ", ".join(assessment.get("unverified_sources")
+                                   or []) or "official sources unavailable"
+            raise TripApiError(
+                422, "safety_unverified",
+                "Booking paused: the destination's status could not be "
+                f"verified (unverified: {unverified}). A fresh "
+                "verification was attempted and also failed — the booking "
+                "stays blocked until the status can actually be verified. "
+                "Try again later via the safety card.",
+                recoverable=True, hint=_HINTS["safety_unverified"])
 
     def _trip_or_404(self, trip_id: str):
         try:
@@ -1004,9 +1056,11 @@ class TripOrchestrator:
         # Task #13: automatic recovery is BLOCKED into a destination under
         # an active do-not-travel advisory — no options, no approval.
         if self.safety is not None:
+            safety_error: Optional[Exception] = None
             try:
                 safety_ctx = await self._ensure_safety(trip)
-            except Exception:  # noqa: BLE001 — degrade, never fabricate
+            except Exception as exc:  # noqa: BLE001 — degrade, never fabricate
+                safety_error = exc
                 safety_ctx = trip.context.get("safety") or {}
             status = ((safety_ctx.get("assessment") or {})
                       .get("trip_policy_status"))
@@ -1027,6 +1081,21 @@ class TripOrchestrator:
                              {"reason": "do_not_travel",
                               "authority": authority.get("authority")})
                 return
+            if safety_error is not None and not status:
+                # G4.6-DA fix F2: a FAILED safety check is never a silent
+                # pass — surface the unverified state and record it
+                # honestly (a cached assessment, when one exists, still
+                # gates via the status check above).
+                recovery["safety_unverified"] = True
+                recovery["note"] = (
+                    "The destination's safety status could not be verified "
+                    f"({type(safety_error).__name__}) and no earlier "
+                    "assessment exists. Replacement options are shown "
+                    "without a verified safety status — check official "
+                    "advice before choosing one.")
+                self._record(trip, "recovery_safety_check_failed",
+                             "safety_research", "FAILED", 0.0,
+                             {"error": type(safety_error).__name__})
         if dep.get("airport") and arr.get("airport"):
             date_iso = str(dep.get("time") or "")[:10] \
                 or date.today().isoformat()
@@ -1157,7 +1226,15 @@ class TripOrchestrator:
         if query is None:
             out["status"] = "armed_no_route_yet"
             return out
-        result = await monitor.check(trip_id, query, self.safety.research)
+        try:
+            result = await monitor.check(trip_id, query, self.safety.research)
+        except Exception as exc:  # noqa: BLE001 — G4.6-DA fix F5: honest
+            # degrade, never a bare 500 on the consent endpoint
+            self._record(trip, "safety_monitor_check_failed",
+                         "safety_monitor", "FAILED", 0.0,
+                         {"error": type(exc).__name__})
+            out["status"] = "check_failed"
+            return out
         await self._store_safety_events(trip, result.get("events") or [])
         out.update({"status": result.get("status"),
                     "events": result.get("events") or []})
@@ -1173,8 +1250,18 @@ class TripOrchestrator:
         if self.safety.monitor.consent_enabled(trip_id):
             query = self._safety_query(trip)
             if query is not None:
-                result = await self.safety.monitor.check(
-                    trip_id, query, self.safety.research)
+                try:
+                    result = await self.safety.monitor.check(
+                        trip_id, query, self.safety.research)
+                except Exception as exc:  # noqa: BLE001 — G4.6-DA fix F5:
+                    # the fresh assessment survives a monitor failure
+                    self._record(trip, "safety_monitor_check_failed",
+                                 "safety_monitor", "FAILED", 0.0,
+                                 {"error": type(exc).__name__})
+                    payload["monitor_status"] = "check_failed"
+                    payload["safety_events"] = (
+                        trip.context.get("safety_events") or [])
+                    return payload
                 await self._store_safety_events(
                     trip, result.get("events") or [])
                 payload["monitor_status"] = result.get("status")

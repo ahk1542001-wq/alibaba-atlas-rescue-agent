@@ -7,7 +7,9 @@ import-only). Owner correction (C) enforced here:
   other gate, whenever the orchestrator injects context["safety_check"]:
   do_not_travel BLOCKS booking outright (no override — user approval never
   makes the risk go away), reconsider_travel halts until a SEPARATE risk
-  acknowledgement exists, unable_to_verify halts until fresh verification;
+  acknowledgement exists, unable_to_verify halts UNCONDITIONALLY until a
+  verified (non-unable_to_verify) status exists — a failed verification
+  retry never clears it (G4.6-DA fix F1);
 - fares are REFRESHED and REVERIFIED (verify_fare) IMMEDIATELY before the
   booking order — never booked on stale search data;
 - idempotency map (trip_id, option_id) -> PNR: the lookup runs AFTER every
@@ -90,8 +92,11 @@ class FlightBookSkill(SkillBase):
                     "A separate, explicit risk acknowledgement is required "
                     "before booking approval. Acknowledging this warning "
                     "does not remove the risk.", recoverable=True)
-            if status == "unable_to_verify" \
-                    and not safety.get("verification_retried"):
+            if status == "unable_to_verify":
+                # G4.6-DA fix F1: blocks UNCONDITIONALLY — a failed
+                # verification retry is not a fresh verification. Only a
+                # VERIFIED status (which by definition is not
+                # unable_to_verify) ever lifts this gate.
                 unverified = ", ".join(
                     safety.get("unverified_sources") or []) \
                     or "official sources unavailable"
