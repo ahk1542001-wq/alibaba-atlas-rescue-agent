@@ -72,3 +72,19 @@ Entry template:
 - Alternative chosen: accepted the clean rerun as evidence; no assertion
   weakened, no code changed.
 - Status: RESOLVED (flake; green on rerun)
+
+## 2026-08-27 — Canonical spec reconciliation (reviewer rejection)
+- Repro: reviewer rejected "Full Product Complete" — repo held a STALE
+  422-line MASTER_BUILD_PACKAGE (sha256 f63d6d2b…) while the authoritative
+  canonical package is 946 lines (sha256 6283789fb1ce1f8f23289a65804d776e
+  3e37dd29f7fd03d440f18363ad5e36fc). Build had executed F1–F12 instead of
+  the canonical F1–F20 / S1–S13.
+- Attempts: n/a — this is a spec-authority correction, not a test failure.
+- Hypothesis: the repo package copy drifted from the canonical source; all
+  gate evidence was internally consistent but built against the stale copy.
+- Alternative chosen: replaced docs/MASTER_BUILD_PACKAGE.md with the
+  SHA-verified canonical 946-line package; opened corrective units R1–R5
+  (passport-number removal; legacy XSS; My-Trip default + consolidation;
+  canonical feature gaps incl. F13 LocationResolve; FINAL_REPORT rebuild
+  + full fresh-venv runbook + DA review).
+- Status: OPEN (tracked via R1–R5)

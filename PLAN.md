@@ -871,3 +871,29 @@ Definition of DONE (spec §16.3), each item verified:
 
 Per §16.3 the build now prints its 15-line summary and STOPS: no extra
 features, refactors, or second iterations after gates are green.
+
+## Canonical Reconciliation & Corrective Sequence (2026-08-27)
+
+Reviewer verdict rejected "Full Product Complete": the repo had executed the
+STALE 422-line package. The authoritative contract is the canonical 946-line
+package, now installed as docs/MASTER_BUILD_PACKAGE.md (SHA-256
+6283789fb1ce1f8f23289a65804d776e3e37dd29f7fd03d440f18363ad5e36fc).
+G0-G8 history is preserved; corrective units below bring the build to the
+canonical definition of done. Reviewer-mandated constraints: no push, no
+real traveler data ever, fictional fixtures only, preserve history with
+additive fix commits, stop only when F1-F20 + S1-S13 are genuinely satisfied.
+
+| Unit | Scope | Canonical basis | Status |
+|---|---|---|---|
+| R0 | canonical spec installed as repo authority; DECISIONS.tsv migrated to 5 columns | docs/MASTER_BUILD_PACKAGE.md §0-§23 | done (this commit) |
+| R1 | remove the complete passport-number path (schemas, API, UI, fixtures, tests, docs); passport country only; fictional data only | §5 "No passport number field exists", F5, F17, §9.4, §19.10 | pending |
+| R2 | remove every unsafe dynamic HTML insertion from ALL reachable frontend incl. legacy static/app.js; no frozen-file security exemption | §9.3, §20 XSS row | pending |
+| R3 | default experience = My Trip; three primary destinations; rescue/radar consolidated into trip monitoring/recovery states | §19.1, §19.7, §19.8 | pending |
+| R4 | canonical feature gaps: S12 LocationResolve (Bangkok→BKK+DMK, never silent), S13 RecoveryPlan, F14 idempotency-key semantics, F16 replaceable itinerary, F18 degraded flows, F19 a11y, 13-skill registry | §2.3 F13-F19, §4 S12/S13, §6, §19 | pending |
+| R5 | FINAL_REPORT rebuilt against F1-F20/G0-G8; §21 full fresh-venv runbook (hermetic suite, v1 canary, v2 browser, security, boot smoke); DA review vs canonical spec | §9.7, §21, §23 | pending |
+
+Frozen-file note for the corrective sequence: canonical §16.2 keeps
+rights_engine.py, visa_guard.py, and AGENTS.md/.env contents frozen; it
+explicitly REQUIRES modifying static/app.js for the security gate (R2) and
+intentional contract changes with equivalent-or-stronger coverage elsewhere
+(R1) — those are no longer treated as frozen for the mandated fixes.
