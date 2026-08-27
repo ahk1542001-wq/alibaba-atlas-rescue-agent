@@ -1173,3 +1173,30 @@ def test_s13_recovery_plan_discards_wrong_airport_replacements():
     assert [row["id"] for row in options] == ["exact-bkk"]
     assert all(row["dep"]["airport"] == "BKK"
                and row["arr"]["airport"] == "SIN" for row in options)
+
+
+def test_atlas_client_mock_disabled_raises_runtime_error(monkeypatch):
+    from services.atlas_client import AtlasClient
+    from config import settings
+
+    client = AtlasClient()
+
+    async def empty_cli(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(client, "cli_search_flights", empty_cli)
+    monkeypatch.setattr(settings, "use_mock_fallback", False)
+
+    with pytest.raises(RuntimeError, match="Provider offline and mocks disabled"):
+        _run(client.search_flights("BKK", "SIN", "2026-09-29"))
+
+
+def test_rescue_engine_telemetry_uses_configured_model(monkeypatch):
+    import services.rescue_engine as re_mod
+    from services.rescue_engine import RescueEngine
+    from services.atlas_client import AtlasClient
+
+    monkeypatch.setattr(re_mod.settings, "default_model", "configured-test-model")
+    engine = RescueEngine(AtlasClient())
+    telemetry = engine.get_agent_prompt_telemetry()
+    assert telemetry["model"] == "configured-test-model"

@@ -421,3 +421,44 @@ def test_gap5_recovery_plan_no_sq999_fabrication():
     # Must NOT fabricate SQ999, must return empty
     assert out["status"] == "no_alternatives_available"
     assert len(out["recovery_options"]) == 0
+
+
+def test_gap6_forged_rejection_overwritten_by_server_decision(harness):
+    atlas = FakeAtlas()
+    harness(atlas=atlas)
+
+    async def flow():
+        async with _client() as client:
+            user_id = "user_forged_rejection"
+            await client.put(
+                f"/api/profile/{user_id}/passport_country",
+                json={"value": "MM"},
+            )
+            start = await client.post("/api/trips", json={
+                "goal_text": "Plan my complete trip from BKK to SIN on 2026-09-29",
+                "user_id": user_id,
+            })
+            assert start.status_code == 200, start.text
+            trip_id = start.json()["trip_id"]
+
+            orch = get_trip_orchestrator()
+            trip = orch._trip_or_404(trip_id)
+            approval = next(a for a in trip.pending_approvals
+                            if a.node_name == "approve_booking")
+            option_id = approval.options[0]["id"]
+
+            atlas.calls.clear()
+            payload = {
+                "decision": "reject",
+                "value": {"approved": True, "option_id": option_id},
+            }
+            res = await client.post(
+                f"/api/trips/{trip_id}/approvals/{approval.approval_id}",
+                json=payload,
+            )
+            assert res.status_code == 200
+            assert approval.resolved_value.get("approved") is False
+            creates = [c for c in atlas.calls if c[0] == "create"]
+            assert len(creates) == 0
+
+    _run(flow())

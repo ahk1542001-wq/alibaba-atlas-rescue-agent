@@ -301,7 +301,7 @@ class AtlasClient:
             ]
 
         if not getattr(settings, "use_mock_fallback", True):
-            raise Exception("Provider offline and mocks disabled")
+            raise RuntimeError("Provider offline and mocks disabled")
 
         origin = origin.upper().strip()
         destination = destination.upper().strip()

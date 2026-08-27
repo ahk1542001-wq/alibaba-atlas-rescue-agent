@@ -2143,3 +2143,33 @@ def test_ui_safety_card_mobile_360_no_overflow(app_server, ui_browser,
     finally:
         context.close()
     assert not errors, f"browser console errors detected: {errors}"
+
+
+def test_AJ14_keyboard_navigation_views(tracked_page):
+    page = tracked_page
+    goto_trip(page)
+
+    # 1. focuses desktop [data-testid="nav-search"], presses Enter, and asserts #view-search is active
+    search_nav = page.locator('[data-testid="nav-search"]')
+    expect(search_nav).to_have_attribute("role", "button")
+    search_nav.focus()
+    page.keyboard.press("Enter")
+    expect(page.locator("#view-search")).to_be_visible()
+
+    # 2. focuses desktop [data-testid="nav-concierge"], presses Space, and asserts #view-concierge is active
+    concierge_nav = page.locator('[data-testid="nav-concierge"]')
+    expect(concierge_nav).to_have_attribute("role", "button")
+    concierge_nav.focus()
+    page.keyboard.press(" ")
+    expect(page.locator("#view-concierge")).to_be_visible()
+
+    # 3. switches to a mobile viewport, focuses [data-testid="mnav-trip"], presses Enter, and asserts #view-trip is active
+    page.set_viewport_size({"width": 375, "height": 667})
+    trip_mnav = page.locator('[data-testid="mnav-trip"]')
+    expect(trip_mnav).to_have_attribute("role", "button")
+    trip_mnav.focus()
+    page.keyboard.press("Enter")
+    expect(page.locator("#view-trip")).to_be_visible()
+
+    # 4. asserts the focused controls expose role button and remain keyboard focusable
+    assert page.evaluate("() => document.activeElement.getAttribute('role') === 'button'")
