@@ -977,37 +977,56 @@ Implementation remains additive and preserves the full G0–G8/R0–R5 history.
 | `121658d` | beginner-friendly slow safety/booking feedback |
 | `827be74` | reconcile R7 verification evidence |
 | `dbbe2d7` | verify the configured AI runtime |
-| `121658d` | beginner-friendly slow safety/booking feedback |
+
+### Post-review remediation sequence
+
+| Commit | Remediation scope | Category |
+|---|---|---|
+| `62a27ea` | repair skills and legacy booking retries | Retained Antigravity & canonical contract repair (S1-S13, clarify_loop internal, ProfileEditSkill, legacy booking idempotency/concurrency/retries) |
+| `7d858b0` | define post-review remediation loop | Remediation plan definition |
+| `8916c8a` | enforce explicit live delivery gate | Reproduced defect (RED-GREEN): 3-part live gate (`TELEGRAM_LIVE_TEST`), redacted simulated preview, safe delivery errors |
+| `d2e92b1` | preserve provider route truth | Reproduced defect (RED-GREEN): provider-derived claims route, 422 for missing route, 502/500 sanitized exception handling |
+| `63031fa` | lock retained safety fixes | Retained safety locks: forged rejection protection, Atlas mock-disabled RuntimeError, telemetry configured model, Playwright keyboard navigation |
+| `eb38efc` | register AF198 in provider status and stabilize E2E canary | Reproduced defect (RED-GREEN): AF198 CDG-BKK provider status for positive EU261 E2E canary |
+
+### Review findings and resolution
+- **Reproduced defects fixed RED-GREEN:**
+  - Guardian live send gate was missing `TELEGRAM_LIVE_TEST` prerequisite and dropped preview in simulated runs -> fixed in `8916c8a`.
+  - Claims assess route spoofing and raw exception leakage -> fixed in `d2e92b1`.
+  - Missing `AF198` provider status for E2E canary EU261 positive test -> fixed in `eb38efc`.
+- **Retained safety fixes protected by regression/mutation checks:**
+  - Forged rejection payload cannot override server rejection -> locked in `test_gap6` (`63031fa`).
+  - Mock-disabled Atlas search raises `RuntimeError` -> locked in `63031fa`.
+  - Rescue engine telemetry reports configured model -> locked in `63031fa`.
+  - Real Playwright keyboard navigation across desktop/mobile views -> locked in `test_AJ14` (`63031fa`).
+- **Reviewer verdicts:**
+  - Reviewer A (Completeness): PASS (NO DEFECTS FOUND)
+  - Reviewer B (Correctness & Security): PASS (NO DEFECTS FOUND)
+  - Reviewer C (User Impact & Evidence Honesty): PASS (NO DEFECTS FOUND)
+- **Remaining external-only limitations:**
+  - Sandbox/mock mode; live provider credentials not committed; in-process trip state; single-user local scope; production deployment owner-gated.
 
 ### Current verification evidence
 
-- Fresh collection: **376 tests**.
-- Complete suite: **376 passed** in 82.79s.
-- Browser UI suite: **42 passed** in 78.96s.
-- Corrective backend focus: **75 passed** in 0.55s.
-- Legacy browser canary: **14/14 passed**.
-- JavaScript syntax: `static/app.js` and `static/trip.js` valid.
-- Security gate: all six executed sections pass; privacy **32/32**.
+- Fresh collection: **397 tests**.
+- Complete suite: **397 passed** in 86.63s.
+- Browser UI suite: **43 passed** in 73.19s (`tests/test_ui_trip.py`).
+- Focused remediation suites: **70 passed** in 0.79s (`tests/test_legacy_booking_safety.py`, `tests/test_claims_provider_truth.py`, `tests/test_skills_manifest.py`, `tests/test_privacy.py`, `tests/test_canonical_gaps.py`).
+- Legacy browser canary: **14/14 passed** (`tests/e2e_full_journey.py`).
+- JavaScript syntax: `static/app.js` and `static/trip.js` valid (`node --check` exit 0).
+- Security gate: all six executed sections pass; privacy **33/33 passed**; zero banned patterns; pip-audit clean.
 - Dependency consistency: `pip check` reports no broken requirements.
-- Fresh boot: healthy; `/api/skills` reports 13 skills; runtime truthfully
-  reports deterministic fallback because no live LLM was configured.
-- Rendered desktop/mobile QA: exact BKK→SIN initial and recovery routes,
-  two-step fact confirmation, atomic approval, complete receipts/rights,
-  replaceable itinerary, no horizontal overflow, and no browser console errors.
+- Fresh boot: healthy; `/api/skills` reports exactly 13 skills; `profile_edit` present, `clarify_loop` internal-only.
+- Rendered desktop/mobile QA: exact BKK→SIN initial and recovery routes, two-step fact confirmation, atomic approval, complete receipts/rights, replaceable itinerary, no horizontal overflow, and no browser console errors.
 
 ### Superseded assumptions and release boundary
 
-- `data/demo_profile.json` and `data/demo_trip_goal.json` are tracked fictional
-  fixtures. The former `data/mock_victor.json` real-owner-data action is
-  cancelled and must not be requested or restored.
-- Earlier screenshot paths are historical only; R7 claims no committed
-  screenshot evidence.
-- Earlier live-Qwen or other live-provider wording is historical only. R7
-  verified deterministic fallback and does not claim a live ModelScope run.
-- `gitleaks` and `pip-audit` were unavailable; neither is claimed as passed.
-- The verified product is a complete canonical hackathon build in
-  hermetic/Atlas Sandbox mode, not a live-airline production deployment.
-- Integration is a local-only fast-forward to `main`. No push,
+- `data/demo_profile.json` and `data/demo_trip_goal.json` are tracked fictional fixtures. The former `data/mock_victor.json` real-owner-data action is cancelled and must not be requested or restored.
+- Earlier screenshot paths are historical only; no committed screenshot evidence claimed.
+- Earlier live-Qwen or other live-provider wording is historical only; verified deterministic fallback when no live ModelScope is configured.
+- `gitleaks` not installed on host (built-in banned pattern scan used); `pip-audit` passed clean.
+- The verified product is a complete canonical hackathon build in hermetic/Atlas Sandbox mode, not a live-airline production deployment.
+- Integration is a local-only fast-forward to `main`. No push, deploy, publication, or live booking.
   deployment, tag, publication, real identity, payment, credential, or live
   booking is authorized by this plan.
 
