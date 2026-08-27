@@ -1213,15 +1213,12 @@ def test_plural_api_trips_endpoints_and_idempotency_key(harness):
                 f"/api/trips/{trip_id}/clarifications",
                 json={"answers": {"date_window": "2026-09-29 to 2026-09-30"}})
             assert clarif_resp.status_code == 200
+            chips = clarif_resp.json()["confirmation_chips"]
+            date_chip = next(c for c in chips if c["field"] == "date_window")
 
             # 7. POST /api/trips/{trip_id}/confirmations/{chip_id}
-            from routers.v1.trip import get_trip_orchestrator
-            orch = get_trip_orchestrator()
-            trip = orch.executor.get(trip_id)
-            if trip:
-                trip._confirmation_chips = {"chip_123": {"chip_id": "chip_123", "decision": "pending", "node_name": "mock"}}
             conf_resp = await client.post(
-                f"/api/trips/{trip_id}/confirmations/chip_123",
+                f"/api/trips/{trip_id}/confirmations/{date_chip['chip_id']}",
                 json={"decision": "confirm"})
             assert conf_resp.status_code == 200
             assert conf_resp.json()["status"] == "confirmed"

@@ -34,6 +34,28 @@ _WORD_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
                  "six": 6, "seven": 7, "eight": 8, "nine": 9}
 
 
+def _airport_resolution(text: str, code: Optional[str]) -> tuple[List[str], Optional[str]]:
+    """Preserve city-level ambiguity while accepting explicit airports.
+
+    The deterministic extractor historically collapsed the word ``Bangkok``
+    to BKK.  That is useful for legacy search, but it is not a user-confirmed
+    airport choice because Bangkok also has DMK.  Candidate/confirmation
+    fields carry that distinction without changing the legacy city field.
+    """
+    if not code:
+        return [], None
+    upper = text.upper()
+    if re.search(rf"\b{re.escape(code)}\b", upper):
+        return [code], code
+    if code == "BKK" and "BANGKOK" in upper:
+        if "SUVARNABHUMI" in upper:
+            return ["BKK"], "BKK"
+        if "DON MUEANG" in upper or "DON MUANG" in upper:
+            return ["DMK"], "DMK"
+        return ["BKK", "DMK"], None
+    return [code], code
+
+
 def _find_city(text: str, start: int = 0, end: Optional[int] = None) -> Optional[str]:
     """Return IATA for the first city alias occurring in text[start:end]."""
     seg = text[start:end] if end is not None else text[start:]
@@ -245,11 +267,21 @@ class GoalIntakeSkill(SkillBase):
             fields = None
         if fields is None:
             fields = deterministic_extract(free_text)
+        origin = fields.get("origin_city") or None
+        destination = fields.get("dest_city") or None
+        origin_candidates, confirmed_origin = _airport_resolution(
+            free_text, origin)
+        destination_candidates, confirmed_destination = _airport_resolution(
+            free_text, destination)
         goal = TripGoal(
             goal_id=f"goal_{uuid.uuid4().hex[:8]}",
             raw_text=free_text,
-            origin_city=fields.get("origin_city") or None,
-            dest_city=fields.get("dest_city") or None,
+            origin_city=origin,
+            origin_airport_candidates=origin_candidates,
+            confirmed_origin_airport=confirmed_origin,
+            dest_city=destination,
+            destination_airport_candidates=destination_candidates,
+            confirmed_destination_airport=confirmed_destination,
             date_window=fields.get("date_window") or None,
             passengers=int(fields.get("passengers") or 1),
             budget_hint=fields.get("budget_hint") or None,

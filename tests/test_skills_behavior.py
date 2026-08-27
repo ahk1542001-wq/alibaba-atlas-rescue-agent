@@ -222,6 +222,30 @@ def test_s2_empty_profile_asks_every_missing_required_value(store):
     assert not {"origin_city", "dest_city", "date_window"} & fields
 
 
+def test_s1_natural_bangkok_keeps_all_airport_candidates():
+    skill = GoalIntakeSkill(llm_chat=_no_llm)
+    out = _run(skill.run({
+        "free_text": "Find flights only from Bangkok to Singapore on 2026-12-01"
+    }))
+    goal = out["goal"]
+    assert goal["origin_airport_candidates"] == ["BKK", "DMK"]
+    assert goal["confirmed_origin_airport"] is None
+    assert goal["destination_airport_candidates"] == ["SIN"]
+    assert goal["confirmed_destination_airport"] == "SIN"
+
+
+def test_s1_exact_iata_is_not_treated_as_ambiguous():
+    skill = GoalIntakeSkill(llm_chat=_no_llm)
+    out = _run(skill.run({
+        "free_text": "Find flights only BKK to SIN on 2026-12-01"
+    }))
+    goal = out["goal"]
+    assert goal["origin_airport_candidates"] == ["BKK"]
+    assert goal["confirmed_origin_airport"] == "BKK"
+    assert goal["destination_airport_candidates"] == ["SIN"]
+    assert goal["confirmed_destination_airport"] == "SIN"
+
+
 def test_s2_zero_redundant_questions_when_profile_complete(store):
     store.get_or_create("victor")
     store.set_identity("victor", passport_country="MM", home_city="Bangkok")

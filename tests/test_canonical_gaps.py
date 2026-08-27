@@ -10,41 +10,77 @@ from tests.test_e2e_trip_journey import _no_llm
 
 # 1. API Missing Fields & Confirmations
 def test_gap1_api_confirmations_and_plan(harness):
-    orch = harness() # create orchestrator
-    
+    harness()
+
     async def flow():
         async with _client() as client:
-            await client.put("/api/profile/user_canonical/passport_country", json={"value": "SGP"})
-            # POST /api/trips
+            user_id = "user_canonical"
             res = await client.post("/api/trips", json={
-                "goal_text": "Need to go to BKK on 2026-12-01",
-                "user_id": "user_canonical"
+                "goal_text": "Find flights only to Singapore on 2026-12-01",
+                "user_id": user_id,
             })
             assert res.status_code == 200
             data = res.json()
             trip_id = data["trip_id"]
-            
-            assert isinstance(data["missing_fields"], list)
-            assert isinstance(data["confirmation_chips"], list)
-            
-            # If there's a chip, confirm it
-            if data["confirmation_chips"]:
-                chip = data["confirmation_chips"][0]
-                chip_id = chip["chip_id"]
-                
-                c_res = await client.post(f"/api/trips/{trip_id}/confirmations/{chip_id}", json={"decision": "confirm"})
-                assert c_res.status_code == 200
-                assert c_res.json()["status"] == "confirmed"
-                
-                # double confirm should 409
-                c_res2 = await client.post(f"/api/trips/{trip_id}/confirmations/{chip_id}", json={"decision": "confirm"})
-                assert c_res2.status_code == 409
-                
-            # Execute plan
+
+            assert data["missing_fields"] == [
+                "origin_city", "passport_country", "home_city"]
+            assert data["confirmation_chips"] == []
+
+            before = (await client.get(f"/api/profile/{user_id}")).json()
+            assert before["passport_country"] is None
+
+            clarification = await client.post(
+                f"/api/trips/{trip_id}/clarifications",
+                json={"answers": {"passport_country": "MM"}},
+            )
+            assert clarification.status_code == 200, clarification.text
+            pending = clarification.json()["confirmation_chips"]
+            assert len(pending) == 1
+            chip = pending[0]
+            assert chip["field"] == "passport_country"
+            assert chip["proposed_value"] == "MM"
+            assert chip["state"] == "pending"
+
+            still_before = (await client.get(f"/api/profile/{user_id}")).json()
+            assert still_before["passport_country"] is None
+
+            c_res = await client.post(
+                f"/api/trips/{trip_id}/confirmations/{chip['chip_id']}",
+                json={"decision": "confirm"},
+            )
+            assert c_res.status_code == 200, c_res.text
+            confirmed = c_res.json()
+            assert confirmed["status"] == "confirmed"
+            assert confirmed["missing_fields"] == ["origin_city", "home_city"]
+
+            after = (await client.get(f"/api/profile/{user_id}")).json()
+            assert after["passport_country"]["value"] == "MM"
+
+            c_res2 = await client.post(
+                f"/api/trips/{trip_id}/confirmations/{chip['chip_id']}",
+                json={"decision": "confirm"},
+            )
+            assert c_res2.status_code == 409
+
+            origin = await client.post(
+                f"/api/trips/{trip_id}/clarifications",
+                json={"answers": {"origin_city": "BKK"}},
+            )
+            assert origin.status_code == 200, origin.text
+            origin_chip = origin.json()["confirmation_chips"][0]
+            assert origin_chip["field"] == "origin_city"
+            assert origin_chip["proposed_value"] == "BKK"
+            origin_confirm = await client.post(
+                f"/api/trips/{trip_id}/confirmations/{origin_chip['chip_id']}",
+                json={"decision": "confirm"},
+            )
+            assert origin_confirm.status_code == 200, origin_confirm.text
+
             p_res = await client.post(f"/api/trips/{trip_id}/plan")
             assert p_res.status_code == 200
             assert p_res.json()["status"] in ("completed", "failed", "awaiting_approval")
-            
+
     _run(flow())
         
 

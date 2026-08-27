@@ -106,6 +106,9 @@ _SCOPE_LABELS = {
 # them persists into the paused/failed trip's goal and resumes it
 # (G4-DA-fix F4 — previously the chip confirm was a silent no-op).
 _TRIP_GOAL_FIELDS = ("origin_city", "dest_city", "date_window")
+_PROFILE_CLARIFY_FIELDS = ("passport_country", "home_city")
+_AIRPORT_CONFIRM_FIELDS = (
+    "confirmed_origin_airport", "confirmed_destination_airport")
 _RESUMABLE_ROUTE_ERRORS = ("missing_route", "missing_dates")
 _IATA_RE = re.compile(r"[A-Z]{3}")
 
@@ -678,6 +681,10 @@ class TripOrchestrator:
              "requested_services": goal_out["requested_services"]}, ctx)
         t2 = time.perf_counter()
 
+        goal_out["goal"]["missing_fields"] = [
+            q["field"] for q in (clarify_out.get("questions") or [])
+            if q.get("field")]
+
         seed = {"raw_text": goal_text, "goal": goal_out["goal"],
                 "requested_services": clarify_out["requested_services"],
                 "clarify": clarify_out}
@@ -945,6 +952,233 @@ class TripOrchestrator:
 
     # -- clarify answers (G4-DA-fix F4) -----------------------------------------
 
+    def _sync_clarify_surface(self, trip) -> List[str]:
+        clarify = trip.context.get("clarify_loop") or {}
+        missing = [q.get("field") for q in (clarify.get("questions") or [])
+                   if q.get("field")]
+        clarify["complete"] = not missing and not clarify.get(
+            "scope_clarification")
+        trip.context["clarify_loop"] = clarify
+        goal = (trip.context.get("goal_intake") or {}).get("goal")
+        if isinstance(goal, dict):
+            goal["missing_fields"] = list(missing)
+        seed = self._seeds.get(trip.trip_id) or {}
+        if isinstance(seed.get("goal"), dict):
+            seed["goal"]["missing_fields"] = list(missing)
+        return missing
+
+    def confirmation_surface(self, trip_id: str) -> Dict[str, Any]:
+        trip = self._trip_or_404(trip_id)
+        missing = self._sync_clarify_surface(trip)
+        chips = [
+            chip.model_dump(mode="json")
+            for chip in trip.confirmation_chips.values()
+            if chip.state == "pending"
+        ]
+        return {"missing_fields": missing, "confirmation_chips": chips}
+
+    def seed_airport_confirmation_chips(self, trip_id: str) -> None:
+        trip = self._trip_or_404(trip_id)
+        goal = (trip.context.get("goal_intake") or {}).get("goal") or {}
+        for prefix in ("origin", "destination"):
+            field = f"confirmed_{prefix}_airport"
+            candidates = goal.get(f"{prefix}_airport_candidates") or []
+            if len(candidates) <= 1 or goal.get(field):
+                continue
+            if any(c.field == field and c.state == "pending"
+                   for c in trip.confirmation_chips.values()):
+                continue
+            chip = ConfirmationChip(
+                field=field,
+                proposed_value=None,
+                options=list(candidates),
+                message=f"Choose the {prefix} airport: "
+                        f"{', '.join(candidates)}",
+                trip_id=trip_id,
+            )
+            trip.confirmation_chips[chip.chip_id] = chip
+
+    @staticmethod
+    def _normalize_profile_clarification(field: str, value: Any) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            raise TripApiError(
+                422, "invalid_clarify_answer",
+                f"the answer for '{field}' is empty", recoverable=True)
+        if field == "passport_country":
+            normalized = raw.upper()
+            if not re.fullmatch(r"[A-Z]{2,3}", normalized):
+                raise TripApiError(
+                    422, "invalid_clarify_answer",
+                    "passport country must be a 2- or 3-letter country code",
+                    recoverable=True,
+                    hint="e.g. MM, TH, SGP")
+            return normalized
+        if len(raw) > 120:
+            raise TripApiError(
+                422, "invalid_clarify_answer",
+                f"the answer for '{field}' is too long", recoverable=True)
+        return raw
+
+    def _normalize_airport_confirmation(self, trip, field: str,
+                                        value: Any) -> str:
+        raw = str(value or "").strip().upper()
+        prefix = "origin" if field == "confirmed_origin_airport" \
+            else "destination"
+        goal = (trip.context.get("goal_intake") or {}).get("goal") or {}
+        candidates = goal.get(f"{prefix}_airport_candidates") or []
+        if raw not in candidates:
+            raise TripApiError(
+                422, "invalid_airport_confirmation",
+                f"'{raw}' is not one of the offered {prefix} airports",
+                recoverable=True,
+                hint=f"choose one of: {', '.join(candidates)}")
+        return raw
+
+    async def propose_clarifications(self, trip_id: str,
+                                     answers: Dict[str, Any]) -> Dict[str, Any]:
+        trip = self._trip_or_404(trip_id)
+        if not answers:
+            return {"trip_id": trip_id, **self.confirmation_surface(trip_id)}
+        allowed = set(_TRIP_GOAL_FIELDS) | set(_PROFILE_CLARIFY_FIELDS) \
+            | set(_AIRPORT_CONFIRM_FIELDS)
+        async with trip.confirmation_lock:
+            for field, raw in answers.items():
+                if field not in allowed:
+                    raise TripApiError(
+                        422, "invalid_clarify_field",
+                        f"'{field}' is not a supported clarification field",
+                        recoverable=True,
+                        hint=f"supported fields: {', '.join(sorted(allowed))}")
+                if any(c.field == field and c.state == "pending"
+                       for c in trip.confirmation_chips.values()):
+                    raise TripApiError(
+                        409, "confirmation_pending",
+                        f"'{field}' already has a pending confirmation",
+                        recoverable=True,
+                        hint="confirm, reject, or correct the existing chip")
+                if field in _PROFILE_CLARIFY_FIELDS:
+                    normalized: Any = self._normalize_profile_clarification(
+                        field, raw)
+                elif field in _AIRPORT_CONFIRM_FIELDS:
+                    normalized = self._normalize_airport_confirmation(
+                        trip, field, raw)
+                elif field == "date_window":
+                    normalized = _extract_dates(str(raw or "").strip())
+                    if not normalized:
+                        raise TripApiError(
+                            422, "invalid_clarify_answer",
+                            "the date answer could not be parsed into a window",
+                            recoverable=True,
+                            hint="e.g. Sep 29-30 or 2026-09-29 to 2026-09-30")
+                else:
+                    text_value = str(raw or "").strip()
+                    upper = text_value.upper()
+                    normalized = upper if _IATA_RE.fullmatch(upper) else \
+                        _find_city(text_value.lower())
+                    if not normalized:
+                        raise TripApiError(
+                            422, "invalid_clarify_answer",
+                            f"could not resolve the answer for '{field}'",
+                            recoverable=True,
+                            hint="use a city name or a 3-letter IATA code")
+                chip = ConfirmationChip(
+                    field=field,
+                    proposed_value=normalized,
+                    message=f"Confirm {field.replace('_', ' ')}: {normalized}",
+                    trip_id=trip_id,
+                )
+                trip.confirmation_chips[chip.chip_id] = chip
+        return {"trip_id": trip_id, **self.confirmation_surface(trip_id)}
+
+    def _remove_clarify_question(self, trip, field: str) -> None:
+        clarify = trip.context.get("clarify_loop") or {}
+        clarify["questions"] = [
+            q for q in (clarify.get("questions") or [])
+            if q.get("field") != field]
+        seed = self._seeds.get(trip.trip_id) or {}
+        seed_clarify = seed.get("clarify")
+        if isinstance(seed_clarify, dict):
+            seed_clarify["questions"] = [
+                q for q in (seed_clarify.get("questions") or [])
+                if q.get("field") != field]
+        self._sync_clarify_surface(trip)
+
+    async def resolve_confirmation(self, trip_id: str, chip_id: str,
+                                   decision: str,
+                                   corrected_value: Any = None) -> Dict[str, Any]:
+        trip = self._trip_or_404(trip_id)
+        async with trip.confirmation_lock:
+            chip = trip.confirmation_chips.get(chip_id)
+            if chip is None:
+                raise TripApiError(
+                    404, "unknown_chip",
+                    f"confirmation chip '{chip_id}' not found on trip '{trip_id}'",
+                    recoverable=True,
+                    hint="use a pending chip returned by this trip")
+            if chip.state != "pending":
+                raise TripApiError(
+                    409, "chip_already_resolved",
+                    f"chip '{chip_id}' is already '{chip.state}'",
+                    recoverable=True,
+                    hint="confirmation chips resolve exactly once")
+            if decision not in ("confirm", "reject", "corrected"):
+                raise TripApiError(
+                    422, "invalid_chip_decision",
+                    f"decision '{decision}' not recognized",
+                    recoverable=True,
+                    hint="decision must be confirm, reject, or corrected")
+            if decision == "reject":
+                chip.state = "rejected"
+                value = None
+            else:
+                value = corrected_value if decision == "corrected" \
+                    else chip.proposed_value
+                if value is None:
+                    raise TripApiError(
+                        422, "confirmation_value_required",
+                        "this confirmation requires selecting or correcting a value",
+                        recoverable=True,
+                        hint=f"choose one of: {', '.join(map(str, chip.options))}")
+                field = chip.field
+                if field in _PROFILE_CLARIFY_FIELDS:
+                    value = self._normalize_profile_clarification(field, value)
+                    user_id = str(trip.context.get("user_id") or "")
+                    self.store.set_field(user_id, field, value, source="user")
+                    trip.context["profile"] = self._profile_ctx(
+                        self.store.get_or_create(user_id))
+                    self._remove_clarify_question(trip, field)
+                elif field in _TRIP_GOAL_FIELDS:
+                    result = await self.answer_clarify(
+                        trip_id, field, str(value) if field != "date_window"
+                        else f"{value['start']} to {value['end']}")
+                    value = result["clarify"]["value"]
+                elif field in _AIRPORT_CONFIRM_FIELDS:
+                    value = self._normalize_airport_confirmation(
+                        trip, field, value)
+                    goal = (trip.context.get("goal_intake") or {}).get("goal") or {}
+                    goal[field] = value
+                    route_field = "origin_city" if field == \
+                        "confirmed_origin_airport" else "dest_city"
+                    goal[route_field] = value
+                    seed = self._seeds.get(trip_id) or {}
+                    if isinstance(seed.get("goal"), dict):
+                        seed["goal"][field] = value
+                        seed["goal"][route_field] = value
+                chip.corrected_value = value if decision == "corrected" else None
+                chip.state = "corrected" if decision == "corrected" \
+                    else "confirmed"
+            surface = self.confirmation_surface(trip_id)
+            return {
+                "chip_id": chip_id,
+                "status": chip.state,
+                "decision": decision,
+                "field": chip.field,
+                "applied_value": value,
+                **surface,
+                "state": self.state(trip_id),
+            }
+
     async def answer_clarify(self, trip_id: str, field: str,
                              value: str) -> Dict[str, Any]:
         """Persist a NON-profile clarify answer (origin_city, dest_city,
@@ -1011,6 +1245,7 @@ class TripOrchestrator:
             seed_clarify["questions"] = [
                 q for q in (seed_clarify.get("questions") or [])
                 if q.get("field") != field]
+        self._sync_clarify_surface(trip)
 
         resumed = False
         if trip.status == "failed":
@@ -1650,43 +1885,12 @@ async def trips_start(body: TripStartRequest):
     res = await trip_start(body)
     trip_id = res["trip_id"]
     orch = get_trip_orchestrator()
-    trip = orch.executor.get(trip_id)
-    goal = (trip.context.get("goal_intake") or {}).get("goal") or {}
-    missing = goal.get("missing_fields") or []
-    clarify = trip.context.get("clarify_loop") or {}
-    chips_raw = clarify.get("confirmation_chips") or []
-    chips = []
-    for c in chips_raw:
-        if isinstance(c, dict):
-            chip = ConfirmationChip(
-                field=c.get("field", ""),
-                proposed_value=c.get("proposed_value"),
-                message=c.get("message", ""),
-                trip_id=trip_id,
-            )
-            chips.append(chip.model_dump(mode="json"))
-    # Also generate chips for ambiguous airport candidates
-    for prefix in ("origin", "destination"):
-        cands = goal.get(f"{prefix}_airport_candidates") or []
-        confirmed = goal.get(f"confirmed_{prefix}_airport")
-        if len(cands) > 1 and not confirmed:
-            chip = ConfirmationChip(
-                field=f"confirmed_{prefix}_airport",
-                proposed_value=cands[0],
-                message=f"Confirm {prefix} airport: {', '.join(cands)}?",
-                trip_id=trip_id,
-            )
-            chips.append(chip.model_dump(mode="json"))
-    # Store chips on the trip for later validation
-    if not hasattr(trip, "_confirmation_chips"):
-        trip._confirmation_chips = {}
-    for c in chips:
-        trip._confirmation_chips[c["chip_id"]] = c
+    orch.seed_airport_confirmation_chips(trip_id)
+    surface = orch.confirmation_surface(trip_id)
     return {
         "trip_id": trip_id,
         "status": res["status"],
-        "missing_fields": missing,
-        "confirmation_chips": chips,
+        **surface,
         "state_url": f"/api/trips/{trip_id}/state",
         "stream_url": f"/api/trips/{trip_id}/stream",
     }
@@ -1703,6 +1907,7 @@ async def trips_summary(trip_id: str):
         "current_state": trip.current,
         "goal": goal,
         "pending_approvals": len(trip.pending_approvals),
+        **orch.confirmation_surface(trip_id),
         "state_url": f"/api/trips/{trip_id}/state",
         "stream_url": f"/api/trips/{trip_id}/stream",
     }
@@ -1731,83 +1936,14 @@ async def trips_resolve_approval(trip_id: str, approval_id: str,
 @trips_router.post("/{trip_id}/clarifications")
 async def trips_clarifications(trip_id: str, body: ClarificationsRequest):
     orch = get_trip_orchestrator()
-    last_res = None
-    for field, val in body.answers.items():
-        last_res = await orch.answer_clarify(trip_id, field, str(val))
-    return last_res or JSONResponse(content=orch.state(trip_id))
+    return await orch.propose_clarifications(trip_id, body.answers)
 
 
 @trips_router.post("/{trip_id}/confirmations/{chip_id}")
 async def trips_confirmation(trip_id: str, chip_id: str, body: ConfirmationChipDecision):
     orch = get_trip_orchestrator()
-    trip = orch._trip_or_404(trip_id)
-
-    # Look up the chip — must belong to THIS trip
-    chips = getattr(trip, "_confirmation_chips", {})
-    chip = chips.get(chip_id)
-    if chip is None:
-        raise TripApiError(
-            404, "unknown_chip",
-            f"confirmation chip '{chip_id}' not found on trip '{trip_id}'",
-            recoverable=True,
-            hint="list chips via POST /api/trips response or GET /api/trips/{id}")
-
-    # Reject already-resolved chips
-    if chip.get("state") in ("confirmed", "rejected", "corrected"):
-        raise TripApiError(
-            409, "chip_already_resolved",
-            f"chip '{chip_id}' is already '{chip['state']}'",
-            recoverable=True,
-            hint="confirmation chips resolve exactly once")
-
-    # Apply the decision
-    field = chip.get("field", "")
-    decision = body.decision
-
-    if decision == "confirm":
-        chip["state"] = "confirmed"
-        # Apply the proposed value to the trip goal
-        goal_data = (trip.context.get("goal_intake") or {}).get("goal")
-        if isinstance(goal_data, dict) and field:
-            goal_data[field] = chip.get("proposed_value")
-            # Remove from missing_fields if present
-            mf = goal_data.get("missing_fields") or []
-            if field in mf:
-                mf.remove(field)
-                goal_data["missing_fields"] = mf
-
-    elif decision == "reject":
-        chip["state"] = "rejected"
-        # Leave goal unchanged — user must provide a new value later
-
-    elif decision == "corrected":
-        chip["state"] = "corrected"
-        corrected = body.corrected_value
-        chip["corrected_value"] = corrected
-        goal_data = (trip.context.get("goal_intake") or {}).get("goal")
-        if isinstance(goal_data, dict) and field and corrected is not None:
-            goal_data[field] = corrected
-            mf = goal_data.get("missing_fields") or []
-            if field in mf:
-                mf.remove(field)
-                goal_data["missing_fields"] = mf
-    else:
-        raise TripApiError(
-            422, "invalid_chip_decision",
-            f"decision '{decision}' not recognized",
-            recoverable=True,
-            hint="decision must be 'confirm', 'reject', or 'corrected'")
-
-    return {
-        "chip_id": chip_id,
-        "status": chip["state"],
-        "decision": decision,
-        "field": field,
-        "applied_value": chip.get("corrected_value") if decision == "corrected"
-                         else chip.get("proposed_value") if decision == "confirm"
-                         else None,
-        "state": orch.state(trip_id)
-    }
+    return await orch.resolve_confirmation(
+        trip_id, chip_id, body.decision, body.corrected_value)
 
 
 @trips_router.post("/{trip_id}/plan")

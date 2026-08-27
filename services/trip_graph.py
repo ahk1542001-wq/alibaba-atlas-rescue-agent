@@ -33,6 +33,7 @@ from pydantic import BaseModel, ConfigDict
 
 from models.schemas import (
     ApprovalRequest,
+    ConfirmationChip,
     GraphNodeStateV2,
     RequestedServices,
     ScopeClarificationRequest,
@@ -103,9 +104,11 @@ class Trip:
         self.context: Dict[str, Any] = dict(context)
         self.trace: List[GraphNodeStateV2] = []
         self.pending_approvals: List[ApprovalRequest] = []
+        self.confirmation_chips: Dict[str, ConfirmationChip] = {}
         self.status = "pending"  # pending|running|awaiting_approval|completed|failed
         self.current: Optional[str] = None
         self.lock = asyncio.Lock()
+        self.confirmation_lock = asyncio.Lock()
 
 
 # --- helpers ---------------------------------------------------------------------------

@@ -381,6 +381,7 @@ class ConfirmationChip(BaseModel):
     state: Literal["pending", "confirmed", "rejected", "corrected"] = "pending"
     corrected_value: Optional[Any] = None
     trip_id: Optional[str] = None
+    options: List[Any] = Field(default_factory=list)
 
 
 class ApprovalRequest(BaseModel):
