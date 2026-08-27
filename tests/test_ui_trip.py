@@ -1618,3 +1618,259 @@ def test_AJ13_legacy_canary(tracked_page, install_orch):
     app_js = Path(__file__).resolve().parent.parent / "static" / "app.js"
     digest = hashlib.sha256(app_js.read_bytes()).hexdigest()
     assert digest == APP_JS_SHA256, "static/app.js was modified"
+
+
+# ======================================================================
+# G4.6 SAFETY INTELLIGENCE — UI regressions (additive, hermetic).
+# Same boot pattern as above; the safety pipeline runs against an
+# injected transport (no live network). Port 8050 must be FREE.
+# ======================================================================
+
+from routers.v1.trip import SafetyService  # noqa: E402
+from services.skills.safety_monitor import SafetyMonitorSkill  # noqa: E402
+from services.skills.safety_research import (  # noqa: E402
+    SafetyResearchSkill,
+)
+
+_UI_GOV_UK_SG = ("https://www.gov.uk/api/content/"
+                 "foreign-travel-advice/singapore")
+
+
+def _ui_safety_fetch(summary):
+    updated = (datetime.now(timezone.utc) - timedelta(minutes=10)) \
+        .isoformat().replace("+00:00", "Z")
+
+    async def fetch(url):
+        if url != _UI_GOV_UK_SG:
+            raise ConnectionError("no route (simulated)")
+        return {"status": 200, "final_url": "",
+                "json": {"title": "Singapore travel advice",
+                         "public_updated_at": updated,
+                         "details": {"summary": summary}},
+                "text": ""}
+    return fetch
+
+
+@pytest.fixture
+def install_safety_orch(tmp_path):
+    """G3 harness + the REAL safety pipeline with injected transport."""
+
+    def _install(summary):
+        store = ProfileStore(root=tmp_path / "profiles")
+        set_profile_store(store)
+        orch = TripOrchestrator(
+            profile_store=store, atlas=FakeAtlas(),
+            web_intel=WebIntelClient(ddg_fetcher=_fresh_fetcher(),
+                                     tavily_api_key="", serper_api_key=""),
+            llm_chat=_no_llm,
+            safety_service=SafetyService(
+                research=SafetyResearchSkill(fetch=_ui_safety_fetch(summary)),
+                monitor=SafetyMonitorSkill(min_interval_seconds=0)))
+        set_trip_orchestrator(orch)
+        return orch
+
+    yield _install
+
+
+def _wait_safety_card(page):
+    page.click('[data-testid="aj-nav-mytrip"]')  # My trip screen (step 5)
+    expect(page.locator('[data-testid="aj-safety-card"]')) \
+        .to_be_visible(timeout=25000)
+
+
+def test_ui_safety_card_normal_status_with_sources(tracked_page,
+                                                   install_safety_orch):
+    install_safety_orch("Exercise normal precautions.")
+    page = tracked_page
+    set_passport_via_api("MM")
+    goto_trip(page)
+    start_goal(page, HAPPY_GOAL)
+    expect(page.locator('[data-testid="approval-open"]')) \
+        .to_be_visible(timeout=25000)
+    _wait_safety_card(page)
+    expect(page.locator('[data-testid="aj-safety-status"]')) \
+        .to_contain_text("Routine precautions")
+    expect(page.locator('[data-testid="aj-safety-destination"]')) \
+        .to_contain_text("Singapore")
+    expect(page.locator('[data-testid="aj-safety-dates"]')) \
+        .to_contain_text("2026-09-29")
+    expect(page.locator('[data-testid="aj-safety-why"]')).to_be_visible()
+    expect(page.locator('[data-testid="aj-safety-confidence"]')) \
+        .to_be_visible()
+    # foreign-government advice is labeled, never presented as ours
+    expect(page.locator('[data-testid="aj-safety-source-0"]')) \
+        .to_contain_text("Advice issued for United Kingdom citizens; "
+                         "shown as an additional safety signal.")
+    expect(page.locator('[data-testid="aj-safety-source-0"]')) \
+        .to_contain_text("UK Foreign")
+    expect(page.locator('[data-testid="aj-safety-source-0"] '
+                        'a[href*="gov.uk"]')).to_be_attached()
+    # absolute "safe" language is rejected in every rendered string
+    card_text = page.locator('[data-testid="aj-safety-card"]').inner_text()
+    assert not re.search(r"\bsafe\b", card_text, re.IGNORECASE), card_text
+    # keyboard-accessible primary action
+    page.locator('[data-testid="aj-safety-recheck"]').focus()
+    assert page.locator('[data-testid="aj-safety-recheck"]') \
+        .evaluate("el => el === document.activeElement")
+    page.screenshot(path=str(SHOTS / "g46_safety_card_normal.png"),
+                    full_page=True)
+
+
+def test_ui_safety_do_not_travel_blocks_booking(app_server, ui_browser,
+                                                install_safety_orch):
+    install_safety_orch("Do not travel to Singapore.")
+    set_passport_via_api("MM")
+    context, page, errors = lenient_page(ui_browser)
+    try:
+        goto_trip(page)
+        start_goal(page, HAPPY_GOAL)
+        expect(page.locator('[data-testid="approval-open"]')) \
+            .to_be_visible(timeout=25000)
+        page.click('[data-testid="approval-open"]')
+        expect(page.locator('[data-testid="trip-approval-overlay"]')) \
+            .to_be_visible()
+        page.click('[data-testid="approval-approve"]')
+        err = page.locator("#trip-error")
+        expect(err).to_be_visible(timeout=15000)
+        expect(err).to_contain_text("do-not-travel")
+        expect(err).to_contain_text("does not remove the risk")
+        # nothing is booked, and approval never makes the risk go away
+        expect(page.locator('[data-testid="pnr-code"]')) \
+            .not_to_be_visible()
+        # wait for focus to return into the dialog, then close via keyboard
+        expect(page.locator('[data-testid="approval-approve"]')) \
+            .to_be_focused(timeout=10000)
+        page.keyboard.press("Escape")
+        expect(page.locator('[data-testid="trip-approval-overlay"]')) \
+            .to_be_hidden(timeout=10000)
+        _wait_safety_card(page)
+        expect(page.locator('[data-testid="aj-safety-status"]')) \
+            .to_contain_text("do not travel")
+        expect(page.locator('[data-testid="pnr-code"]')) \
+            .not_to_be_visible()
+    finally:
+        context.close()
+    assert not errors, f"unexpected console errors: {errors}"
+
+
+def test_ui_safety_reconsider_requires_acknowledgement(app_server,
+                                                       ui_browser,
+                                                       install_safety_orch):
+    install_safety_orch("Reconsider your need to travel to Singapore.")
+    set_passport_via_api("MM")
+    context, page, errors = lenient_page(ui_browser)
+    try:
+        goto_trip(page)
+        start_goal(page, HAPPY_GOAL)
+        expect(page.locator('[data-testid="approval-open"]')) \
+            .to_be_visible(timeout=25000)
+        page.click('[data-testid="approval-open"]')
+        expect(page.locator('[data-testid="trip-approval-overlay"]')) \
+            .to_be_visible()
+        # booking is blocked until the SEPARATE acknowledgement exists
+        page.click('[data-testid="approval-approve"]')
+        expect(page.locator("#trip-error")).to_contain_text(
+            "risk acknowledgement", timeout=15000)
+        expect(page.locator('[data-testid="pnr-code"]')) \
+            .not_to_be_visible()
+        # wait for focus to return into the dialog, then close via keyboard
+        expect(page.locator('[data-testid="approval-approve"]')) \
+            .to_be_focused(timeout=10000)
+        page.keyboard.press("Escape")
+        expect(page.locator('[data-testid="trip-approval-overlay"]')) \
+            .to_be_hidden(timeout=10000)
+        _wait_safety_card(page)
+        expect(page.locator('[data-testid="aj-safety-status"]')) \
+            .to_contain_text("reconsider")
+        page.click('[data-testid="aj-safety-acknowledge"]')
+        expect(page.locator('[data-testid="aj-safety-ack-badge"]')) \
+            .to_be_visible(timeout=15000)
+        expect(page.locator('[data-testid="aj-safety-ack-badge"]')) \
+            .to_contain_text("does not remove the risk")
+        # back to the plan screen: booking may now proceed to approval
+        page.click('[data-testid="aj-nav-plan"]')
+        expect(page.locator('[data-testid="approval-open"]')) \
+            .to_be_visible(timeout=15000)
+        page.click('[data-testid="approval-open"]')
+        expect(page.locator('[data-testid="trip-approval-overlay"]')) \
+            .to_be_visible()
+        page.click('[data-testid="approval-approve"]')
+        expect(page.locator('[data-testid="pnr-code"]')) \
+            .to_have_text("ATLAS-UI7Q2Z", timeout=20000)
+    finally:
+        context.close()
+    assert not errors, f"unexpected console errors: {errors}"
+
+
+def test_ui_safety_recheck_and_monitor_consent(tracked_page,
+                                               install_safety_orch):
+    install_safety_orch("Exercise normal precautions.")
+    page = tracked_page
+    set_passport_via_api("MM")
+    goto_trip(page)
+    start_goal(page, HAPPY_GOAL)
+    expect(page.locator('[data-testid="approval-open"]')) \
+        .to_be_visible(timeout=25000)
+    _wait_safety_card(page)
+    # consent gate: monitoring starts OFF
+    expect(page.locator('[data-testid="aj-safety-monitor-line"]')) \
+        .to_contain_text("Monitoring is off")
+    # Check again announces through the ARIA live region
+    page.click('[data-testid="aj-safety-recheck"]')
+    expect(page.locator("#aj-live")).to_contain_text(
+        "Safety check refreshed", timeout=15000)
+    # user-enabled consent flips the monitor on
+    page.click('[data-testid="aj-safety-monitor-toggle"]')
+    expect(page.locator('[data-testid="aj-safety-monitor-line"]')) \
+        .to_contain_text("Monitoring is on", timeout=15000)
+    page.screenshot(path=str(SHOTS / "g46_safety_recheck.png"),
+                    full_page=True)
+
+
+def test_ui_safety_card_hidden_when_pipeline_disabled(tracked_page,
+                                                      install_orch):
+    install_orch()  # frozen-harness shape: no safety pipeline
+    page = tracked_page
+    set_passport_via_api("MM")
+    goto_trip(page)
+    start_goal(page, HAPPY_GOAL)
+    expect(page.locator('[data-testid="approval-open"]')) \
+        .to_be_visible(timeout=25000)
+    page.click('[data-testid="aj-nav-mytrip"]')
+    page.wait_for_timeout(1200)  # grace: the card must STAY hidden
+    expect(page.locator('[data-testid="aj-safety-card"]')).to_be_hidden()
+
+
+def test_ui_safety_card_mobile_360_no_overflow(app_server, ui_browser,
+                                               install_safety_orch):
+    install_safety_orch("Do not travel to Singapore.")
+    set_passport_via_api("MM")
+    context = ui_browser.new_context(viewport={"width": 360,
+                                               "height": 740})
+    page = context.new_page()
+    errors = []
+    page.on("console", lambda m: errors.append(m.text)
+            if m.type == "error"
+            and not _THIRD_PARTY_FONT.search(m.text)
+            and "Failed to load resource" not in m.text else None)
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    try:
+        page.set_default_timeout(15000)
+        page.goto(BASE)
+        page.click('[data-testid="mnav-trip"]')  # bottom nav at 360px
+        expect(page.locator("#view-trip")).to_be_visible()
+        start_goal(page, HAPPY_GOAL)
+        expect(page.locator('[data-testid="approval-open"]')) \
+            .to_be_visible(timeout=25000)
+        _wait_safety_card(page)
+        expect(page.locator('[data-testid="aj-safety-status"]')) \
+            .to_contain_text("do not travel")
+        overflow = page.evaluate(
+            "document.documentElement.scrollWidth - "
+            "document.documentElement.clientWidth")
+        assert overflow <= 1, f"horizontal overflow at 360px: {overflow}px"
+        page.screenshot(path=str(SHOTS / "g46_safety_mobile_360.png"),
+                        full_page=True)
+    finally:
+        context.close()
+    assert not errors, f"browser console errors detected: {errors}"

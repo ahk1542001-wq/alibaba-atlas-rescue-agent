@@ -151,6 +151,14 @@ Fresh evidence is captured per gate commit; pointers below stay durable.
 | §9.2 data-testid on every interactive element | `static/index.html` backfill (existing ids/classes untouched) | `tests/test_ui_trip.py::test_ui_completeness_sweep_testids` + per-flow clicks | G4 sweep table below |
 | Legacy rescue UI unbroken by the additive trip view | frozen `static/app.js` untouched | canary `tests/e2e_full_journey.py` against booted app: 14/14 PASS | G4 canary run log |
 | §0/§9.7 gate process artifacts | `PLAN.md`, `DECISIONS.tsv`, `BLOCKERS.md` | `tests/test_docs_integrity.py` conventions (durable-docs hygiene) | gate commit pytest output |
+| G4.6 SafetyResearchSkill (read-only researcher, injected transport, per-source honest statuses) | `services/skills/safety_research.py`, `services/safety/adapters.py` | `tests/test_safety.py` adapter/skill sections | G4.6 gate commit pytest output |
+| G4.6 SafetyPolicyEngine (pure, deterministic, closed vocabulary, applicability/conflict/freshness, never-"safe") | `services/safety/policy.py` | `tests/test_safety.py` engine section (18 hermetic scenarios) | G4.6 gate commit pytest output |
+| G4.6 SafetyMonitorSkill (consent-gated, evidence-hash change events, propose-not-rebook) | `services/skills/safety_monitor.py` | `tests/test_safety.py` monitor section | G4.6 gate commit pytest output |
+| G4.6 contracts w/o passport-number/legal-identity/location/payment | `models/schemas.py` (SafetyQuery/SafetyEvidence/SafetyAssessment/SafetyChangeEvent) | `tests/test_safety.py` contract cases | G4.6 gate commit pytest output |
+| G4.6 booking wiring (DNT blocks booking+recovery; reconsider needs separate ack; unable_to_verify blocks safety-critical) | `services/skills/flight_book.py`, `routers/v1/trip.py` | `tests/test_safety.py` booking-gate section, `tests/test_ui_trip.py` G4.6 flows | G4.6 gate commit pytest output |
+| G4.6 endpoints GET/POST /api/trip/{id}/safety[/recheck\|/acknowledge\|/monitor] | `routers/v1/trip.py` | `tests/test_safety.py` API section | G4.6 gate commit pytest output |
+| G4.6 SKILL.md manifests (loader rules + zero capability drift) | `services/safety/safety_research.SKILL.md`, `services/safety/safety_monitor.SKILL.md` | `tests/test_safety.py::test_safety_manifests_pass_loader_rules_and_have_no_capability_drift` | G4.6 gate commit pytest output |
+| G4.6 My-trip Safety card UI (beginner language, foreign-advice labeling, Check again, no numeric score) | `static/index.html`, `static/trip.js`, `static/styles.css` (append-only) | `tests/test_ui_trip.py` 6 G4.6 flows | G4.6 gate commit pytest output |
 
 ## G2 Devil's Advocate Remediation (against gate commit 2a3715a)
 
@@ -567,3 +575,69 @@ owned files + docs).
   `aj_probe_09_help(_desktop).png`, `aj_probe_10_drawer(_desktop).png`
 - Suite evidence: `g45_aj07_journey_line.png`, `g45_aj08_recovery.png`,
   `g45_aj09_drawer.png`, `g45_aj10_states.png`, `g45_mobile_360_trip.png`
+
+## G4.6 — Safety intelligence pipeline (research, policy engine, monitor)
+
+PRIME RULE: an LLM NEVER decides whether a country is safe. Assessment is
+produced only by the deterministic `SafetyPolicyEngine` from verified
+official-source evidence; no absolute "safe" wording anywhere.
+
+### Components shipped
+
+| Component | Files | Notes |
+|---|---|---|
+| SafetyResearchSkill | `services/skills/safety_research.py`, `services/safety/adapters.py`, `services/safety/__init__.py` | read-only researcher; injected `fetch` transport; per-source honest statuses `ok\|unavailable\|rejected\|no_coverage`; redirect/SSRF-style host validation (`url_ok_for_source`); tolerant parsing preserves native wording |
+| SafetyPolicyEngine | `services/safety/policy.py` | pure + deterministic; closed vocabulary `normal_precautions\|increased_caution\|reconsider_travel\|do_not_travel\|unable_to_verify`; applicability (government advice scoped to its own citizens), conflict (worst verified wins), freshness rules; `contains_absolute_safe` regex guard; never "safe" |
+| SafetyMonitorSkill | `services/skills/safety_monitor.py` | consent-gated (no consent → no check, no events); evidence-hash change detection; material changes only; `proposed_action="review"` — propose, never auto-rebook; bounded recheck interval |
+| Contracts | `models/schemas.py` (append-only) | SafetyQuery/SafetyEvidence/SafetyAssessment/SafetyChangeEvent — NO passport number, legal identity, location, or payment fields |
+| Booking wiring | `services/skills/flight_book.py`, `routers/v1/trip.py` | `do_not_travel` blocks booking AND recovery (no override, approval does not remove risk); `reconsider_travel` requires a separate explicit risk acknowledgement; `unable_to_verify` blocks safety-critical booking until fresh verification |
+| API | `routers/v1/trip.py` | GET/POST `/api/trip/{id}/safety`, `.../safety/recheck`, `.../safety/acknowledge`, `.../safety/monitor` (consent toggle) |
+| UI | `static/index.html`, `static/trip.js`, `static/styles.css` (append-only) | My-trip Safety card: beginner language, foreign-advisory labeling ("Advice issued for X citizens…"), Check again, monitor consent toggle, no numeric score; renders only when `safety_enabled` + goal_intake complete (zero-console-error contract) |
+| Manifests | `services/safety/safety_research.SKILL.md`, `services/safety/safety_monitor.SKILL.md` | live OUTSIDE `services/skills/` to keep the frozen loader-glob registry pinned at 11; documented exemption; loader rules + capability drift verified by dedicated test |
+
+### Test map (`tests/test_safety.py` — 69 tests; + 6 UI flows in `tests/test_ui_trip.py`)
+
+- Adapters: host validation, redirect rejection, fetch-failure honesty,
+  tolerant parsing, native-wording preservation, nationality scoping.
+- Engine: the 18 hermetic scenarios (closed vocabulary, never-"safe",
+  applicability, conflict resolution, freshness/staleness, degrade to
+  `unable_to_verify`).
+- Skills: research capability is `network_read` only; offline degrade;
+  monitor consent/baseline/material-change/non-material/bounded-interval/
+  revocation.
+- Manifests: registry stays at 11; safety manifests pass the same loader
+  rules with zero capability drift.
+- Booking gate: DNT blocks with zero Atlas calls; reconsider blocks until
+  separate acknowledgement; unable_to_verify blocks until retried
+  verification; wording never contains absolute "safe".
+- UI: card renders with sources (normal status), DNT blocks booking,
+  reconsider requires acknowledgement, recheck + monitor consent, card
+  hidden when pipeline disabled, 360px no overflow.
+
+### Source-availability honesty
+
+All tests are hermetic: evidence comes from injected transports
+(`fetch=` parameter), never from fabricated advisories. Live official
+sources are not guaranteed reachable from the build environment; the
+skill reports per-source status honestly (`unavailable` degrades the
+assessment toward `unable_to_verify`, never toward a false lower risk).
+No unavailable source is ever marked as passed.
+
+### G4.6 gate evidence (TZ=UTC, fresh runs)
+
+```
+node --check static/*.js:                        exit 0 (all files)
+non-UI    (tests/ --ignore=test_ui_trip.py):     272 passed in 47.72s
+UI suite  (tests/test_ui_trip.py, run 1):        38 passed in 89.45s
+UI suite  (tests/test_ui_trip.py, run 2):        38 passed in 89.63s
+canary    (tests/e2e_full_journey.py, booted):   14/14 PASS
+```
+
+Frozen-file confirmation: `git diff --name-only` limited to
+`models/schemas.py`, `routers/v1/trip.py`, `services/skills/flight_book.py`,
+`static/index.html`, `static/styles.css`, `static/trip.js`,
+`tests/test_ui_trip.py` (+ new untracked `services/safety/`,
+`services/skills/safety_{research,monitor}.py`, `tests/test_safety.py`);
+`rights_engine.py`, `visa_guard.py`, `state_graph.py`, `guardian.py`,
+`atlas_client.py`, `static/app.js`, pre-existing tests, AGENTS.md,
+README demo-flow, `.env` all untouched.

@@ -3,6 +3,11 @@
 Wraps atlas_client.verify_fare + create_booking_order (frozen service,
 import-only). Owner correction (C) enforced here:
 
+- the deterministic SAFETY gate (Task #13) runs FIRST, ahead of every
+  other gate, whenever the orchestrator injects context["safety_check"]:
+  do_not_travel BLOCKS booking outright (no override — user approval never
+  makes the risk go away), reconsider_travel halts until a SEPARATE risk
+  acknowledgement exists, unable_to_verify halts until fresh verification;
 - fares are REFRESHED and REVERIFIED (verify_fare) IMMEDIATELY before the
   booking order — never booked on stale search data;
 - idempotency map (trip_id, option_id) -> PNR: the lookup runs AFTER every
@@ -59,6 +64,43 @@ class FlightBookSkill(SkillBase):
         destination = str(payload.get("destination") or "").upper()
         context = context or {}
         trip_id = str(payload.get("trip_id") or context.get("trip_id") or "")
+
+        # --- SAFETY GATE (Task #13): deterministic policy-engine status ---
+        # runs BEFORE every other gate; only active when the orchestrator
+        # injects context["safety_check"] (frozen harnesses stay unaffected).
+        safety = context.get("safety_check")
+        if isinstance(safety, dict):
+            status = str(safety.get("trip_policy_status") or "")
+            if status == "do_not_travel":
+                raise SkillError(
+                    "safety_do_not_travel",
+                    "Booking blocked: an official do-not-travel advisory "
+                    "applies to this destination or region. Approval does "
+                    "not remove the risk and there is no override. "
+                    "Authority: "
+                    f"{safety.get('authority') or 'official authority'}"
+                    f" (updated {safety.get('updated_at') or 'date unknown'})."
+                    " Consider the safer alternatives shown on the safety "
+                    "card.", recoverable=False)
+            if status == "reconsider_travel" \
+                    and not safety.get("risk_acknowledged"):
+                raise SkillError(
+                    "safety_acknowledgement_required",
+                    "Booking paused: official advice says reconsider travel. "
+                    "A separate, explicit risk acknowledgement is required "
+                    "before booking approval. Acknowledging this warning "
+                    "does not remove the risk.", recoverable=True)
+            if status == "unable_to_verify" \
+                    and not safety.get("verification_retried"):
+                unverified = ", ".join(
+                    safety.get("unverified_sources") or []) \
+                    or "official sources unavailable"
+                raise SkillError(
+                    "safety_unverified",
+                    "Booking paused: the destination's status could not be "
+                    f"verified (unverified: {unverified}). Fresh "
+                    "verification is required before this safety-critical "
+                    "booking decision.", recoverable=True)
 
         # --- safety gates (C) run BEFORE any idempotency replay ---------------
         if _is_international(origin, destination):

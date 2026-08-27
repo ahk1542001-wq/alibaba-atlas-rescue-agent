@@ -2503,3 +2503,142 @@
     }
     .btn-aj-profile::before { content: "👤"; font-size: 18px; line-height: 1; }
 }
+
+/* ============================================================
+   ATLAS JOURNEY SAFETY CARD (G4.6) — APPEND-ONLY block.
+   Beginner-friendly, token-based, no numeric scores, 360px-fluid,
+   reduced-motion calm (no animations at all).
+   ============================================================ */
+
+.aj-safety-card {
+    margin: 10px 0 14px;
+    background: var(--aj-card);
+    border: 1px solid var(--aj-mist);
+    border-radius: var(--aj-radius);
+    padding: 12px 14px;
+}
+.aj-safety-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 8px; flex-wrap: wrap; margin-bottom: 8px;
+}
+.aj-safety-title { margin: 0; font-size: 1rem; color: var(--aj-ink); }
+.aj-safety-checked {
+    font-size: 0.75rem; color: var(--aj-ink-muted);
+    font-family: var(--aj-mono); overflow-wrap: anywhere;
+}
+.aj-safety-body { display: flex; flex-direction: column; gap: 8px; }
+.aj-safety-row {
+    display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+}
+.aj-safety-key {
+    font-size: 0.78rem; font-weight: 600; letter-spacing: 0.02em;
+    text-transform: uppercase; color: var(--aj-ink-muted);
+}
+.aj-safety-val {
+    color: var(--aj-ink); overflow-wrap: anywhere;
+}
+.aj-safety-text {
+    margin: 0; color: var(--aj-ink); line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+.aj-safety-muted { color: var(--aj-ink-muted); font-size: 0.85rem; }
+.aj-safety-chips {
+    display: flex; flex-wrap: wrap; gap: 6px;
+}
+.aj-safety-chip {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 0.8rem; font-weight: 600; max-width: 100%;
+    overflow-wrap: anywhere;
+}
+.aj-safety-chip-ok { background: var(--aj-seafoam); color: var(--aj-teal-ink); }
+.aj-safety-chip-caution { background: var(--aj-amber-bg); color: var(--aj-amber-ink); }
+.aj-safety-chip-warn {
+    background: var(--aj-amber-bg); color: var(--aj-amber-ink);
+    border: 1px solid var(--aj-amber);
+}
+.aj-safety-chip-block {
+    background: var(--aj-coral-bg); color: var(--aj-coral);
+    border: 1px solid var(--aj-coral);
+}
+.aj-safety-chip-unknown {
+    background: var(--aj-mist); color: var(--aj-ink);
+}
+.aj-safety-chip-cat {
+    background: var(--aj-mist); color: var(--aj-ink);
+    font-weight: 500; text-transform: none;
+}
+.aj-safety-source {
+    border: 1px solid var(--aj-mist); border-radius: 8px;
+    padding: 8px 10px; display: flex; flex-direction: column; gap: 4px;
+}
+.aj-safety-source-head {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.aj-safety-source-auth { color: var(--aj-ink); font-size: 0.9rem; }
+.aj-safety-foreign {
+    font-size: 0.8rem; color: var(--aj-ink-muted); font-style: italic;
+    overflow-wrap: anywhere;
+}
+.aj-safety-meta {
+    font-size: 0.78rem; color: var(--aj-ink-muted);
+    font-family: var(--aj-mono); overflow-wrap: anywhere;
+}
+.aj-safety-link {
+    color: var(--aj-teal); text-decoration: underline;
+    font-size: 0.85rem; overflow-wrap: anywhere;
+}
+.aj-safety-link:focus-visible {
+    outline: 2px solid var(--aj-teal); outline-offset: 2px;
+    border-radius: 4px;
+}
+.aj-safety-stale {
+    background: var(--aj-amber-bg); color: var(--aj-amber-ink);
+    border-left: 3px solid var(--aj-amber);
+    border-radius: 6px; padding: 6px 10px; font-size: 0.85rem;
+    overflow-wrap: anywhere;
+}
+.aj-safety-unverified {
+    background: var(--aj-mist); color: var(--aj-ink);
+    border-radius: 6px; padding: 6px 10px; font-size: 0.85rem;
+    overflow-wrap: anywhere;
+}
+.aj-safety-list {
+    margin: 0; padding-left: 18px; color: var(--aj-ink);
+    line-height: 1.5; overflow-wrap: anywhere;
+}
+.aj-safety-acknote {
+    background: var(--aj-amber-bg); color: var(--aj-amber-ink);
+    border-radius: 6px; padding: 6px 10px; font-size: 0.85rem;
+    font-weight: 600; overflow-wrap: anywhere;
+}
+.aj-safety-events { display: flex; flex-direction: column; gap: 6px; }
+.aj-safety-event {
+    border-left: 3px solid var(--aj-teal); padding: 4px 10px;
+    font-size: 0.85rem; color: var(--aj-ink); overflow-wrap: anywhere;
+}
+.aj-safety-actions {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;
+}
+.aj-safety-actions .aj-btn {
+    min-height: 44px; padding: 8px 16px; border-radius: 999px;
+    border: 1px solid var(--aj-teal); background: var(--aj-card);
+    color: var(--aj-teal-ink); font-weight: 600; cursor: pointer;
+    font-size: 0.9rem;
+}
+.aj-safety-actions .aj-btn-secondary {
+    border-color: var(--aj-teal); color: var(--aj-teal-ink);
+}
+.aj-safety-actions .aj-btn-warn {
+    border-color: var(--aj-amber); background: var(--aj-amber-bg);
+    color: var(--aj-amber-ink);
+}
+.aj-safety-actions .aj-btn:focus-visible {
+    outline: 2px solid var(--aj-teal); outline-offset: 2px;
+}
+.aj-safety-actions .aj-btn:disabled { opacity: 0.6; cursor: wait; }
+@media (prefers-reduced-motion: reduce) {
+    .aj-safety-card, .aj-safety-chip, .aj-safety-actions .aj-btn {
+        transition: none;
+    }
+}
+

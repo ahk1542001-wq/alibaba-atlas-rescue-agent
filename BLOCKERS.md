@@ -46,3 +46,16 @@ Entry template:
   the port freed; the stale occupant was killed and the full UI suite ran
   twice green — `18 passed in 41.94s` and `18 passed in 46.27s` (TZ=UTC).
 - Status: RESOLVED
+
+## 2026-08-27 — G4.6 safety intelligence pipeline
+- No honest blockers. One intermittent UI-suite flake appeared during the
+  verification loop; root cause was an invalid Playwright API call
+  (`locator.wait_for(state="focused")` — "focused" is not a valid state)
+  that raised instead of waiting. Fixed at the root with
+  `expect(...).to_be_focused(timeout=10000)` in both affected flows; no
+  assertion was weakened or skipped.
+- Source-availability note (honesty, not a blocker): live official
+  advisory endpoints are not guaranteed reachable from the build
+  environment; every safety test is hermetic via injected transports and
+  unavailable sources are reported as `unavailable`, never as passed.
+- Status: NONE OPEN

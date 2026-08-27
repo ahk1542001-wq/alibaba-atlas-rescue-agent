@@ -122,7 +122,9 @@
         lastState: null,
         homeCityProfile: '',
         lastFocus: null,
-        announced: {}
+        announced: {},
+        // G4.6 safety card
+        safetyTried: false       // one-shot auto-fetch guard
     };
 
     // --- strict DOM helpers (never innerHTML with data) -------------------
@@ -406,6 +408,12 @@
         byId('aj-confirm-pax').textContent = '';
         clear(byId('aj-recovery-panel'));
         byId('aj-recovery-panel').hidden = true;
+        // G4.6 safety card reset
+        Trip.safetyTried = false;
+        clear(byId('aj-safety-body'));
+        clear(byId('aj-safety-actions'));
+        byId('aj-safety-checked').textContent = '';
+        byId('aj-safety-card').hidden = true;
         byId('aj-booking-status').hidden = true;
         byId('aj-next-action').hidden = true;
         byId('aj-monitor-status').hidden = true;
@@ -543,10 +551,13 @@
         renderApprovalGate(s);
         renderConfirm(s);
         renderMyTrip(s);
+        renderSafety(s);
         renderPnr(s);
         renderItinerary(s);
         renderRecovery(s);
         var step = Trip.forceStep || deriveStep(s);
+        // the My trip destination always shows its own step expanded
+        if (Trip.dest === 'mytrip') step = 5;
         Trip.currentStep = step;
         renderStepRail(s, step);
         renderJourneyLine(s, deriveStep(s));
@@ -1529,6 +1540,13 @@
         } finally {
             approveBtn.disabled = false;
             rejectBtn.disabled = false;
+            // a disabled-then-re-enabled button loses focus; if the dialog
+            // is still open (e.g. safety gate refused the booking) return
+            // focus inside it so Escape/keyboard control keep working
+            var overlayEl = byId('trip-approval-overlay');
+            if (Trip.approval && overlayEl && !overlayEl.hidden) {
+                approveBtn.focus();
+            }
         }
     }
 
@@ -1594,6 +1612,367 @@
             monEl.appendChild(el('span', 'aj-status-key', 'Monitoring'));
             monEl.appendChild(el('span', 'aj-status-val',
                 'We\u2019re watching this flight for changes.'));
+        }
+    }
+
+    // --- Safety card (G4.6) -------------------------------------------------
+    // The displayed status is computed server-side by the deterministic
+    // SafetyPolicyEngine; this card only renders what the server returns,
+    // in beginner-friendly plain language. It never claims anything is
+    // absolutely safe and never shows a numeric score.
+
+    var SAFETY_LABELS = {
+        normal_precautions: { text: 'Routine precautions \u2014 no special warnings right now', tone: 'ok' },
+        increased_caution: { text: 'Be extra careful \u2014 official warnings apply', tone: 'caution' },
+        reconsider_travel: { text: 'Official advice says reconsider this trip', tone: 'warn' },
+        do_not_travel: { text: 'Official advice says do not travel here', tone: 'block' },
+        unable_to_verify: { text: 'We could not verify this destination yet', tone: 'unknown' }
+    };
+
+    var SAFETY_CATEGORY_LABELS = {
+        severe_weather: 'Severe weather',
+        disaster: 'Natural disaster',
+        transport_disruption: 'Transport disruption',
+        security: 'Security alert',
+        health: 'Health event',
+        advisory: 'General advisory',
+        local_laws: 'Local laws',
+        cultural: 'Cultural notes'
+    };
+
+    var SAFETY_COUNTRY_NAMES = {
+        GB: 'United Kingdom', UK: 'United Kingdom', US: 'United States',
+        AU: 'Australia', CA: 'Canada', NZ: 'New Zealand'
+    };
+
+    function safetyCountryName(code) {
+        if (!code) return 'that country\u2019s';
+        var key = String(code).toUpperCase();
+        return SAFETY_COUNTRY_NAMES[key] || String(code);
+    }
+
+    function safetyDate(iso) {
+        if (!iso) return '';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return String(iso);
+        return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+    }
+
+    function safetyChip(text, tone, testid) {
+        var c = el('span', 'aj-safety-chip aj-safety-chip-' + tone, text);
+        if (testid) { tid(c, testid); tidAj(c, testid); }
+        return c;
+    }
+
+    function safetyTone(level) {
+        if (level === 'do_not_travel') return 'block';
+        if (level === 'reconsider_travel') return 'warn';
+        if (level === 'increased_caution') return 'caution';
+        if (level === 'normal_precautions') return 'ok';
+        return 'unknown';
+    }
+
+    async function renderSafety(s) {
+        var card = byId('aj-safety-card');
+        if (!Trip.tripId) { card.hidden = true; return; }
+        var out = (s && s.outputs) || {};
+        var safety = out.safety || null;
+        if (safety && safety.assessment) {
+            renderSafetyCard(safety, out.safety_events || []);
+            return;
+        }
+        // one-shot fetch only once a destination is known (goal intake done)
+        // so the card never fires a doomed request (zero-console contract)
+        var goalDone = ((s && s.nodes) || []).some(function (n) {
+            return n.name === 'goal_intake' && n.status === 'COMPLETED';
+        });
+        if (Trip.safetyTried || !out.safety_enabled || !goalDone) return;
+        Trip.safetyTried = true;
+        try {
+            var resp = await api('/api/trip/' + Trip.tripId + '/safety');
+            renderSafetyCard({
+                assessment: resp.assessment,
+                source_reports: resp.source_reports,
+                query: resp.query,
+                risk_acknowledged: resp.risk_acknowledged,
+                monitor_enabled: resp.monitor_enabled,
+                checked_at: resp.checked_at
+            }, resp.safety_events || []);
+        } catch (e) {
+            // pipeline disabled or no destination yet — hide honestly
+            card.hidden = true;
+        }
+    }
+
+    function renderSafetyCard(safety, events) {
+        var card = byId('aj-safety-card');
+        var a = (safety && safety.assessment) || null;
+        if (!a) { card.hidden = true; return; }
+        card.hidden = false;
+        var body = byId('aj-safety-body');
+        var acts = byId('aj-safety-actions');
+        clear(body); clear(acts);
+        byId('aj-safety-checked').textContent = safety.checked_at
+            ? 'Checked ' + safetyDate(safety.checked_at) : '';
+
+        // status row
+        var label = SAFETY_LABELS[a.overall_status] || SAFETY_LABELS.unable_to_verify;
+        var statusRow = el('div', 'aj-safety-row');
+        statusRow.appendChild(el('span', 'aj-safety-key', 'Status'));
+        statusRow.appendChild(safetyChip(label.text, label.tone, 'aj-safety-status'));
+        body.appendChild(statusRow);
+
+        // destination + dates checked (from the query)
+        var q = safety.query || {};
+        var where = q.destination_country || '';
+        if ((q.destination_regions || []).length) {
+            where += ' (' + q.destination_regions.join(', ') + ')';
+        }
+        if (where) {
+            var destRow = el('div', 'aj-safety-row');
+            destRow.appendChild(el('span', 'aj-safety-key', 'Destination'));
+            var destVal = el('span', 'aj-safety-val', where);
+            tid(destVal, 'aj-safety-destination'); tidAj(destVal, 'aj-safety-destination');
+            destRow.appendChild(destVal);
+            body.appendChild(destRow);
+        }
+        var win = q.travel_window || null;
+        if (win && (win.start || win.end)) {
+            var dateRow = el('div', 'aj-safety-row');
+            dateRow.appendChild(el('span', 'aj-safety-key', 'Dates checked'));
+            var dateVal = el('span', 'aj-safety-val',
+                (win.start || '?') + ' \u2192 ' + (win.end || '?'));
+            tid(dateVal, 'aj-safety-dates'); tidAj(dateVal, 'aj-safety-dates');
+            dateRow.appendChild(dateVal);
+            body.appendChild(dateRow);
+        }
+
+        // why this status was selected + confidence
+        if (a.why_selected) {
+            body.appendChild(el('div', 'aj-safety-key', 'Why this status'));
+            var why = el('p', 'aj-safety-text', a.why_selected);
+            tid(why, 'aj-safety-why'); tidAj(why, 'aj-safety-why');
+            body.appendChild(why);
+        }
+        if (a.confidence_or_unable_to_verify) {
+            var conf = el('p', 'aj-safety-text aj-safety-muted',
+                          a.confidence_or_unable_to_verify);
+            tid(conf, 'aj-safety-confidence'); tidAj(conf, 'aj-safety-confidence');
+            body.appendChild(conf);
+        }
+
+        // category chips across applicable sources
+        var cats = {};
+        (a.assessments_per_source || []).forEach(function (src) {
+            if (!src.applies) return;
+            (src.risk_categories || []).forEach(function (c) { cats[c] = true; });
+        });
+        var catKeys = Object.keys(cats);
+        if (catKeys.length) {
+            var chipRow = el('div', 'aj-safety-chips');
+            tid(chipRow, 'aj-safety-categories'); tidAj(chipRow, 'aj-safety-categories');
+            catKeys.forEach(function (c) {
+                chipRow.appendChild(el('span', 'aj-safety-chip aj-safety-chip-cat',
+                    SAFETY_CATEGORY_LABELS[c] || c));
+            });
+            body.appendChild(chipRow);
+        }
+
+        // applicable sources (native wording preserved, dates, official link)
+        var srcs = (a.assessments_per_source || []).filter(function (x) {
+            return x.applies;
+        });
+        srcs.forEach(function (src, i) {
+            var row = el('div', 'aj-safety-source');
+            tid(row, 'aj-safety-source-' + i); tidAj(row, 'aj-safety-source-' + i);
+            var head = el('div', 'aj-safety-source-head');
+            head.appendChild(el('strong', 'aj-safety-source-auth',
+                src.authority || src.source_id));
+            if (src.native_level) {
+                head.appendChild(safetyChip(src.native_level,
+                                            safetyTone(src.normalized_level), null));
+            }
+            row.appendChild(head);
+            if (src.foreign_advice) {
+                row.appendChild(el('div', 'aj-safety-foreign',
+                    'Advice issued for ' + safetyCountryName(src.authority_country) +
+                    ' citizens; shown as an additional safety signal.'));
+            }
+            var meta = [];
+            if (src.updated_at) meta.push('Updated ' + safetyDate(src.updated_at));
+            if (src.retrieved_at) meta.push('Retrieved ' + safetyDate(src.retrieved_at));
+            if (src.freshness === 'stale') {
+                meta.push('STALE \u2014 this information may be out of date');
+            }
+            if (meta.length) {
+                row.appendChild(el('div', 'aj-safety-meta', meta.join(' \u00B7 ')));
+            }
+            if ((src.affected_regions || []).length) {
+                row.appendChild(el('div', 'aj-safety-meta',
+                    'Affected areas: ' + src.affected_regions.join(', ')));
+            }
+            if (src.canonical_url) {
+                var link = el('a', 'aj-safety-link', 'Open official source');
+                link.href = src.canonical_url;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                row.appendChild(link);
+            }
+            body.appendChild(row);
+        });
+
+        // stale prior warnings: visible, labeled, never silently cleared
+        (a.stale_warnings || []).forEach(function (w) {
+            var note = el('div', 'aj-safety-stale',
+                'Earlier warning from ' + (w.authority || w.source_id) +
+                ' is past its update window \u2014 kept visible; never silently cleared.');
+            tid(note, 'aj-safety-stale-warning'); tidAj(note, 'aj-safety-stale-warning');
+            body.appendChild(note);
+        });
+
+        // disagreements between official sources
+        if ((a.disagreements || []).length) {
+            body.appendChild(el('div', 'aj-safety-key', 'Official sources disagree'));
+            (a.disagreements || []).forEach(function (d) {
+                var txt = (typeof d === 'string')
+                    ? d : (d.note || d.description || JSON.stringify(d));
+                body.appendChild(el('div', 'aj-safety-text', txt));
+            });
+        }
+
+        // unverified sources
+        if ((a.unverified_sources || []).length) {
+            var unv = el('div', 'aj-safety-unverified',
+                'Could not verify: ' + a.unverified_sources.join(', ') +
+                '. We never treat an unverified destination as verified.');
+            tid(unv, 'aj-safety-unverified'); tidAj(unv, 'aj-safety-unverified');
+            body.appendChild(unv);
+        }
+
+        // recommended actions + safer alternatives
+        if ((a.recommended_actions || []).length) {
+            body.appendChild(el('div', 'aj-safety-key', 'Recommended actions'));
+            var ulA = el('ul', 'aj-safety-list');
+            tid(ulA, 'aj-safety-actions-list'); tidAj(ulA, 'aj-safety-actions-list');
+            a.recommended_actions.forEach(function (t) {
+                ulA.appendChild(el('li', '', t));
+            });
+            body.appendChild(ulA);
+        }
+        if ((a.safer_alternatives || []).length) {
+            body.appendChild(el('div', 'aj-safety-key', 'Safer alternatives'));
+            var ulS = el('ul', 'aj-safety-list');
+            tid(ulS, 'aj-safety-alternatives'); tidAj(ulS, 'aj-safety-alternatives');
+            a.safer_alternatives.forEach(function (t) {
+                ulS.appendChild(el('li', '', t));
+            });
+            body.appendChild(ulS);
+        }
+
+        // acknowledgement badge + monitoring line
+        if (safety.risk_acknowledged) {
+            var ackNote = el('div', 'aj-safety-acknote',
+                'You acknowledged this warning. Acknowledging does not remove the risk.');
+            tid(ackNote, 'aj-safety-ack-badge'); tidAj(ackNote, 'aj-safety-ack-badge');
+            body.appendChild(ackNote);
+        }
+        var monLine = el('div', 'aj-safety-text aj-safety-muted',
+            safety.monitor_enabled
+                ? 'Monitoring is on \u2014 we will only alert you about material changes.'
+                : 'Monitoring is off \u2014 turn it on below to watch for changes.');
+        tid(monLine, 'aj-safety-monitor-line'); tidAj(monLine, 'aj-safety-monitor-line');
+        body.appendChild(monLine);
+
+        // safety change events
+        if ((events || []).length) {
+            body.appendChild(el('div', 'aj-safety-key', 'Recent changes'));
+            var evBox = el('div', 'aj-safety-events');
+            tid(evBox, 'aj-safety-events'); tidAj(evBox, 'aj-safety-events');
+            events.forEach(function (ev) {
+                evBox.appendChild(el('div', 'aj-safety-event',
+                    safetyDate(ev.detected_at) + ' \u2014 ' +
+                    (ev.differences || []).join('; ') +
+                    '. Any change to your trip needs your approval first.'));
+            });
+            body.appendChild(evBox);
+        }
+
+        // actions
+        var reBtn = el('button', 'aj-btn aj-btn-secondary', 'Check again');
+        reBtn.type = 'button';
+        tid(reBtn, 'aj-safety-recheck'); tidAj(reBtn, 'aj-safety-recheck');
+        reBtn.addEventListener('click', safetyRecheck);
+        acts.appendChild(reBtn);
+
+        if (a.overall_status === 'reconsider_travel' && !safety.risk_acknowledged) {
+            var ackBtn = el('button', 'aj-btn aj-btn-warn', 'I understand this risk');
+            ackBtn.type = 'button';
+            tid(ackBtn, 'aj-safety-acknowledge'); tidAj(ackBtn, 'aj-safety-acknowledge');
+            ackBtn.addEventListener('click', safetyAcknowledge);
+            acts.appendChild(ackBtn);
+        }
+
+        var monBtn = el('button', 'aj-btn aj-btn-secondary',
+            safety.monitor_enabled ? 'Turn off monitoring' : 'Turn on monitoring');
+        monBtn.type = 'button';
+        tid(monBtn, 'aj-safety-monitor-toggle'); tidAj(monBtn, 'aj-safety-monitor-toggle');
+        monBtn.addEventListener('click', function () {
+            safetyToggleMonitor(!safety.monitor_enabled);
+        });
+        acts.appendChild(monBtn);
+    }
+
+    async function safetyRecheck() {
+        var btn = byId('aj-safety-recheck');
+        if (btn) { btn.disabled = true; btn.textContent = 'Checking\u2026'; }
+        try {
+            var resp = await api('/api/trip/' + Trip.tripId + '/safety/recheck',
+                                 jsonOpts('POST', {}));
+            renderSafetyCard({
+                assessment: resp.assessment,
+                source_reports: resp.source_reports,
+                query: resp.query,
+                risk_acknowledged: resp.risk_acknowledged,
+                monitor_enabled: resp.monitor_enabled,
+                checked_at: resp.checked_at
+            }, resp.safety_events || []);
+            var lbl = SAFETY_LABELS[((resp || {}).assessment || {}).overall_status] || {};
+            announce('Safety check refreshed. ' + (lbl.text || ''), 'assertive');
+        } catch (err) {
+            showError('Safety recheck failed: ' + plainError(err));
+            if (btn) { btn.disabled = false; btn.textContent = 'Check again'; }
+            return;
+        }
+        pollState();
+    }
+
+    async function safetyAcknowledge() {
+        var btn = byId('aj-safety-acknowledge');
+        if (btn) btn.disabled = true;
+        try {
+            await api('/api/trip/' + Trip.tripId + '/safety/acknowledge',
+                      jsonOpts('POST', {}));
+            announce('Warning acknowledged. Acknowledging does not remove the risk.',
+                     'assertive');
+            pollState();
+        } catch (err) {
+            showError('Could not record acknowledgement: ' + plainError(err));
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async function safetyToggleMonitor(enable) {
+        var btn = byId('aj-safety-monitor-toggle');
+        if (btn) btn.disabled = true;
+        try {
+            await api('/api/trip/' + Trip.tripId + '/safety/monitor',
+                      jsonOpts('POST', { enabled: !!enable }));
+            announce(enable ? 'Safety monitoring turned on.'
+                            : 'Safety monitoring turned off.', 'polite');
+            pollState();
+        } catch (err) {
+            showError('Could not update monitoring: ' + plainError(err));
+            if (btn) btn.disabled = false;
         }
     }
 

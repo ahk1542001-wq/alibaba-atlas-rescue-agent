@@ -376,3 +376,120 @@ class ResearchRecord(BaseModel):
     freshness_state: Literal["fresh", "stale", "unknown"] = "unknown"
     degraded: bool = False
     data: Dict[str, Any] = {}
+
+
+# --- Safety intelligence pipeline contracts (Task #13) -------------------------
+# LLM NEVER decides safety status: it may only extract bounded facts from
+# trusted sources; the deterministic SafetyPolicyEngine computes every
+# displayed status from this closed normalized vocabulary.
+
+SafetyLevel = Literal[
+    "normal_precautions",
+    "increased_caution",
+    "reconsider_travel",
+    "do_not_travel",
+    "unable_to_verify",
+]
+
+SafetySourceType = Literal[
+    "official_government",        # home/destination government advisory
+    "official_multilateral",      # WHO, GDACS-class official bodies
+    "transport_operator",         # airline/airport/transport operational
+    "third_party",                # never sets or clears official status
+    "social",                     # never sets or clears status
+]
+
+
+class SafetyQuery(BaseModel):
+    """Input contract for one safety assessment. PRIVACY HARD RULE: this
+    model must NEVER carry a passport number, legal identity, precise live
+    location, or payment data — only the coarse facts needed to match
+    advisories to a route."""
+    trip_id: Optional[str] = None
+    destination_country: str
+    destination_regions: List[str] = []
+    cities: List[str] = []
+    venue: Optional[str] = None
+    route_legs: List[str] = []
+    transit_countries: List[str] = []
+    transit_airports: List[str] = []
+    travel_window: Optional[DateWindow] = None
+    passport_country: Optional[str] = None
+    residence_country: Optional[str] = None
+    requested_categories: List[str] = []
+
+
+class SafetyEvidence(BaseModel):
+    """One official-source finding. Native wording/level is preserved
+    alongside the normalized level — normalization never overwrites the
+    source's own phrasing."""
+    source_id: str                    # gov_uk | us_state | au_smartraveller | ...
+    authority: str                    # publisher name in its own wording
+    authority_country: Optional[str] = None
+    applies_to_nationalities: List[str] = []   # empty = all travelers
+    source_type: SafetySourceType = "official_government"
+    canonical_url: str
+    title: str
+    published_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    retrieved_at: str
+    expires_at: Optional[str] = None
+    country: str
+    affected_regions: List[str] = []
+    excluded_regions: List[str] = []
+    valid_from: Optional[str] = None
+    valid_to: Optional[str] = None
+    native_level: Optional[str] = None        # source's own level wording
+    normalized_level: SafetyLevel = "unable_to_verify"
+    risk_categories: List[str] = []           # advisory|health|severe_weather|
+                                              # disaster|transport_disruption|
+                                              # security|local_laws
+    concise_facts: List[str] = []             # bounded extracted facts only
+    recommended_actions: List[str] = []
+    freshness: Literal["fresh", "stale", "unknown"] = "unknown"
+    verification_status: Literal["verified", "unverified", "unavailable"] = "unverified"
+    extraction_method: Literal["structured_parse", "llm_bounded", "snippet_only"] = \
+        "structured_parse"
+
+
+class SafetySourceReport(BaseModel):
+    """Honest per-source outcome — source availability differs by country;
+    no single source is universal truth."""
+    source_id: str
+    status: Literal["ok", "no_coverage", "unavailable", "rejected"]
+    note: str = ""
+    evidence_count: int = 0
+
+
+class SafetyAssessment(BaseModel):
+    overall_status: SafetyLevel
+    trip_policy_status: SafetyLevel
+    assessments_per_source: List[Dict[str, Any]] = []
+    disagreements: List[Dict[str, Any]] = []
+    why_selected: str
+    recommended_actions: List[str] = []
+    safer_alternatives: List[str] = []
+    checked_at: str
+    confidence_or_unable_to_verify: str
+    unverified_sources: List[str] = []
+    stale_warnings: List[Dict[str, Any]] = []   # prior warnings past their
+                                                # freshness window — visible,
+                                                # labeled, never silently cleared
+    risk_acknowledged: bool = False
+    monitor_enabled: bool = False
+
+
+class SafetyChangeEvent(BaseModel):
+    """Emitted ONLY on a material change (severity / affected region /
+    validity period / recommended action). Old + new evidence are retained
+    and the differences identified. A change may PROPOSE a partial replan
+    through an approval — it never modifies or rebooks anything."""
+    event_id: str
+    trip_id: str
+    detected_at: str
+    change_kinds: List[str]          # severity|affected_region|validity|actions
+    differences: List[str]
+    old_evidence: Dict[str, Any] = {}
+    new_evidence: Dict[str, Any] = {}
+    proposed_action: str = "review"  # review | partial_replan_proposal
+    approval_required: bool = True

@@ -36,14 +36,18 @@ from pydantic import BaseModel, Field, ValidationError
 
 from models.schemas import (
     ApprovalRequest,
+    DateWindow,
     GraphNodeStateV2,
     RequestedServices,
+    SafetyQuery,
     TripGoal,
     TripIntent,
 )
 from routers.v1.profile import TripApiError, get_profile_store
 from services.atlas_client import AtlasClient
 from services.research_coordinator import ResearchCoordinator
+from services.rights_engine import airports_to_countries
+from services.safety.policy import normalize_country
 from services.skills import load_skill_registry
 from services.skills.base import SkillBase
 from services.skills.clarify_loop import ClarifyLoopSkill
@@ -52,7 +56,10 @@ from services.skills.flight_book import FlightBookSkill
 from services.skills.flight_search import FlightSearchSkill, normalize_offer
 from services.skills.goal_intake import GoalIntakeSkill, _extract_dates, \
     _find_city
+from services.skills.guardian_push import GuardianPushSkill
 from services.skills.itinerary import ItinerarySkill
+from services.skills.safety_monitor import SafetyMonitorSkill
+from services.skills.safety_research import SafetyResearchSkill
 from services.skills.visa_check import VisaCheckSkill
 from services.trip_graph import (
     SCOPE_CHOICES,
@@ -123,6 +130,27 @@ _HINTS = {
     "provider_failure":
         "an upstream provider failed — retry shortly; the trip degrades, "
         "it does not fabricate results",
+    # safety intelligence pipeline (Task #13)
+    "safety_do_not_travel":
+        "an official do-not-travel advisory applies — booking is blocked "
+        "and approval does not remove the risk; consider the safer "
+        "alternatives on the safety card",
+    "safety_acknowledgement_required":
+        "official advice says reconsider travel — post a separate risk "
+        "acknowledgement (POST /api/trip/{id}/safety/acknowledge) before "
+        "booking approval",
+    "safety_unverified":
+        "the destination's status could not be verified — use "
+        "POST /api/trip/{id}/safety/recheck for a fresh verification "
+        "before booking",
+    "safety_disabled":
+        "this orchestrator was started without the safety pipeline",
+    "no_acknowledgement_required":
+        "risk acknowledgement is only needed while advice is "
+        "reconsider_travel",
+    "monitoring_consent_required":
+        "enable monitoring first (POST /api/trip/{id}/safety/monitor "
+        "with {\"enabled\": true})",
 }
 
 
@@ -212,6 +240,24 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class SafetyService:
+    """Task #13 glue: research skill + consent-gated monitor + push path.
+
+    The LLM NEVER decides whether a country is safe — the deterministic
+    SafetyPolicyEngine inside SafetyResearchSkill computes every status.
+    Push alerts go through the existing guardian_push skill ONLY.
+    """
+
+    def __init__(self, research: Optional[SafetyResearchSkill] = None,
+                 monitor: Optional[SafetyMonitorSkill] = None,
+                 web_intel: Optional[Any] = None,
+                 fetch: Optional[Any] = None) -> None:
+        self.research = research or SafetyResearchSkill(
+            web_intel=web_intel, fetch=fetch)
+        self.monitor = monitor or SafetyMonitorSkill()
+        self.push = GuardianPushSkill()
+
+
 def _assert_manifest_governance(skills: Dict[str, Any],
                                 registry_by_name: Dict[str, Dict[str, Any]]
                                 ) -> None:
@@ -237,7 +283,7 @@ class TripOrchestrator:
     the TripGraphExecutor registry (cross-trip isolation is proven there)."""
 
     def __init__(self, profile_store=None, atlas=None, web_intel=None,
-                 llm_chat=None) -> None:
+                 llm_chat=None, safety_service: Optional[Any] = None) -> None:
         self.store = profile_store or get_profile_store()
         # FAIL-CLOSED executor (G3-DA fix F5): the three runtime-registered
         # research adapters become explicit capability-empty registry entries
@@ -253,6 +299,29 @@ class TripOrchestrator:
              "path": ""}
             for domain in _RESEARCH_DOMAINS
         ]
+        self.safety = safety_service
+        if safety_service is not None:
+            # Task #13: documented exemption entries (manifests live in
+            # services/safety/ because the frozen suite pins the loader
+            # glob at exactly 11 entries) — still manifest-governed.
+            registry += [
+                {"name": "safety_research",
+                 "description": "read-only safety researcher; the "
+                                "deterministic SafetyPolicyEngine computes "
+                                "the status (manifest: "
+                                "services/safety/safety_research.SKILL.md)",
+                 "allowed_tools": ["network_read"],
+                 "module_path": "services.skills.safety_research",
+                 "path": ""},
+                {"name": "safety_monitor",
+                 "description": "consent-gated safety monitor emitting "
+                                "SafetyChangeEvents on material changes "
+                                "(manifest: "
+                                "services/safety/safety_monitor.SKILL.md)",
+                 "allowed_tools": ["network_read"],
+                 "module_path": "services.skills.safety_monitor",
+                 "path": ""},
+            ]
         self.executor = TripGraphExecutor(registry=registry)
         atlas_client = atlas or AtlasClient()
         self.atlas = atlas_client  # AJ: recovery replacement search reuses it
@@ -272,6 +341,10 @@ class TripOrchestrator:
         ex.register_skill("disruption_monitor",
                           DisruptionMonitorSkill(trip_registry=ex))
         ex.register_skill("itinerary", ItinerarySkill())
+        if safety_service is not None:
+            ex.register_skill("safety_research", safety_service.research)
+            ex.register_skill("safety_monitor", safety_service.monitor)
+            ex.register_skill("guardian_push", safety_service.push)
         for domain in ("hotel", "activities", "local_transport"):
             ex.register_skill(f"{domain}_research",
                               DomainResearchSkill(domain, self.coordinator))
@@ -302,6 +375,133 @@ class TripOrchestrator:
             "home_city": profile.identity.home_city,
             "name": name_field.value if name_field else "",
         }
+
+    # -- safety intelligence pipeline (Task #13) ----------------------------
+    # The LLM NEVER decides whether a destination is clear to travel — the
+    # deterministic SafetyPolicyEngine computes every status. Missing
+    # evidence is unable_to_verify, never a clearance.
+
+    def _safety_query(self, trip) -> Optional[SafetyQuery]:
+        goal = (trip.context.get("goal_intake") or {}).get("goal") or {}
+        dest = str(goal.get("dest_city") or "").strip()
+        origin = str(goal.get("origin_city") or "").strip()
+        if not dest:
+            return None
+        _, d_country, _ = airports_to_countries(origin or dest, dest)
+        country = normalize_country(d_country).title() if d_country \
+            else normalize_country(dest).title()
+        window_raw = goal.get("date_window") or {}
+        travel_window = None
+        if isinstance(window_raw, dict) and window_raw.get("start") \
+                and window_raw.get("end"):
+            try:
+                travel_window = DateWindow(
+                    start=date.fromisoformat(str(window_raw["start"])[:10]),
+                    end=date.fromisoformat(str(window_raw["end"])[:10]))
+            except ValueError:
+                travel_window = None
+        profile_ctx = trip.context.get("profile") or {}
+        return SafetyQuery(
+            trip_id=trip.trip_id,
+            destination_country=country or dest,
+            cities=[dest],
+            transit_airports=[],
+            travel_window=travel_window,
+            passport_country=profile_ctx.get("passport_country") or None)
+
+    async def _ensure_safety(self, trip, force: bool = False
+                             ) -> Dict[str, Any]:
+        """Run (or reuse) the deterministic safety assessment for this trip.
+        force=True performs a fresh verification attempt."""
+        if self.safety is None:
+            return {}
+        safety_ctx = trip.context.get("safety") or {}
+        if safety_ctx.get("assessment") and not force:
+            return safety_ctx
+        query = self._safety_query(trip)
+        if query is None:
+            return safety_ctx
+        out = await self.safety.research.run(
+            query.model_dump(mode="json"), trip.context)
+        assessment = out["assessment"]
+        safety_ctx.update({
+            "assessment": assessment,
+            "source_reports": out["source_reports"],
+            "query": out["query"],
+            "checked_at": assessment.get("checked_at"),
+        })
+        safety_ctx.setdefault("risk_acknowledged", False)
+        if force:
+            safety_ctx["verification_retried"] = True
+        trip.context["safety"] = safety_ctx
+        self._record(trip, "safety_check", "safety_research", "COMPLETED",
+                     0.0, {"overall_status": assessment.get("overall_status"),
+                           "checked_at": assessment.get("checked_at")})
+        return safety_ctx
+
+    @staticmethod
+    def _safety_authority(assessment: Dict[str, Any]) -> Dict[str, Any]:
+        for entry in assessment.get("assessments_per_source", []):
+            if entry.get("applies") and entry.get("source_type") in (
+                    "official_government", "official_multilateral"):
+                return {"authority": entry.get("authority"),
+                        "updated_at": entry.get("updated_at"),
+                        "canonical_url": entry.get("canonical_url")}
+        return {}
+
+    def _safety_gate_ctx(self, trip) -> Dict[str, Any]:
+        """The context dict injected for flight_book's deterministic safety
+        gate (do_not_travel blocks; reconsider_travel needs a separate
+        acknowledgement; unable_to_verify needs a fresh verification)."""
+        safety_ctx = trip.context.get("safety") or {}
+        assessment = safety_ctx.get("assessment") or {}
+        authority = self._safety_authority(assessment)
+        return {
+            "trip_policy_status": assessment.get("trip_policy_status"),
+            "risk_acknowledged": bool(safety_ctx.get("risk_acknowledged")),
+            "verification_retried":
+                bool(safety_ctx.get("verification_retried")),
+            "unverified_sources": assessment.get("unverified_sources") or [],
+            **authority,
+        }
+
+    async def _booking_safety_precheck(self, trip) -> None:
+        """Runs BEFORE a booking approval resolves. do_not_travel blocks
+        outright (approval never makes the risk go away); reconsider_travel
+        halts until the separate risk acknowledgement exists; unable_to_
+        verify gets ONE bounded fresh-verification retry."""
+        if self.safety is None:
+            return
+        safety_ctx = await self._ensure_safety(trip)
+        assessment = safety_ctx.get("assessment") or {}
+        status = assessment.get("trip_policy_status")
+        if status == "unable_to_verify" \
+                and not safety_ctx.get("verification_retried"):
+            safety_ctx = await self._ensure_safety(trip, force=True)
+            assessment = safety_ctx.get("assessment") or {}
+            status = assessment.get("trip_policy_status")
+        trip.context["safety_check"] = self._safety_gate_ctx(trip)
+        if status == "do_not_travel":
+            authority = self._safety_authority(assessment)
+            raise TripApiError(
+                422, "safety_do_not_travel",
+                "Booking blocked: an official do-not-travel advisory "
+                "applies to this destination or region. Approval does not "
+                "remove the risk and there is no override. Authority: "
+                f"{authority.get('authority') or 'official authority'} "
+                f"(updated {authority.get('updated_at') or 'date unknown'})."
+                " See the safer alternatives on the safety card.",
+                recoverable=False,
+                hint=_HINTS["safety_do_not_travel"])
+        if status == "reconsider_travel" \
+                and not safety_ctx.get("risk_acknowledged"):
+            raise TripApiError(
+                422, "safety_acknowledgement_required",
+                "Booking paused: official advice says reconsider travel. A "
+                "separate, explicit risk acknowledgement is required before "
+                "booking approval. Acknowledging this warning does not "
+                "remove the risk.", recoverable=True,
+                hint=_HINTS["safety_acknowledgement_required"])
 
     def _trip_or_404(self, trip_id: str):
         try:
@@ -581,6 +781,11 @@ class TripOrchestrator:
                                recoverable=True,
                                hint="pick one of the approval option ids "
                                     "listed in GET /api/trip/{id}/approvals")
+        if decision == "approve":
+            # Task #13: deterministic safety precheck BEFORE booking resumes
+            # (do_not_travel blocks outright; reconsider_travel needs the
+            # separate risk acknowledgement; unable_to_verify retries once).
+            await self._booking_safety_precheck(trip)
         try:
             await self.executor.resolve_approval(trip_id, approval_id, resolved)
         except GraphError as exc:
@@ -710,6 +915,21 @@ class TripOrchestrator:
         recovery = ctx.get("recovery")
         if recovery:
             outputs["recovery"] = recovery
+        # Task #13: safety assessment + change events surface in trip state
+        outputs["safety_enabled"] = self.safety is not None
+        safety = ctx.get("safety")
+        if safety:
+            outputs["safety"] = {
+                "assessment": safety.get("assessment"),
+                "source_reports": safety.get("source_reports"),
+                "query": safety.get("query"),
+                "risk_acknowledged": bool(safety.get("risk_acknowledged")),
+                "monitor_enabled": bool(safety.get("monitor_enabled")),
+                "checked_at": safety.get("checked_at"),
+            }
+        safety_events = ctx.get("safety_events")
+        if safety_events:
+            outputs["safety_events"] = safety_events
         snapshot["outputs"] = outputs
         return snapshot
 
@@ -781,6 +1001,32 @@ class TripOrchestrator:
                             "— a safe practice environment with researched "
                             "mock data.",
         }
+        # Task #13: automatic recovery is BLOCKED into a destination under
+        # an active do-not-travel advisory — no options, no approval.
+        if self.safety is not None:
+            try:
+                safety_ctx = await self._ensure_safety(trip)
+            except Exception:  # noqa: BLE001 — degrade, never fabricate
+                safety_ctx = trip.context.get("safety") or {}
+            status = ((safety_ctx.get("assessment") or {})
+                      .get("trip_policy_status"))
+            if status == "do_not_travel":
+                authority = self._safety_authority(
+                    safety_ctx.get("assessment") or {})
+                recovery["safety_blocked"] = True
+                recovery["note"] = (
+                    "Recovery rebooking is blocked: an official do-not-travel "
+                    "advisory applies to this destination. Authority: "
+                    f"{authority.get('authority') or 'official authority'} "
+                    "(updated "
+                    f"{authority.get('updated_at') or 'date unknown'}). "
+                    "Approval does not remove the risk.")
+                trip.context["recovery"] = recovery
+                self._record(trip, "recovery_blocked", "safety_research",
+                             "COMPLETED", 0.0,
+                             {"reason": "do_not_travel",
+                              "authority": authority.get("authority")})
+                return
         if dep.get("airport") and arr.get("airport"):
             date_iso = str(dep.get("time") or "")[:10] \
                 or date.today().isoformat()
@@ -824,6 +1070,149 @@ class TripOrchestrator:
         return {"mounted": True, "trip_id": trip.trip_id,
                 "subgraph": telemetry, "event": event}
 
+    # -- safety API (Task #13) -------------------------------------------------
+
+    def _require_safety(self) -> None:
+        if self.safety is None:
+            raise TripApiError(
+                503, "safety_disabled",
+                "this orchestrator was started without the safety pipeline",
+                recoverable=True, hint=_HINTS["safety_disabled"])
+
+    async def safety_assessment(self, trip_id: str,
+                                force: bool = False) -> Dict[str, Any]:
+        """GET/POST safety: current (or fresh, with force) assessment."""
+        self._require_safety()
+        trip = self._trip_or_404(trip_id)
+        safety_ctx = await self._ensure_safety(trip, force=force)
+        assessment = safety_ctx.get("assessment")
+        if not assessment:
+            raise TripApiError(
+                409, "safety_not_runnable",
+                "no destination is known for this trip yet — the safety "
+                "check runs once the route is clarified",
+                recoverable=True,
+                hint="answer the route clarification first")
+        return {
+            "trip_id": trip_id,
+            "assessment": assessment,
+            "source_reports": safety_ctx.get("source_reports") or [],
+            "query": safety_ctx.get("query"),
+            "risk_acknowledged": bool(safety_ctx.get("risk_acknowledged")),
+            "monitor_enabled": bool(safety_ctx.get("monitor_enabled")),
+            "safety_events": trip.context.get("safety_events") or [],
+            "checked_at": safety_ctx.get("checked_at"),
+            "fresh_check": bool(force),
+        }
+
+    async def safety_acknowledge(self, trip_id: str) -> Dict[str, Any]:
+        """Separate risk acknowledgement — ONLY meaningful while official
+        advice is reconsider_travel. It NEVER makes the risk go away."""
+        self._require_safety()
+        trip = self._trip_or_404(trip_id)
+        safety_ctx = await self._ensure_safety(trip)
+        assessment = safety_ctx.get("assessment") or {}
+        status = assessment.get("trip_policy_status")
+        if status != "reconsider_travel":
+            raise TripApiError(
+                409, "no_acknowledgement_required",
+                f"risk acknowledgement is only needed while advice is "
+                f"reconsider_travel (current status: "
+                f"{status or 'unknown'})", recoverable=True,
+                hint=_HINTS["no_acknowledgement_required"])
+        safety_ctx["risk_acknowledged"] = True
+        safety_ctx["acknowledged_at"] = _now_iso()
+        trip.context["safety"] = safety_ctx
+        trip.context["safety_check"] = self._safety_gate_ctx(trip)
+        self._record(trip, "safety_acknowledgement", "safety_research",
+                     "COMPLETED", 0.0,
+                     {"acknowledged_at": safety_ctx["acknowledged_at"]})
+        return {
+            "trip_id": trip_id,
+            "risk_acknowledged": True,
+            "status": status,
+            "notice": "Acknowledging this warning does not remove the "
+                      "risk. Booking can now proceed to approval.",
+            "acknowledged_at": safety_ctx["acknowledged_at"],
+        }
+
+    async def safety_monitor(self, trip_id: str,
+                             enabled: bool) -> Dict[str, Any]:
+        """Consent gate for monitoring. With consent, a bounded baseline
+        check runs; later rechecks emit SafetyChangeEvents on material
+        changes only. Push alerts go through guardian_push ONLY."""
+        self._require_safety()
+        trip = self._trip_or_404(trip_id)
+        monitor = self.safety.monitor
+        monitor.set_consent(trip_id, enabled)
+        safety_ctx = trip.context.get("safety") or {}
+        safety_ctx["monitor_enabled"] = bool(enabled)
+        trip.context["safety"] = safety_ctx
+        out: Dict[str, Any] = {"trip_id": trip_id,
+                               "monitor_enabled": bool(enabled)}
+        if not enabled:
+            out["status"] = "monitoring_disabled"
+            return out
+        query = self._safety_query(trip)
+        if query is None:
+            out["status"] = "armed_no_route_yet"
+            return out
+        result = await monitor.check(trip_id, query, self.safety.research)
+        await self._store_safety_events(trip, result.get("events") or [])
+        out.update({"status": result.get("status"),
+                    "events": result.get("events") or []})
+        return out
+
+    async def safety_recheck_with_monitor(self, trip_id: str
+                                          ) -> Dict[str, Any]:
+        """A fresh recheck that ALSO runs the consent-gated monitor path
+        (used by the UI 'Check again')."""
+        self._require_safety()
+        trip = self._trip_or_404(trip_id)
+        payload = await self.safety_assessment(trip_id, force=True)
+        if self.safety.monitor.consent_enabled(trip_id):
+            query = self._safety_query(trip)
+            if query is not None:
+                result = await self.safety.monitor.check(
+                    trip_id, query, self.safety.research)
+                await self._store_safety_events(
+                    trip, result.get("events") or [])
+                payload["monitor_status"] = result.get("status")
+                payload["monitor_events"] = result.get("events") or []
+        payload["safety_events"] = trip.context.get("safety_events") or []
+        return payload
+
+    async def _store_safety_events(self, trip,
+                                   events: List[Dict[str, Any]]) -> None:
+        """Surface SafetyChangeEvents in trip state; push (only with
+        consent, already checked) via the guardian_push skill path."""
+        if not events:
+            return
+        existing = trip.context.get("safety_events") or []
+        existing.extend(events)
+        trip.context["safety_events"] = existing[-20:]
+        self._record(trip, "safety_change_detected", "safety_monitor",
+                     "COMPLETED", 0.0,
+                     {"events": len(events),
+                      "change_kinds": sorted({k for e in events
+                                              for k in e.get("change_kinds",
+                                                             [])})})
+        for event in events:
+            delivery = await self.safety.push.run({
+                "event": "safety_change",
+                "payload": {
+                    "trip_id": trip.trip_id,
+                    "change_kinds": event.get("change_kinds"),
+                    "differences": event.get("differences"),
+                    "proposed_action": event.get("proposed_action"),
+                    "approval_required": True,
+                },
+            })
+            self._record(trip, "safety_change_alert", "guardian_push",
+                         "COMPLETED", 0.0,
+                         {"delivery_status":
+                          delivery.get("delivery_status")})
+
 
 # --- singleton ---------------------------------------------------------------------
 
@@ -833,7 +1222,11 @@ _orchestrator: Optional[TripOrchestrator] = None
 def get_trip_orchestrator() -> TripOrchestrator:
     global _orchestrator
     if _orchestrator is None:
-        _orchestrator = TripOrchestrator()
+        # production default: the REAL safety pipeline is enabled (Task
+        # #13) — bounded official fetches, honest degrade, deterministic
+        # policy engine. Test harnesses install their own orchestrator via
+        # set_trip_orchestrator() and stay unaffected.
+        _orchestrator = TripOrchestrator(safety_service=SafetyService())
     return _orchestrator
 
 
@@ -862,6 +1255,10 @@ class ClarifyAnswerRequest(BaseModel):
     # bounded input at the boundary (§6, same pattern as TripStartRequest)
     field: str = Field(..., max_length=64)
     value: str = Field(..., max_length=200)
+
+
+class SafetyMonitorRequest(BaseModel):
+    enabled: bool
 
 
 @router.post("/start")
@@ -931,6 +1328,42 @@ async def trip_clarify_answer(trip_id: str, body: ClarifyAnswerRequest):
     (and resume a trip that failed on the now-complete route)."""
     orch = get_trip_orchestrator()
     return await orch.answer_clarify(trip_id, body.field, body.value)
+
+
+# --- safety intelligence endpoints (Task #13) --------------------------------
+# Statuses come ONLY from the deterministic SafetyPolicyEngine; the LLM
+# never decides whether a destination is clear to travel.
+
+
+@router.get("/{trip_id}/safety")
+async def trip_safety(trip_id: str):
+    return JSONResponse(
+        content=await get_trip_orchestrator().safety_assessment(trip_id))
+
+
+@router.post("/{trip_id}/safety/recheck")
+async def trip_safety_recheck(trip_id: str):
+    """Fresh verification: re-collects official sources and re-runs the
+    monitor path when consent is enabled."""
+    orch = get_trip_orchestrator()
+    return JSONResponse(
+        content=await orch.safety_recheck_with_monitor(trip_id))
+
+
+@router.post("/{trip_id}/safety/acknowledge")
+async def trip_safety_acknowledge(trip_id: str):
+    """Separate risk acknowledgement for reconsider_travel — it never makes
+    the risk go away and is recorded separately from booking approval."""
+    return JSONResponse(
+        content=await get_trip_orchestrator().safety_acknowledge(trip_id))
+
+
+@router.post("/{trip_id}/safety/monitor")
+async def trip_safety_monitor(trip_id: str, body: SafetyMonitorRequest):
+    """Monitoring consent gate: no consent -> no rechecks, no events, no
+    alerts. Revoking consent clears stored monitor state."""
+    return JSONResponse(content=await get_trip_orchestrator().safety_monitor(
+        trip_id, body.enabled))
 
 
 @router.get("/{trip_id}/simulate-disruption")
