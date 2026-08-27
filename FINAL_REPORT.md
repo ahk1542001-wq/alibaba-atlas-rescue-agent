@@ -1,9 +1,10 @@
 # Build Self-Report
 
-Interim report written at G6 (Cleanup & Report Gate). G7 (mock-data pass)
-and G8 (completion/smoke) update this file; see status flags per section.
+Interim report written at G6 (Cleanup & Report Gate), updated at G7
+(mock-data pass — owner absent, graceful skip). G8 (completion/smoke)
+finalizes this file; see status flags per section.
 
-## Stages completed: G0..G6
+## Stages completed: G0..G7
 
 | Gate | Commit | Scope (evidence: `git show <hash>`) |
 |---|---|---|
@@ -16,6 +17,7 @@ and G8 (completion/smoke) update this file; see status flags per section.
 | G4.6 Safety | dc7efc6 + fca3d26 (DA) | safety pipeline + fail-closed DA remediation |
 | G5 Security | 56a12f8 | secret scan + hook + privacy suite + dep audit |
 | G6 Cleanup | (this commit) | CI repair, cleanup sweep, this report |
+| G7 Mock-Data | (this commit) | `[mockdata]` victor suite; owner absent → graceful skip, run-path proven synthetic |
 
 ## Features vs acceptance criteria (F1..F12)
 
@@ -98,7 +100,12 @@ nonexistent `test_rescue_agent.py`) — nothing else removed.
   and per-source availability is reported honestly. Next: run a
   live-source smoke when network policy allows.
 - `data/mock_victor.json` still carries placeholders (owner fills real
-  values; file gitignored) — G7 pending.
+  values; file gitignored) — G7 executed its contracted owner-absent
+  branch: the `[mockdata]` suite (`tests/test_mockdata_victor.py`,
+  5 tests) skips gracefully with honest reasons, and its full run-path
+  (API journey + browser flow) is proven against synthetic fixtures,
+  injectable via `MOCKDATA_FIXTURE=<path>`. Owner's only remaining
+  action: fill the fixture and rerun `pytest -m mockdata`.
 - gitleaks binary absent on the build host (built-in scanner gates
   instead; hook upgrades transparently).
 - CI repaired but the branch is local-only by package rule — the first

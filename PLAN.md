@@ -89,9 +89,9 @@ test_skills_manifest).
   `FINAL_REPORT.md` (interim, finalized at G8).
 
 ### G7 Mock-Data Pass
-- [ ] `data/mock_victor.json` real values supplied by owner; `[mockdata]` suites re-run
-- [ ] if owner absent: graceful skip recorded with honest limitation in `FINAL_REPORT.md`
-- Evidence: tagged suite results attached to report.
+- [x] `data/mock_victor.json` real values supplied by owner; `[mockdata]` suites re-run — OWNER ABSENT at gate time: fixture still placeholder; the `[mockdata]` suites (`tests/test_mockdata_victor.py`) skip gracefully with an honest reason, and their FULL run-path (API journey + browser flow) is proven against synthetic real-shaped fixtures (also injectable via `MOCKDATA_FIXTURE=` for the owner's dry run)
+- [x] if owner absent: graceful skip recorded with honest limitation in `FINAL_REPORT.md`
+- Evidence: G7 gate section below.
 
 ### G8 Completion & Stop
 - [ ] §16.3 done: F1–F12 table filled, `FINAL_REPORT.md` written, fresh-boot smoke green
@@ -166,6 +166,7 @@ Fresh evidence is captured per gate commit; pointers below stay durable.
 | G5 XSS sink audit (usage-shape sinks; trip.js strict zero, frozen app.js informational) | `scripts/security_check.sh` section 4 | `tests/test_ui_trip.py` XSS-inert payload flow + gate script | G5 gate commit security_check.sh output |
 | G5 pydantic boundary + privacy contracts (masking, consent, chmod 600, PII-free envelopes/logs, safety-contract field ban) | `tests/test_privacy.py` (35 tests) | the suite itself | G5 gate commit pytest output |
 | G5 dependency advisory scan | `.venv` (pip-audit) | `pip-audit` over the installed venv | G5 gate commit security_check.sh output |
+| G7 [mockdata] victor pass (graceful skip while owner absent; run-path proven synthetic; API + browser) | `tests/test_mockdata_victor.py`, `pytest.ini` (marker) | the 5 `[mockdata]` tests incl. injected-fixture proof run | G7 gate commit pytest output |
 
 ## G2 Devil's Advocate Remediation (against gate commit 2a3715a)
 
@@ -795,4 +796,54 @@ non-UI suite (incl. privacy):              316 passed
 UI suite (tests/test_ui_trip.py):          38 passed
 ci.yml YAML:                               valid; jobs = core, ui
 git status after sweep:                    intentional files only
+```
+
+## G7 Mock-Data Pass (victor fixture — owner absent, graceful skip)
+
+Spec §12: after all gates are green on generic fixtures, load
+`data/mock_victor.json` and re-run `[mockdata]`-tagged E2E + browser
+suites. At gate time the owner has NOT filled the fixture (placeholders
+intact), so the gate executes its other contracted branch: graceful skip
++ honest limitation — with the run-path fully proven, not assumed.
+
+Delivered:
+
+- `tests/test_mockdata_victor.py` — 5 `[mockdata]` tests:
+  loader contract (real/placeholder/invalid-JSON honesty), API journey
+  run-path (synthetic), browser journey run-path (synthetic), victor API
+  journey, victor browser flow. The two victor cases SKIP with an honest
+  reason while the fixture carries placeholders; all five RUN the day
+  real values land (no code change needed).
+- `pytest.ini` — registers the `mockdata` marker (clean collection
+  output).
+- The API journey seeds consent + identity via the §6 profile API,
+  proves masked-only display before AND after booking, answers clarify
+  questions through `POST /api/trip/{id}/clarify-answers` (G4-DA-fix F4
+  resume semantics), and completes to a sandbox PNR. The browser flow
+  boots the real app on 8050, drives goal → clarify cards → scope choice
+  → approval banner, and keeps the zero-console-error contract.
+- `MOCKDATA_FIXTURE=<path>` env override lets the owner (or a dry run)
+  point the victor cases at any fixture file — used at gate time to prove
+  the complete owner path end-to-end with a synthetic real-shaped fixture
+  (values clearly synthetic; nothing personal committed).
+
+Honesty notes:
+
+- No personal data is committed: `data/mock_victor.json` stays gitignored
+  with placeholders; the synthetic proof fixture lives only in tmp during
+  test runs.
+- The victor cases have never executed against REAL owner values — that
+  is the owner's one remaining action; the suite needs zero changes.
+
+Gate evidence (TZ=UTC, fresh runs):
+
+```
+owner-absent mode:                         3 passed, 2 skipped (honest)
+injected-fixture mode (owner path proof):  5 passed in 9.20s
+full non-UI suite:                         319 passed, 2 skipped in 52.10s
+UI suite (clean rerun):                    38 passed in 89.20s
+  (one load-induced flake in the reconsider-ack flow failed once during
+   a concurrent run — green in isolation and on the clean rerun; logged
+   in BLOCKERS.md, no code or assertion changed)
+screenshot:                                screenshots/g7_mockdata_browser.png
 ```

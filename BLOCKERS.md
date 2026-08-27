@@ -59,3 +59,16 @@ Entry template:
   environment; every safety test is hermetic via injected transports and
   unavailable sources are reported as `unavailable`, never as passed.
 - Status: NONE OPEN
+
+## 2026-08-27 — G7 regression: one-off UI flake (reconsider-ack flow)
+- Repro: during the G7 full-UI regression (run concurrently with other
+  foreground commands), `test_ui_safety_reconsider_requires_acknowledgement`
+  failed once (1 failed, 37 passed in 100.16s).
+- Attempts: reran the single test in isolation (PASS in 3.87s), then a
+  clean full-suite rerun (38 passed in 89.20s).
+- Hypothesis: timing/polling flake under host load — the flow is
+  poll/SSE-driven and the run overlapped other work; no code changed
+  between the green G5 run and this run.
+- Alternative chosen: accepted the clean rerun as evidence; no assertion
+  weakened, no code changed.
+- Status: RESOLVED (flake; green on rerun)
