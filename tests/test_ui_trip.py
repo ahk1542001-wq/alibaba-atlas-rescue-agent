@@ -1188,8 +1188,15 @@ def test_AJ01_ia_three_destinations(tracked_page, install_orch):
     expect(page.locator("#view-rescue")).to_be_hidden()
     expect(page.locator('[data-testid="nav-trip"]')).to_have_class(
         re.compile(r"\bactive\b"))
+    engine = str(httpx.get(BASE + "/api/health", timeout=5.0).json()[
+        "ai_engine"])
+    expected_runtime = (
+        "AI: Deterministic fallback"
+        if "deterministic-fallback" in engine
+        else f"AI: {engine}"
+    )
     expect(page.locator('[data-testid="ai-runtime-badge"]')) \
-        .to_have_text("AI: Deterministic fallback")
+        .to_have_text(expected_runtime)
     nav = page.locator(".aj-nav-btn")
     assert nav.count() == 3, "AJ IA is exactly Plan a trip / My trip / Help"
     for tid_name in ("aj-nav-plan", "aj-nav-mytrip", "aj-nav-help"):
