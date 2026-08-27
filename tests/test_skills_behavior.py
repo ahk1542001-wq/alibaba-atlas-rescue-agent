@@ -992,3 +992,45 @@ def test_s11_simulate_disruption_validates_target_trip():
     # still a single trip armed -> implicit targeting remains deterministic
     out = _run(skill.simulate_disruption({"status": "CANCELLED"}))
     assert out["mounted"] is True and out["trip_id"] == "tripA"
+
+
+# --- S12 LocationResolveSkill behavioral tests -------------------------------------
+
+def test_s12_bangkok_resolves_both_airports_and_demands_confirmation():
+    from services.skills.location_resolve import LocationResolveSkill
+    skill = LocationResolveSkill()
+    out = _run(skill.run({"origin_text": "Bangkok", "destination_text": "Singapore"}))
+    assert out["confirmation_required"] is True
+    assert out["confirmed_origin"] is None  # Never silently selects
+    assert out["confirmed_destination"] == "SIN"
+    origin_codes = {c["code"] for c in out["origin_candidates"]}
+    assert "BKK" in origin_codes and "DMK" in origin_codes
+
+
+def test_s12_marina_bay_sands_resolves_destination_singapore_sin():
+    from services.skills.location_resolve import LocationResolveSkill
+    skill = LocationResolveSkill()
+    out = _run(skill.run({"origin_text": "BKK", "destination_text": "Marina Bay Sands"}))
+    assert out["confirmation_required"] is False
+    assert out["confirmed_origin"] == "BKK"
+    assert out["confirmed_destination"] == "SIN"
+    assert out["venue"] == "Marina Bay Sands"
+
+
+# --- S13 RecoveryPlanSkill behavioral tests ---------------------------------------
+
+def test_s13_recovery_plan_generates_options_and_approval_request_without_booking():
+    from services.skills.recovery_plan import RecoveryPlanSkill
+    skill = RecoveryPlanSkill(atlas=FakeAtlas())
+    payload = {
+        "trip_id": "trip-test-recov",
+        "booking": {"option": {"dep": {"airport": "BKK"}, "arr": {"airport": "SIN"}}},
+        "event": {"flight_number": "SQ712", "reason": "Severe Weather"},
+    }
+    out = _run(skill.run(payload))
+    assert out["status"] == "approval_required"
+    assert len(out["recovery_options"]) >= 1
+    assert out["approval_request"] is not None
+    assert out["approval_request"]["purpose"] == "recovery_booking"
+    assert out["approval_request"]["immutable_option"] is not None
+    assert out["approval_request"]["price_snapshot"] is not None

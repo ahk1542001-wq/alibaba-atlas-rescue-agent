@@ -888,9 +888,18 @@ additive fix commits, stop only when F1-F20 + S1-S13 are genuinely satisfied.
 | R0 | canonical spec installed as repo authority; DECISIONS.tsv migrated to 5 columns | docs/MASTER_BUILD_PACKAGE.md §0-§23 | done (6358606) |
 | R1 | remove the complete passport-number path (schemas, API, UI, fixtures, tests, docs); passport country only; fictional data only | §5 "No passport number field exists", F5, F17, §9.4, §19.10 | done (468f2d8) |
 | R2 | remove every unsafe dynamic HTML insertion from ALL reachable frontend incl. legacy static/app.js; no frozen-file security exemption | §9.3, §20 XSS row | done (bf0d061) |
-| R3 | default experience = My Trip; three primary destinations; rescue/radar consolidated into trip monitoring/recovery states | §19.1, §19.7, §19.8 | done (this commit) |
-| R4 | canonical feature gaps: S12 LocationResolve (Bangkok→BKK+DMK, never silent), S13 RecoveryPlan, F14 idempotency-key semantics, F16 replaceable itinerary, F18 degraded flows, F19 a11y, 13-skill registry | §2.3 F13-F19, §4 S12/S13, §6, §19 | pending |
+| R3 | default experience = My Trip; three primary destinations; rescue/radar consolidated into trip monitoring/recovery states | §19.1, §19.7, §19.8 | done (7bf88db) |
+| R4 | canonical feature gaps: S12 LocationResolve (Bangkok→BKK+DMK, never silent), S13 RecoveryPlan, F14 idempotency-key semantics, F16 replaceable itinerary, F18 degraded flows, F19 a11y, 13-skill registry | §2.3 F13-F19, §4 S12/S13, §6, §19 | done (this commit) |
 | R5 | FINAL_REPORT rebuilt against F1-F20/G0-G8; §21 full fresh-venv runbook (hermetic suite, v1 canary, v2 browser, security, boot smoke); DA review vs canonical spec | §9.7, §21, §23 | pending |
+
+### R4 Gate Evidence (Canonical Product Gaps, 13 Skills, Idempotency & Plural API)
+
+- **S12 LocationResolveSkill**: Implemented `services/skills/location_resolve.py` and `services/skills/location_resolve.SKILL.md`. Resolves Bangkok to BKK + DMK candidates with `confirmation_required=True` (never silently choosing), and Marina Bay Sands to Singapore (SIN) with venue set.
+- **S13 RecoveryPlanSkill**: Implemented `services/skills/recovery_plan.py` and `services/skills/recovery_plan.SKILL.md`. Generates ranked recovery alternatives and immutable `ApprovalRequest` with `purpose="recovery_booking"`, `immutable_option`, and `price_snapshot`. Never auto-books before explicit user approval.
+- **13 Validated Runnable Skills**: Skill registry expanded to 13 skills (S1–S13) with dynamic manifest loading, manifest frontmatter validation, and capability enforcement. `CAPABILITY_VOCABULARY` expanded with `profile_read`.
+- **Plural `/api/trips` Router & Idempotency-Key**: Added canonical `trips_router` (`/api/trips`) in `routers/v1/trip.py` mounted in `main.py`. Implemented scoped `Idempotency-Key` ledger (`POST:/api/trips/{trip_id}/approvals/{approval_id}:{key}`) providing identical response replay and HTTP 409 `idempotency_conflict` on altered payloads.
+- **Canonical §5 Profile Contract & Migration**: Updated `models/schemas.py` and `services/profile_store.py` to canonical top-level `ProfileValue` fields, `consent`, and `schema_version=1`. Proven direct fixture validation of `data/demo_profile.json` and automatic on-disk sanitization of legacy forbidden fields.
+- **Verification**: Complete suite passes with 0 failures; `scripts/security_check.sh` passes all 6 sections.
 
 ### R1 Gate Evidence (Privacy Remediation & Fictional Fixtures)
 

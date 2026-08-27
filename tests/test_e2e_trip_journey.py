@@ -672,9 +672,9 @@ def test_skills_manifest_listing(harness):
             resp = await client.get("/api/skills")
             assert resp.status_code == 200
             body = resp.json()
-            assert body["count"] == len(body["skills"]) == 11
+            assert body["count"] == len(body["skills"]) == 13
             names = {s["name"] for s in body["skills"]}
-            assert {"goal_intake", "visa_check", "flight_book"} <= names
+            assert {"goal_intake", "visa_check", "flight_book", "location_resolve", "recovery_plan"} <= names
             for skill in body["skills"]:
                 assert skill["when_to_use"].strip()
 
@@ -1123,5 +1123,112 @@ def test_stream_terminates_on_idle_timeout_for_unresolved_trip(
             state = (await client.get(
                 f"/api/trip/{trip_id}/state")).json()
             assert state["status"] == "awaiting_approval"
+
+    _run(flow())
+
+
+# ==============================================================================
+# §6 CANONICAL PLURAL ROUTE & IDEMPOTENCY-KEY TESTS (R4)
+# ==============================================================================
+
+def test_api_skills_thirteen_skills(harness):
+    """GET /api/skills returns all 13 validated runnable skills."""
+    harness()
+
+    async def flow():
+        async with _client() as client:
+            resp = await client.get("/api/skills")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["count"] == 13
+            names = {s["name"] for s in data["skills"]}
+            assert "location_resolve" in names
+            assert "recovery_plan" in names
+
+    _run(flow())
+
+
+def test_plural_api_trips_endpoints_and_idempotency_key(harness):
+    """§6 Plural /api/trips/* endpoints and Idempotency-Key replay / conflict behavior."""
+    harness()
+
+    async def flow():
+        async with _client() as client:
+            # 1. POST /api/trips
+            start_resp = await client.post(
+                "/api/trips",
+                json={"goal_text": AMBIGUOUS_GOAL, "user_id": "victor-idemp"})
+            assert start_resp.status_code == 200
+            trip_id = start_resp.json()["trip_id"]
+
+            # 2. GET /api/trips/{trip_id} summary
+            sum_resp = await client.get(f"/api/trips/{trip_id}")
+            assert sum_resp.status_code == 200
+            assert sum_resp.json()["trip_id"] == trip_id
+
+            # 3. GET /api/trips/{trip_id}/state
+            state_resp = await client.get(f"/api/trips/{trip_id}/state")
+            assert state_resp.status_code == 200
+            assert state_resp.json()["trip_id"] == trip_id
+
+            # 4. GET /api/trips/{trip_id}/approvals
+            appr_resp = await client.get(f"/api/trips/{trip_id}/approvals")
+            assert appr_resp.status_code == 200
+            approvals = appr_resp.json()["approvals"]
+            assert len(approvals) >= 1
+            aid = approvals[0]["approval_id"]
+
+            # 5. POST /api/trips/{id}/approvals/{aid} with Idempotency-Key
+            idemp_header = {"Idempotency-Key": "idemp-test-key-001"}
+            body1 = {"decision": "flight_only"}
+
+            # First execution
+            res1 = await client.post(
+                f"/api/trips/{trip_id}/approvals/{aid}",
+                json=body1,
+                headers=idemp_header)
+            assert res1.status_code == 200
+            data1 = res1.json()
+
+            # Identical replay: returns stored receipt / response
+            res2 = await client.post(
+                f"/api/trips/{trip_id}/approvals/{aid}",
+                json=body1,
+                headers=idemp_header)
+            assert res2.status_code == 200
+            data2 = res2.json()
+            assert data1 == data2
+
+            # Changed payload with same key: HTTP 409 conflict
+            body_conflict = {"decision": "full_package"}
+            res3 = await client.post(
+                f"/api/trips/{trip_id}/approvals/{aid}",
+                json=body_conflict,
+                headers=idemp_header)
+            assert res3.status_code == 409
+            assert res3.json()["error"]["code"] == "idempotency_conflict"
+
+            # 6. POST /api/trips/{trip_id}/clarifications
+            clarif_resp = await client.post(
+                f"/api/trips/{trip_id}/clarifications",
+                json={"answers": {"date_window": "2026-09-29 to 2026-09-30"}})
+            assert clarif_resp.status_code == 200
+
+            # 7. POST /api/trips/{trip_id}/confirmations/{chip_id}
+            conf_resp = await client.post(
+                f"/api/trips/{trip_id}/confirmations/chip_123",
+                json={"decision": "confirm"})
+            assert conf_resp.status_code == 200
+            assert conf_resp.json()["status"] == "resolved"
+
+            # 8. POST /api/trips/{trip_id}/plan
+            plan_resp = await client.post(f"/api/trips/{trip_id}/plan")
+            assert plan_resp.status_code == 200
+
+            # 9. POST /api/trips/{trip_id}/simulate-disruption
+            disrupt_resp = await client.post(
+                f"/api/trips/{trip_id}/simulate-disruption",
+                json={"scenario": "cancellation", "reason": "Weather test"})
+            assert disrupt_resp.status_code == 200
 
     _run(flow())

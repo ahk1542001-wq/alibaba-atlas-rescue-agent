@@ -30,7 +30,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -58,6 +58,8 @@ from services.skills.goal_intake import GoalIntakeSkill, _extract_dates, \
     _find_city
 from services.skills.guardian_push import GuardianPushSkill
 from services.skills.itinerary import ItinerarySkill
+from services.skills.location_resolve import LocationResolveSkill
+from services.skills.recovery_plan import RecoveryPlanSkill
 from services.skills.safety_monitor import SafetyMonitorSkill
 from services.skills.safety_research import SafetyResearchSkill
 from services.skills.visa_check import VisaCheckSkill
@@ -73,6 +75,7 @@ from services.web_intel_client import WebIntelClient
 from services import llm as llm_service
 
 router = APIRouter(prefix="/api/trip", tags=["Trip"])
+trips_router = APIRouter(prefix="/api/trips", tags=["Trips"])
 
 # SSE stream bounds (G3-DA fix F7): a never-resolved approval must not keep
 # the stream open forever — idle (no new events) and absolute lifetime caps
@@ -358,6 +361,8 @@ class TripOrchestrator:
         ex.register_skill("disruption_monitor",
                           DisruptionMonitorSkill(trip_registry=ex))
         ex.register_skill("itinerary", ItinerarySkill())
+        ex.register_skill("location_resolve", LocationResolveSkill())
+        ex.register_skill("recovery_plan", RecoveryPlanSkill(atlas=atlas_client))
         if safety_service is not None:
             ex.register_skill("safety_research", safety_service.research)
             ex.register_skill("safety_monitor", safety_service.monitor)
@@ -370,6 +375,8 @@ class TripOrchestrator:
         _assert_manifest_governance(ex._skills, ex._registry_by_name)
         # trip_id -> intent seed for scope-clarification resume
         self._seeds: Dict[str, Dict[str, Any]] = {}
+        # (trip_id:approval_id:key) -> (payload_hash, stored_response)
+        self._idempotency_ledger: Dict[str, Any] = {}
 
     # -- helpers -----------------------------------------------------------------
 
@@ -742,7 +749,25 @@ class TripOrchestrator:
             trip.status = "completed"
 
     async def resolve(self, trip_id: str, approval_id: str,
-                      decision: str, value: Any) -> Dict[str, Any]:
+                      decision: str, value: Any,
+                      idempotency_key: Optional[str] = None) -> Dict[str, Any]:
+        ledger_key = None
+        payload_hash = None
+        if idempotency_key:
+            ledger_key = f"POST:/api/trips/{trip_id}/approvals/{approval_id}:{idempotency_key}"
+            import hashlib
+            payload_str = json.dumps({"decision": decision, "value": value}, sort_keys=True, default=str)
+            payload_hash = hashlib.sha256(payload_str.encode()).hexdigest()
+            if ledger_key in self._idempotency_ledger:
+                stored_hash, stored_resp = self._idempotency_ledger[ledger_key]
+                if stored_hash == payload_hash:
+                    return stored_resp
+                raise TripApiError(
+                    409, "idempotency_conflict",
+                    f"Idempotency-Key '{idempotency_key}' was already used with a different request payload",
+                    recoverable=True,
+                    hint="reuse the original payload for identical retry, or provide a new Idempotency-Key")
+
         trip = self._trip_or_404(trip_id)
         approval = next((a for a in trip.pending_approvals
                          if a.approval_id == approval_id), None)
@@ -775,7 +800,10 @@ class TripOrchestrator:
                     "clarification choices", recoverable=True,
                     hint=f"choose one of: {', '.join(SCOPE_CHOICES)}")
             await self.resolve_scope(trip, approval, choice)
-            return self.resume_result(trip_id)
+            res = self.resume_result(trip_id)
+            if ledger_key and payload_hash:
+                self._idempotency_ledger[ledger_key] = (payload_hash, res)
+            return res
 
         if approval.node_name == "recovery_booking":
             # AJ recovery: a SEPARATE approval for replacement options after
@@ -814,7 +842,10 @@ class TripOrchestrator:
                 trip.current = None
             self._record(trip, "recovery_choice", "recovery_choice",
                          "COMPLETED", 0.0, resolved)
-            return self.resume_result(trip_id)
+            res = self.resume_result(trip_id)
+            if ledger_key and payload_hash:
+                self._idempotency_ledger[ledger_key] = (payload_hash, res)
+            return res
 
         if decision not in ("approve", "reject"):
             raise TripApiError(422, "invalid_decision",
@@ -840,7 +871,10 @@ class TripOrchestrator:
             await self.executor.resolve_approval(trip_id, approval_id, resolved)
         except GraphError as exc:
             raise self._graph_error(exc)
-        return self.resume_result(trip_id)
+        res = self.resume_result(trip_id)
+        if ledger_key and payload_hash:
+            self._idempotency_ledger[ledger_key] = (payload_hash, res)
+        return res
 
     # -- clarify answers (G4-DA-fix F4) -----------------------------------------
 
@@ -1402,9 +1436,12 @@ async def trip_approvals(trip_id: str):
 
 @router.post("/{trip_id}/approvals/{approval_id}")
 async def trip_resolve_approval(trip_id: str, approval_id: str,
-                                body: ApprovalDecision):
+                                body: ApprovalDecision,
+                                idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+                                x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")):
+    key = idempotency_key or x_idempotency_key
     orch = get_trip_orchestrator()
-    return await orch.resolve(trip_id, approval_id, body.decision, body.value)
+    return await orch.resolve(trip_id, approval_id, body.decision, body.value, idempotency_key=key)
 
 
 @router.post("/{trip_id}/clarify-answers")
@@ -1519,3 +1556,132 @@ async def trip_stream(trip_id: str):
             await asyncio.sleep(0.4)
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+# ==============================================================================
+# §6 CANONICAL PLURAL ROUTER (/api/trips/*)
+# ==============================================================================
+
+class ClarificationsRequest(BaseModel):
+    answers: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ConfirmationChipDecision(BaseModel):
+    decision: str
+    corrected_value: Optional[Any] = None
+
+
+class SimulateDisruptionRequest(BaseModel):
+    scenario: Optional[str] = None
+    flight_number: Optional[str] = None
+    reason: Optional[str] = None
+
+
+@trips_router.post("")
+@trips_router.post("/")
+async def trips_start(body: TripStartRequest):
+    res = await trip_start(body)
+    trip_id = res["trip_id"]
+    return {
+        "trip_id": trip_id,
+        "status": res["status"],
+        "missing_fields": [],
+        "confirmation_chips": [],
+        "state_url": f"/api/trips/{trip_id}/state",
+        "stream_url": f"/api/trips/{trip_id}/stream",
+    }
+
+
+@trips_router.get("/{trip_id}")
+async def trips_summary(trip_id: str):
+    orch = get_trip_orchestrator()
+    trip = orch._trip_or_404(trip_id)
+    goal = (trip.context.get("goal_intake") or {}).get("goal")
+    return {
+        "trip_id": trip_id,
+        "status": trip.status,
+        "current_state": trip.current,
+        "goal": goal,
+        "pending_approvals": len(trip.pending_approvals),
+        "state_url": f"/api/trips/{trip_id}/state",
+        "stream_url": f"/api/trips/{trip_id}/stream",
+    }
+
+
+@trips_router.get("/{trip_id}/state")
+async def trips_state(trip_id: str):
+    return JSONResponse(content=get_trip_orchestrator().state(trip_id))
+
+
+@trips_router.get("/{trip_id}/approvals")
+async def trips_approvals(trip_id: str):
+    return await trip_approvals(trip_id)
+
+
+@trips_router.post("/{trip_id}/approvals/{approval_id}")
+async def trips_resolve_approval(trip_id: str, approval_id: str,
+                                 body: ApprovalDecision,
+                                 idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+                                 x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")):
+    return await trip_resolve_approval(trip_id, approval_id, body,
+                                       idempotency_key=idempotency_key,
+                                       x_idempotency_key=x_idempotency_key)
+
+
+@trips_router.post("/{trip_id}/clarifications")
+async def trips_clarifications(trip_id: str, body: ClarificationsRequest):
+    orch = get_trip_orchestrator()
+    last_res = None
+    for field, val in body.answers.items():
+        last_res = await orch.answer_clarify(trip_id, field, str(val))
+    return last_res or JSONResponse(content=orch.state(trip_id))
+
+
+@trips_router.post("/{trip_id}/confirmations/{chip_id}")
+async def trips_confirmation(trip_id: str, chip_id: str, body: ConfirmationChipDecision):
+    orch = get_trip_orchestrator()
+    orch._trip_or_404(trip_id)
+    return {
+        "chip_id": chip_id,
+        "status": "resolved",
+        "decision": body.decision,
+        "state": orch.state(trip_id)
+    }
+
+
+@trips_router.post("/{trip_id}/plan")
+async def trips_plan(trip_id: str):
+    orch = get_trip_orchestrator()
+    trip = orch._trip_or_404(trip_id)
+    return JSONResponse(content=orch.state(trip_id))
+
+
+@trips_router.post("/{trip_id}/simulate-disruption")
+async def trips_simulate_disruption_post(trip_id: str,
+                                         body: Optional[SimulateDisruptionRequest] = None,
+                                         allow_sim: str = "1"):
+    orch = get_trip_orchestrator()
+    trip = orch._trip_or_404(trip_id)
+    booking = trip.context.get("flight_book") or {}
+    option = (booking.get("booking") or {}).get("option") or {}
+    event = {
+        "flight_number": (body.flight_number if body else None) or option.get("flight_no") or "SIM-FLIGHT",
+        "status": "DISRUPTED_SIMULATED",
+        "simulated": True,
+        "scenario": (body.scenario if body else None) or "cancellation",
+        "reason": (body.reason if body else None) or "G3 demo hook (simulate-disruption)",
+    }
+    try:
+        return await orch.simulate_disruption(trip_id, event)
+    except GraphError as exc:
+        raise orch._graph_error(exc)
+
+
+@trips_router.get("/{trip_id}/simulate-disruption")
+async def trips_simulate_disruption_get(trip_id: str, allow_sim: str = "1"):
+    return await trip_simulate_disruption(trip_id, allow_sim=allow_sim)
+
+
+@trips_router.get("/{trip_id}/stream")
+async def trips_stream(trip_id: str):
+    return await trip_stream(trip_id)

@@ -30,6 +30,8 @@ EXPECTED_SKILLS = {
     "rights_check",
     "guardian_push",
     "disruption_monitor",
+    "location_resolve",
+    "recovery_plan",
 }
 
 
@@ -40,9 +42,9 @@ def skills_copy(tmp_path: Path) -> Path:
     return dest
 
 
-def test_registry_loads_exactly_eleven_skills():
+def test_registry_loads_exactly_thirteen_skills():
     registry = load_skill_registry()
-    assert len(registry) == 11
+    assert len(registry) == 13
     assert {entry["name"] for entry in registry} == EXPECTED_SKILLS
 
 
@@ -65,6 +67,7 @@ def test_closed_vocabulary_is_exactly_spec_set():
         "atlas_call",
         "llm_call",
         "telegram_send",
+        "profile_read",
         "profile_write",
         "approval_required",
     }
@@ -93,14 +96,14 @@ def test_adding_skill_file_changes_listing(skills_copy: Path):
         encoding="utf-8",
     )
     registry = load_skill_registry(skills_copy)
-    assert len(registry) == 12
+    assert len(registry) == 14
     assert "hotel_finder" in {entry["name"] for entry in registry}
 
 
 def test_removing_skill_file_changes_listing(skills_copy: Path):
     (skills_copy / "web_intel.SKILL.md").unlink()
     registry = load_skill_registry(skills_copy)
-    assert len(registry) == 10
+    assert len(registry) == 12
     assert "web_intel" not in {entry["name"] for entry in registry}
 
 
@@ -152,9 +155,9 @@ def test_empty_allowed_tools_loads_cleanly(skills_copy: Path):
 
 def test_reload_reflects_filesystem_changes(skills_copy: Path):
     """Registry is rebuilt per call — no stale cache across add/remove."""
-    assert len(load_skill_registry(skills_copy)) == 11
+    assert len(load_skill_registry(skills_copy)) == 13
     (skills_copy / "web_intel.SKILL.md").unlink()
-    assert len(load_skill_registry(skills_copy)) == 10
+    assert len(load_skill_registry(skills_copy)) == 12
     (skills_copy / "web_intel.SKILL.md").write_text(
         "---\n"
         "name: web_intel\n"
@@ -164,7 +167,7 @@ def test_reload_reflects_filesystem_changes(skills_copy: Path):
         "# Procedure\n1. fetch\n",
         encoding="utf-8",
     )
-    assert len(load_skill_registry(skills_copy)) == 11
+    assert len(load_skill_registry(skills_copy)) == 13
 
 
 def test_duplicate_skill_name_rejected(skills_copy: Path):

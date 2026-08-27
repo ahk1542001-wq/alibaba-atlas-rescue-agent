@@ -291,3 +291,55 @@ def test_user_id_path_traversal_alias_rejected(store: ProfileStore):
 def test_safe_user_id_charset_accepted(store: ProfileStore):
     profile = store.get_or_create("vic-tor_2")
     assert profile.user_id == "vic-tor_2"
+
+
+# --- canonical §5 profile fixture and identity migration tests (R4) -------------
+
+def test_demo_profile_fixture_validates_directly_against_profile_model():
+    """data/demo_profile.json must validate directly against Profile without discarding values."""
+    repo_root = Path(__file__).resolve().parent.parent
+    fixture_path = repo_root / "data" / "demo_profile.json"
+    assert fixture_path.exists(), f"missing fixture {fixture_path}"
+    raw = fixture_path.read_text(encoding="utf-8")
+    profile = Profile.model_validate_json(raw)
+    assert profile.user_id == "victor-demo"
+    assert profile.passport_country is not None and profile.passport_country.value == "MM"
+    assert profile.home_city is not None and profile.home_city.value == "Bangkok"
+    assert profile.preferred_origin_airport is not None and profile.preferred_origin_airport.value == "BKK"
+    assert profile.cabin is not None and profile.cabin.value == "economy"
+    assert profile.budget_range is not None and profile.budget_range.value == "THB 15000-30000"
+    assert profile.display_currency is not None and profile.display_currency.value == "SGD"
+    assert profile.consent.store_local is True
+    assert profile.schema_version == 1
+
+
+def test_identity_only_migration_removes_forbidden_bytes_from_disk(tmp_path: Path):
+    """When a legacy disk file has forbidden keys only in identity, they are stripped and rewritten."""
+    legacy_json = {
+        "user_id": "legacy_identity_user",
+        "identity": {
+            "passport_country": "MM",
+            "home_city": "Bangkok",
+            "passport_no": "FORBIDDEN_12345",
+            "legal_name": "SECRET_NAME"
+        },
+        "consent": {"store_local": True}
+    }
+    file_path = tmp_path / "legacy_identity_user.json"
+    file_path.write_text(json.dumps(legacy_json), encoding="utf-8")
+
+    store = ProfileStore(root=tmp_path)
+    loaded = store.get_or_create("legacy_identity_user")
+
+    # Safe fields survive
+    assert loaded.identity.passport_country == "MM"
+    assert loaded.identity.home_city == "Bangkok"
+    assert loaded.passport_country.value == "MM"
+    assert loaded.home_city.value == "Bangkok"
+
+    # Disk file is safely cleaned — no forbidden bytes remain
+    disk_content = file_path.read_text(encoding="utf-8")
+    assert "FORBIDDEN_12345" not in disk_content
+    assert "SECRET_NAME" not in disk_content
+    assert "passport_no" not in disk_content
+    assert "legal_name" not in disk_content

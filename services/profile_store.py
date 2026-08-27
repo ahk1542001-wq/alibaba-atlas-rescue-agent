@@ -52,17 +52,40 @@ class ProfileStore:
             return self._memory[user_id]
         path = self._path(user_id)
         if path.exists():
-            profile = Profile.model_validate_json(path.read_text(encoding="utf-8"))
-            # Old profile migration: strip any non-allowlisted / forbidden fields
-            cleaned_fields = {
-                k: v for k, v in profile.fields.items()
-                if k in SAFE_PROFILE_FIELDS and k not in FORBIDDEN_PROFILE_FIELDS
-            }
-            if len(cleaned_fields) != len(profile.fields):
-                profile.fields = cleaned_fields
-                self._memory[user_id] = profile
-                if profile.consent.store_local:
-                    self._persist(user_id)
+            raw_text = path.read_text(encoding="utf-8")
+            raw_json = json.loads(raw_text)
+
+            def _has_forbidden(obj: Any) -> bool:
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if k in FORBIDDEN_PROFILE_FIELDS:
+                            return True
+                        if _has_forbidden(v):
+                            return True
+                elif isinstance(obj, list):
+                    return any(_has_forbidden(x) for x in obj)
+                return False
+
+            had_forbidden = _has_forbidden(raw_json)
+
+            def _clean_dict(d: dict) -> dict:
+                out = {}
+                for k, v in d.items():
+                    if k in FORBIDDEN_PROFILE_FIELDS:
+                        continue
+                    if isinstance(v, dict):
+                        out[k] = _clean_dict(v)
+                    elif isinstance(v, list):
+                        out[k] = [_clean_dict(x) if isinstance(x, dict) else x for x in v]
+                    else:
+                        out[k] = v
+                return out
+
+            cleaned_json = _clean_dict(raw_json)
+            profile = Profile.model_validate(cleaned_json)
+            self._memory[user_id] = profile
+            if had_forbidden and profile.consent.store_local:
+                self._persist(user_id)
         else:
             profile = Profile(user_id=user_id)  # starts empty, no consent
         self._memory[user_id] = profile
@@ -120,8 +143,28 @@ class ProfileStore:
             value=value,
             source=source,
             updated_at=datetime.now(timezone.utc).isoformat(),
+            confirmation="confirmed"
         )
+        setattr(profile, name, field)
         profile.fields[name] = field
+        if name == "passport_country":
+            profile.identity.passport_country = str(value)
+        elif name == "home_city":
+            profile.identity.home_city = str(value)
+        elif name == "cabin":
+            profile.prefs.cabin = str(value)
+        elif name == "preferred_origin_airport":
+            profile.prefs.preferred_origin_airport = str(value)
+        elif name == "display_currency":
+            profile.prefs.display_currency = str(value)
+        elif name == "budget_range":
+            profile.prefs.budget_range = str(value)
+        elif name == "diet":
+            profile.prefs.diet = str(value)
+        elif name == "accessibility_notes":
+            profile.prefs.accessibility_notes = str(value)
+        elif name == "airlines_like":
+            profile.prefs.airlines_like = value if isinstance(value, list) else [str(value)]
         self._persist(user_id)
         return profile
 
@@ -138,7 +181,12 @@ class ProfileStore:
         if name not in SAFE_PROFILE_FIELDS:
             raise ValueError(f"field '{name}' is not a recognized safe profile field")
         profile = self.get_or_create(user_id)
+        setattr(profile, name, None)
         profile.fields.pop(name, None)
+        if name == "passport_country":
+            profile.identity.passport_country = None
+        elif name == "home_city":
+            profile.identity.home_city = None
         self._persist(user_id)
         return profile
 
@@ -151,10 +199,17 @@ class ProfileStore:
         home_city: Optional[str] = None,
     ) -> Profile:
         profile = self.get_or_create(user_id)
+        now_iso = datetime.now(timezone.utc).isoformat()
         if passport_country is not None:
             profile.identity.passport_country = passport_country
+            profile.passport_country = ProfileFieldValue(
+                value=passport_country, source="user", updated_at=now_iso, confirmation="confirmed")
+            profile.fields["passport_country"] = profile.passport_country
         if home_city is not None:
             profile.identity.home_city = home_city
+            profile.home_city = ProfileFieldValue(
+                value=home_city, source="user", updated_at=now_iso, confirmation="confirmed")
+            profile.fields["home_city"] = profile.home_city
         self._persist(user_id)
         return profile
 

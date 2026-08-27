@@ -17,6 +17,7 @@ CAPABILITY_VOCABULARY: FrozenSet[str] = frozenset(
         "atlas_call",
         "llm_call",
         "telegram_send",
+        "profile_read",
         "profile_write",
         "approval_required",
     }

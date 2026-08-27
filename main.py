@@ -58,6 +58,7 @@ app.include_router(telemetry.router)
 app.include_router(hotels.router)
 app.include_router(radar.router)
 app.include_router(trip.router)
+app.include_router(trip.trips_router)
 app.include_router(profile.router)
 app.include_router(skills.router)
 

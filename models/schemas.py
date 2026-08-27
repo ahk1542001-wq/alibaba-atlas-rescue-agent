@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any, Literal
-from datetime import date
+from datetime import date, datetime, timezone
 
 class FlightOffer(BaseModel):
     offer_id: str
@@ -190,11 +190,17 @@ class TripGoal(BaseModel):
     goal_id: str
     raw_text: str
     origin_city: Optional[str] = None
+    origin_airport_candidates: List[str] = Field(default_factory=list)
+    confirmed_origin_airport: Optional[str] = None
     dest_city: Optional[str] = None
+    destination_airport_candidates: List[str] = Field(default_factory=list)
+    confirmed_destination_airport: Optional[str] = None
+    venue: Optional[str] = None
     date_window: Optional[DateWindow] = None
     passengers: int = Field(1, ge=1)
     budget_hint: Optional[str] = None
     purpose: Optional[str] = None
+    missing_fields: List[str] = Field(default_factory=list)
 
 
 class FlightEndpoint(BaseModel):
@@ -264,10 +270,14 @@ class ProfilePrefs(BaseModel):
     accessibility_notes: Optional[str] = None
 
 
-class ProfileFieldValue(BaseModel):
+class ProfileValue(BaseModel):
     value: Any
-    source: Literal["user", "ai_inferred"]
-    updated_at: str
+    source: Literal["user", "ai_inferred"] = "user"
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    confirmation: str = "confirmed"
+
+
+ProfileFieldValue = ProfileValue
 
 
 class ProfileConsent(BaseModel):
@@ -276,10 +286,90 @@ class ProfileConsent(BaseModel):
 
 class Profile(BaseModel):
     user_id: str
-    identity: ProfileIdentity = ProfileIdentity()
-    prefs: ProfilePrefs = ProfilePrefs()
-    fields: Dict[str, ProfileFieldValue] = {}
-    consent: ProfileConsent = ProfileConsent()
+    passport_country: Optional[ProfileValue] = None
+    home_city: Optional[ProfileValue] = None
+    preferred_origin_airport: Optional[ProfileValue] = None
+    cabin: Optional[ProfileValue] = None
+    airlines_like: Optional[ProfileValue] = None
+    diet: Optional[ProfileValue] = None
+    budget_range: Optional[ProfileValue] = None
+    display_currency: Optional[ProfileValue] = None
+    accessibility_notes: Optional[ProfileValue] = None
+    consent: ProfileConsent = Field(default_factory=ProfileConsent)
+    schema_version: int = 1
+
+    # Compatibility shim fields for legacy callers
+    identity: ProfileIdentity = Field(default_factory=ProfileIdentity)
+    prefs: ProfilePrefs = Field(default_factory=ProfilePrefs)
+    fields: Dict[str, ProfileValue] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_profile_input(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        fields_dict = d.get("fields")
+        if isinstance(fields_dict, dict):
+            d["fields"] = {k: v for k, v in fields_dict.items()
+                           if k in SAFE_PROFILE_FIELDS and k not in FORBIDDEN_PROFILE_FIELDS}
+
+        # Migrate from fields dict, identity, or prefs if top-level missing
+        fields_clean = d.get("fields")
+        for fld in SAFE_PROFILE_FIELDS:
+            val = d.get(fld)
+            if val is None and isinstance(fields_clean, dict) and fld in fields_clean:
+                val = fields_clean[fld]
+            if val is None and fld == "passport_country" and isinstance(d.get("identity"), dict):
+                val = d["identity"].get("passport_country")
+            if val is None and fld == "home_city" and isinstance(d.get("identity"), dict):
+                val = d["identity"].get("home_city")
+            if val is None and isinstance(d.get("prefs"), dict) and fld in d["prefs"]:
+                val = d["prefs"].get(fld)
+
+            if val is not None:
+                if isinstance(val, dict) and "value" in val:
+                    d[fld] = val
+                elif isinstance(val, ProfileValue):
+                    d[fld] = val
+                else:
+                    d[fld] = {
+                        "value": val,
+                        "source": "user",
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "confirmation": "confirmed"
+                    }
+
+        return d
+
+    @model_validator(mode="after")
+    def _sync_compat_shims(self) -> "Profile":
+        # Keep only safe fields in self.fields
+        clean_fields = {}
+        for fld in SAFE_PROFILE_FIELDS:
+            pv = getattr(self, fld, None)
+            if pv is not None:
+                clean_fields[fld] = pv
+                if fld == "passport_country" and pv.value is not None:
+                    self.identity.passport_country = str(pv.value)
+                elif fld == "home_city" and pv.value is not None:
+                    self.identity.home_city = str(pv.value)
+                elif fld == "cabin" and pv.value is not None:
+                    self.prefs.cabin = str(pv.value)
+                elif fld == "preferred_origin_airport" and pv.value is not None:
+                    self.prefs.preferred_origin_airport = str(pv.value)
+                elif fld == "display_currency" and pv.value is not None:
+                    self.prefs.display_currency = str(pv.value)
+                elif fld == "budget_range" and pv.value is not None:
+                    self.prefs.budget_range = str(pv.value)
+                elif fld == "diet" and pv.value is not None:
+                    self.prefs.diet = str(pv.value)
+                elif fld == "accessibility_notes" and pv.value is not None:
+                    self.prefs.accessibility_notes = str(pv.value)
+                elif fld == "airlines_like" and pv.value is not None:
+                    self.prefs.airlines_like = pv.value if isinstance(pv.value, list) else [str(pv.value)]
+        self.fields = clean_fields
+        return self
 
 
 class ConfirmationChip(BaseModel):
@@ -295,6 +385,10 @@ class ApprovalRequest(BaseModel):
     options: List[Any] = []
     created_at: str
     resolved_value: Optional[Any] = None
+    trip_id: Optional[str] = None
+    purpose: Optional[str] = None
+    immutable_option: Optional[Dict[str, Any]] = None
+    price_snapshot: Optional[Dict[str, Any]] = None
     # G2-DA fix: optional expiry (ISO timestamp). None = never expires
     # (backward compatible); resolve_approval rejects expired approvals with
     # a recoverable approval_expired error.
