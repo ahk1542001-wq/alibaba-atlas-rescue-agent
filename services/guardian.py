@@ -29,15 +29,22 @@ async def notify(
     """Send one proactive guardian push. Never raises — demo safety."""
     token = getattr(settings, "telegram_bot_token", None)
     chat_id = getattr(settings, "telegram_chat_id", None)
+    live_flag = getattr(settings, "telegram_live_test", False)
     text = f"🛟 {title}\n\n{body}"
     if action_label:
         text += f"\n\n👉 {action_label}" + (f": {deep_link}" if deep_link else "")
 
-    if not token or not chat_id or not getattr(settings, "telegram_live_test", False):
+    if not token or not chat_id or not live_flag:
         return {
-            "simulated": True, "sent": False,
-            "reason": "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not configured, or TELEGRAM_LIVE_TEST not true",
-            "mocked_text": text
+            "channel": "telegram",
+            "sent": False,
+            "simulated": True,
+            "preview": text,
+            "reason": (
+                "Live Telegram delivery requires TELEGRAM_BOT_TOKEN, "
+                "TELEGRAM_CHAT_ID, and TELEGRAM_LIVE_TEST=true."
+            ),
+            "error": None,
         }
 
     url = f"{TELEGRAM_API}/bot{token}/sendMessage"
@@ -54,6 +61,11 @@ async def notify(
             "error": None if ok else data.get("description"),
         }
     except Exception as exc:  # noqa: BLE001
-        logger.warning("guardian send failed: %s", exc)
-        return {"channel": "telegram", "sent": False, "simulated": False,
-                "preview": text, "error": str(exc)}
+        logger.warning("guardian send failed: %s", type(exc).__name__)
+        return {
+            "channel": "telegram",
+            "sent": False,
+            "simulated": False,
+            "preview": text,
+            "error": "telegram_delivery_failed",
+        }

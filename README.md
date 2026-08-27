@@ -35,7 +35,7 @@ Atlas organizers confirmed (2026-08): *"We did not prepare a separate 'Hackathon
 | LLM reasoning | Configured ModelScope-compatible model via `LLM_BASE_URL` + `ALIBABA_MODEL_API_KEY`; deterministic fallback when no model is configured |
 | Rights engine | Deterministic rule tables grounded in published regulations |
 | Visa rules | Conservative curated table (2026-08), flags RISK over CLEAR |
-| Telegram Guardian | Live push when `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` set; simulated preview otherwise |
+| Telegram Guardian | Live push requires `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` + `TELEGRAM_LIVE_TEST=true`; returns redacted simulated preview otherwise |
 | Transit hotels / care vouchers / baggage / seatmap | Demo content |
 | Predictive radar numbers | Simulated telemetry |
 | `GET /api/graph/state` | Canned replay (`mode=demo_replay`); live DAG trace ships inside every analyze response |
@@ -50,8 +50,9 @@ cp .env.example .env   # if provided; else create .env with:
 # ALIBABA_MODEL_API_KEY=...        # ModelScope key
 # LLM_BASE_URL=https://api-inference.modelscope.cn/v1
 # ATLAS_USE_CLI=true               # use atlas-flight CLI auth
-# TELEGRAM_BOT_TOKEN=...           # optional, from @BotFather
+# TELEGRAM_BOT_TOKEN=...           # optional, from @BotFather (requires CHAT_ID + LIVE_TEST=true)
 # TELEGRAM_CHAT_ID=...
+# TELEGRAM_LIVE_TEST=false
 ```
 
 ### 2. Run

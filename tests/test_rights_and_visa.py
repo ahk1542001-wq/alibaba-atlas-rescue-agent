@@ -151,6 +151,20 @@ def test_guardian_simulates_without_credentials(monkeypatch):
     assert out["simulated"] is True and out["sent"] is False
 
 
+def test_guardian_requires_token_chat_and_live_flag_and_returns_preview(monkeypatch):
+    from services import guardian
+
+    monkeypatch.setattr(guardian.settings, "telegram_bot_token", "configured")
+    monkeypatch.setattr(guardian.settings, "telegram_chat_id", "")
+    monkeypatch.setattr(guardian.settings, "telegram_live_test", False)
+    out = asyncio.run(guardian.notify("Trip alert", "Route BKK-SIN"))
+    assert out["channel"] == "telegram"
+    assert out["simulated"] is True and out["sent"] is False
+    assert out["preview"] == "🛟 Trip alert\n\nRoute BKK-SIN"
+    assert "mocked_text" not in out
+    assert "live" in out["reason"].lower()
+
+
 def test_rule_tables_consistent():
     for jid in ("EU261", "UK261", "TURKEY_SHY"):
         bands = JURISDICTIONS[jid]["distance_bands_km"]

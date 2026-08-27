@@ -48,18 +48,6 @@ class GuardianPushSkill(SkillBase):
         event = str(payload.get("event") or "alert")
         safe = sanitize_payload(payload.get("payload") or {})
 
-        token = getattr(settings, "telegram_bot_token", "")
-        if not token:
-            # graceful skip — demo-safe, never a failure, never a fake send
-            return {
-                "delivery_status": "skipped_not_failed",
-                "simulated": True,
-                "channel": "telegram",
-                "event": event,
-                "payload": safe,
-                "reason": "TELEGRAM_BOT_TOKEN not configured",
-            }
-
         from services.guardian import notify  # frozen service, import-only
         body_lines = [f"{k}: {v}" for k, v in safe.items()
                       if not isinstance(v, dict)]
@@ -67,11 +55,15 @@ class GuardianPushSkill(SkillBase):
                               body="\n".join(body_lines) or event)
         status = "sent" if result.get("sent") else (
             "skipped_not_failed" if result.get("simulated") else "failed")
-        return {
+        out: Dict[str, Any] = {
             "delivery_status": status,
             "simulated": bool(result.get("simulated")),
             "channel": result.get("channel", "telegram"),
             "event": event,
             "payload": safe,
+            "preview": result.get("preview"),
             "error": result.get("error"),
         }
+        if result.get("reason"):
+            out["reason"] = result["reason"]
+        return out

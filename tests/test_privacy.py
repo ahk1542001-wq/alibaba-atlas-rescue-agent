@@ -127,6 +127,24 @@ def test_guardian_push_skill_result_excludes_passport():
     assert out["delivery_status"] in ("sent", "skipped_not_failed")
 
 
+def test_guardian_simulated_preview_is_present_and_redacted(monkeypatch):
+    from config import settings
+
+    monkeypatch.setattr(settings, "telegram_bot_token", "")
+    monkeypatch.setattr(settings, "telegram_chat_id", "")
+    monkeypatch.setattr(settings, "telegram_live_test", False)
+    out = _run(GuardianPushSkill().run({
+        "event": "disruption",
+        "payload": {
+            "route": "BKK-SIN",
+            "passport_number": SENTINEL_RAW,
+        },
+    }))
+    assert out["delivery_status"] == "skipped_not_failed"
+    assert out["preview"]
+    assert SENTINEL_RAW not in json.dumps(out)
+
+
 # --- profile store: consent, permissions, safe storage at rest -------------------
 
 
