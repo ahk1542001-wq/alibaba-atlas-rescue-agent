@@ -3,8 +3,9 @@
 Scope (task #4 contracts):
 - happy full-trip path: no personal data; LLM stubbed for clarify; LIVE Atlas
   sandbox for search/book with provenance assertions. If the sandbox is
-  unreachable the test records it honestly in BLOCKERS.md and runs the
-  documented curated fallback (provenance stays 'sandbox') — never fakes.
+  unreachable the test reports that condition in test output and runs the
+  documented curated fallback (provenance stays 'sandbox') — never fakes or
+  mutates tracked evidence.
 - flight-only intent: hotel/activities/local-transport are NOT executed.
 - ambiguous scope: pauses with exactly three clarification choices.
 - visa-block reroute: block surfaced in state; booking never completes on a
@@ -20,6 +21,7 @@ Scope (task #4 contracts):
 
 import asyncio
 import json
+import logging
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -47,7 +49,7 @@ BLOCKED_GOAL = "Book a flight from Yangon to Frankfurt on 2026-09-28."
 CANNED_OFFER_IDS = {"off_atlas_sq_711", "off_atlas_scoot_302",
                     "off_atlas_mai_801", "off_atlas_airasia_502",
                     "off_atlas_thai_903", "off_atlas_bangkokair_104"}
-_BLOCKER_MARKER = "G3-E2E atlas sandbox unreachable"
+logger = logging.getLogger(__name__)
 
 
 def _run(coro):
@@ -154,15 +156,26 @@ def live_sandbox_available() -> bool:
     return _LIVE
 
 
-def _record_sandbox_blocker(detail: str) -> None:
-    path = Path(__file__).resolve().parent.parent / "BLOCKERS.md"
-    text = path.read_text(encoding="utf-8") if path.exists() else ""
-    if _BLOCKER_MARKER in text:
-        return
-    entry = (f"\n- [{date.today().isoformat()}] {_BLOCKER_MARKER}: {detail} "
-             "— happy-path E2E ran on the documented curated fallback "
-             "(provenance 'sandbox'); nothing was fabricated.\n")
-    path.write_text(text.rstrip() + "\n" + entry, encoding="utf-8")
+def _record_sandbox_blocker(_detail: str) -> None:
+    """Report a transient provider condition without changing the repository."""
+    logger.warning(
+        "Atlas Sandbox unavailable; using the documented curated fallback"
+    )
+
+
+def test_sandbox_unavailability_does_not_mutate_tracked_evidence(
+    monkeypatch,
+):
+    def fail_on_path_access(*_args, **_kwargs):
+        pytest.fail("sandbox reporting must not access a repository path")
+
+    monkeypatch.setitem(
+        _record_sandbox_blocker.__globals__,
+        "Path",
+        fail_on_path_access,
+    )
+
+    _record_sandbox_blocker("provider unavailable during this test run")
 
 
 # --- harness ----------------------------------------------------------------------

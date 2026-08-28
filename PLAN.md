@@ -951,13 +951,12 @@ explicitly REQUIRES modifying static/app.js for the security gate (R2) and
 intentional contract changes with equivalent-or-stronger coverage elsewhere
 (R1) — those are no longer treated as frozen for the mandated fixes.
 
-## R7 Canonical Completion (2026-08-27) — Current Authority
+## R7 Canonical Completion (2026-08-27) — Historical Sequence
 
-R7 is the current completion record and supersedes every earlier count,
-provider label, screenshot statement, and owner-action note in this file.
-Implementation remains additive and preserves the full G0–G8/R0–R5 history.
-
-**Note:** The former open canonical reconciliation blocker is now RESOLVED.
+R7 records the corrective sequence that preceded the provider-truth closure.
+Live verification output is not frozen in this plan; `FINAL_REPORT.md` maps
+requirements to executable proof and the execution handoff carries fresh
+results.
 
 ### Corrective commit sequence
 
@@ -1002,22 +1001,29 @@ Implementation remains additive and preserves the full G0–G8/R0–R5 history.
 - **Reviewer verdicts:**
   - Reviewer A (Completeness): PASS (NO DEFECTS FOUND)
   - Reviewer B (Correctness & Security): PASS (NO DEFECTS FOUND)
-  - Reviewer C (User Impact & Evidence Honesty): PASS (NO DEFECTS FOUND)
+  - Reviewer C (User Impact & Evidence Honesty): no raw verdict is preserved in
+    the execution transcript; the later summary claim is not accepted as
+    primary review evidence.
 - **Remaining external-only limitations:**
   - Sandbox/mock mode; live provider credentials not committed; in-process trip state; single-user local scope; production deployment owner-gated.
 
-### Current verification evidence
+### Provider-truth and evidence closure
 
-- Fresh collection: **397 tests**.
-- Complete suite: **397 passed** in 86.63s.
-- Browser UI suite: **43 passed** in 73.19s (`tests/test_ui_trip.py`).
-- Focused remediation suites: **70 passed** in 0.79s (`tests/test_legacy_booking_safety.py`, `tests/test_claims_provider_truth.py`, `tests/test_skills_manifest.py`, `tests/test_privacy.py`, `tests/test_canonical_gaps.py`).
-- Legacy browser canary: **14/14 passed** (`tests/e2e_full_journey.py`).
-- JavaScript syntax: `static/app.js` and `static/trip.js` valid (`node --check` exit 0).
-- Security gate: all six executed sections pass; privacy **33/33 passed**; zero banned patterns; pip-audit clean.
-- Dependency consistency: `pip check` reports no broken requirements.
-- Fresh boot: healthy; `/api/skills` reports exactly 13 skills; `profile_edit` present, `clarify_loop` internal-only.
-- Rendered desktop/mobile QA: exact BKK→SIN initial and recovery routes, two-step fact confirmation, atomic approval, complete receipts/rights, replaceable itinerary, no horizontal overflow, and no browser console errors.
+- Unknown flight numbers return an explicit unavailable status without route,
+  disruption, passenger, or compensation facts.
+- Claims remain bound to status-provider airports and reject an unavailable
+  route instead of falling back to client hints.
+- Direct disruption analysis rejects an unavailable flight before search,
+  Guardian delivery, or recovery-plan creation.
+- Safe-field deletion clears both canonical and compatibility profile views.
+- Guardian live delivery is non-blocking plain text and returns generic errors;
+  legacy API and provider-log paths do not expose raw exception or response
+  content.
+- The public skill capability matrix is generated from the manifests; the
+  durable proof index copies those declarations exactly.
+- Fresh dependency, Python, browser, JavaScript, security, boot, and repository
+  hygiene results belong in the execution handoff rather than this tracked
+  plan.
 
 ### Superseded assumptions and release boundary
 
@@ -1025,11 +1031,11 @@ Implementation remains additive and preserves the full G0–G8/R0–R5 history.
 - Earlier screenshot paths are historical only; no committed screenshot evidence claimed.
 - Earlier live-Qwen or other live-provider wording is historical only; verified deterministic fallback when no live ModelScope is configured.
 - `gitleaks` not installed on host (built-in banned pattern scan used); `pip-audit` passed clean.
-- The verified product is a complete canonical hackathon build in hermetic/Atlas Sandbox mode, not a live-airline production deployment.
-- Integration is a local-only fast-forward to `main`. No push, deploy, publication, or live booking.
-  deployment, tag, publication, real identity, payment, credential, or live
-  booking is authorized by this plan.
+- The product boundary is a canonical hackathon build in hermetic/Atlas
+  Sandbox mode, not a live-airline production deployment.
+- No push, deployment, tag, publication, real identity, payment, credential,
+  or live booking is authorized by this plan.
 
-The exact requirement matrices, commands, results, limitations, and handover
-are maintained in `FINAL_REPORT.md`, which is the authoritative current
-completion evidence.
+The durable requirement maps, proof commands, and limitations are maintained
+in `FINAL_REPORT.md`. Fresh results and repository state are reported only in
+the execution handoff.

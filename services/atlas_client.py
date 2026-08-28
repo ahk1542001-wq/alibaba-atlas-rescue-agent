@@ -56,29 +56,31 @@ class AtlasClient:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=90)
+            stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=90)
             line = stdout.decode().strip()
             if not line:
-                logger.warning("atlas-flight empty output: %.200s", stderr.decode()[:200])
+                logger.warning("atlas-flight returned no JSON output")
                 return None
             envelope = _json.loads(line.splitlines()[-1])
-            self.last_cli_envelope = envelope
+            self.last_cli_envelope = {
+                "status": envelope.get("status"),
+                "code": envelope.get("code"),
+            }
             if (
                 envelope.get("status") == "success"
                 and envelope.get("data") is not None
             ):
                 return envelope["data"]
             logger.warning(
-                "atlas-flight action_required code=%s message=%.160s",
+                "atlas-flight action_required code=%s",
                 envelope.get("code"),
-                envelope.get("message"),
             )
             return None
         except FileNotFoundError:
             logger.warning("atlas-flight binary not found")
             return None
         except Exception as exc:  # noqa: BLE001 — CLI bridge must never break the API
-            logger.warning("atlas-flight CLI failed (%s): %.200s", type(exc).__name__, str(exc))
+            logger.warning("atlas-flight CLI failed (%s)", type(exc).__name__)
             return None
 
     async def cli_search_flights(
@@ -215,22 +217,10 @@ class AtlasClient:
         }
         
         return disruptions.get(clean_code, {
-            "flight_number": flight_number,
-            "airline_code": flight_number[:2].upper(),
-            "carrier": "International Carrier",
-            "origin": "BKK",
-            "origin_airport": "Suvarnabhumi Airport (BKK)",
-            "destination": "RGN",
-            "destination_airport": "Yangon International Airport (RGN)",
-            "scheduled_departure": f"{date} 10:00",
-            "scheduled_arrival": f"{date} 10:50",
-            "status": "CANCELLED",
-            "reason": "Operational Disruption",
-            "affected_passengers": 150,
-            "gate": "D1",
-            "terminal": "Terminal 1",
-            "aircraft": "Commercial Jet",
-            "compensation_amount_usd": 200.0
+            "flight_number": clean_code,
+            "airline_code": clean_code[:2],
+            "status": "UNKNOWN",
+            "reason": "Flight status unavailable in Atlas Sandbox",
         })
 
     # Carrier code -> marketing name for offers returned by the live CLI

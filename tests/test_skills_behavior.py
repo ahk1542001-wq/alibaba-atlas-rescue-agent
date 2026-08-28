@@ -230,6 +230,27 @@ def test_s3_profile_edit_uses_real_store_and_deletes_only_selected_field(store):
     assert deleted["profile"]["fields"]["diet"]["value"] == "vegetarian"
 
 
+def test_s3_profile_edit_delete_clears_nested_preference_copy(store):
+    skill = ProfileEditSkill(store)
+    _run(skill.run({
+        "user_id": "victor",
+        "field": "cabin",
+        "value": "business",
+        "source": "user",
+    }))
+
+    deleted = _run(skill.run({
+        "user_id": "victor",
+        "field": "cabin",
+        "delete": True,
+        "source": "user",
+    }))
+
+    assert deleted["profile"]["cabin"] is None
+    assert deleted["profile"]["prefs"]["cabin"] is None
+    assert "cabin" not in deleted["profile"]["fields"]
+
+
 def test_s3_profile_edit_rejects_non_user_source_without_writing(store):
     skill = ProfileEditSkill(store)
     with pytest.raises(SkillError) as exc:

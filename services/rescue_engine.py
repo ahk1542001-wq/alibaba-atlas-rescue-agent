@@ -72,6 +72,10 @@ def _build_concierge_prompt(context: Optional[Dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
+class FlightStatusUnavailableError(RuntimeError):
+    """Raised when Atlas has no route-backed status for recovery planning."""
+
+
 class RescueEngine:
     """Agentic AI reasoning engine for autonomous flight disruption resolution."""
 
@@ -114,8 +118,14 @@ class RescueEngine:
 
         # Node 3: DisruptionConfirmed
         disruption_info = await self.atlas.get_flight_status(flight_number, date)
-        origin = disruption_info.get("origin", "BKK")
-        destination = disruption_info.get("destination", "RGN")
+        origin = str(disruption_info.get("origin") or "").upper()
+        destination = str(disruption_info.get("destination") or "").upper()
+        if (str(disruption_info.get("status") or "").upper() == "UNKNOWN"
+                or not origin or not destination):
+            raise FlightStatusUnavailableError(
+                "Flight status unavailable in Atlas Sandbox; "
+                "no recovery plan was created."
+            )
         dag.record_step("DisruptionConfirmed", 11.0, {"status": disruption_info.get("status"), "reason": disruption_info.get("reason")})
 
         # Node 4: ParetoOptimizer (Query 140+ carriers & Rank)
@@ -494,4 +504,3 @@ class RescueEngine:
             "inference_latency_ms": 14.8,
             "framework": "FastAPI + Qoder Agentic Workflow + DAG State Machine"
         }
-

@@ -1,12 +1,15 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from models.schemas import DisruptionEvent
 from services.atlas_client import AtlasClient
-from services.rescue_engine import RescueEngine
+from services.rescue_engine import FlightStatusUnavailableError, RescueEngine
 
 router = APIRouter(prefix="/api/disruption", tags=["Disruptions"])
 atlas_client = AtlasClient()
 rescue_engine = RescueEngine(atlas_client)
+logger = logging.getLogger("disruptions")
 
 @router.post("/analyze")
 async def analyze_disruption(req: DisruptionEvent):
@@ -20,8 +23,20 @@ async def analyze_disruption(req: DisruptionEvent):
             nationality=req.nationality or "MM"
         )
         return JSONResponse(content=result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except FlightStatusUnavailableError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Flight status unavailable in Atlas Sandbox; "
+                "no recovery plan was created."
+            ),
+        ) from exc
+    except Exception as exc:
+        logger.warning("disruption analysis failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to analyze the disruption.",
+        ) from exc
 
 @router.post("/self-heal")
 async def trigger_self_healing_recovery(flight_number: str, passenger: str = ""):
@@ -29,6 +44,9 @@ async def trigger_self_healing_recovery(flight_number: str, passenger: str = "")
     try:
         result = await rescue_engine.execute_self_healing_recovery(flight_number, passenger)
         return JSONResponse(content=result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    except Exception as exc:
+        logger.warning("self-healing recovery failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to run self-healing recovery.",
+        ) from exc

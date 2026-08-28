@@ -187,6 +187,10 @@ class ProfileStore:
             profile.identity.passport_country = None
         elif name == "home_city":
             profile.identity.home_city = None
+        elif name == "airlines_like":
+            profile.prefs.airlines_like = []
+        elif hasattr(profile.prefs, name):
+            setattr(profile.prefs, name, None)
         self._persist(user_id)
         return profile
 

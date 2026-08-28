@@ -46,7 +46,7 @@ def provider_name() -> str:
         return "modelscope"
     if "dashscope" in url or "modelstudio" in url:
         return "alibaba_model_studio"
-    return url
+    return "custom_openai_compatible"
 
 
 def parse_json(text: Optional[str]) -> Any:
@@ -74,7 +74,7 @@ def parse_json(text: Optional[str]) -> Any:
     try:
         return json.loads(cleaned[start : end + 1])
     except json.JSONDecodeError:
-        logger.warning("LLM JSON parse failed: %.120s", text)
+        logger.warning("LLM JSON parse failed")
         return None
 
 
@@ -113,11 +113,11 @@ async def chat(
             usage = data.get("usage", {})
             logger.info(
                 "LLM ok via %s model=%s tokens=%s",
-                base_url,
+                provider_name(),
                 used_model,
                 usage.get("total_tokens"),
             )
             return (content or "").strip() or None
     except Exception as exc:  # noqa: BLE001 — fail-open to deterministic fallback
-        logger.warning("LLM call failed (%s): %.200s", type(exc).__name__, str(exc))
+        logger.warning("LLM call failed (%s)", type(exc).__name__)
         return None

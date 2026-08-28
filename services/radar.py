@@ -85,7 +85,7 @@ class RescueRadar:
             try:
                 await self.scan()
             except Exception as exc:  # noqa: BLE001 — radar must never crash the app
-                logger.warning("radar scan error: %s", exc)
+                logger.warning("radar scan error (%s)", type(exc).__name__)
             await asyncio.sleep(settings.radar_interval_seconds)
 
     # --- core scan ---------------------------------------------------------
@@ -97,7 +97,7 @@ class RescueRadar:
             try:
                 status = await self.atlas.get_flight_status(item["flight_number"], item["date"])
             except Exception as exc:  # noqa: BLE001
-                logger.warning("status check failed for %s: %s", item["flight_number"], exc)
+                logger.warning("status check failed (%s)", type(exc).__name__)
                 status = {"flight_number": item["flight_number"], "status": "UNKNOWN"}
 
             disrupted = status.get("status") in DISRUPTION_STATES
@@ -128,7 +128,7 @@ class RescueRadar:
                             currency="USD",
                         )
                     except Exception as exc:  # noqa: BLE001
-                        logger.warning("proactive plan failed for %s: %s", item["flight_number"], exc)
+                        logger.warning("proactive plan failed (%s)", type(exc).__name__)
 
                     alert = {
                         "id": f'al_{item["flight_number"]}_{int(time.time())}',

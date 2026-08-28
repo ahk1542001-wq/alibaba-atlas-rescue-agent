@@ -2,14 +2,13 @@
 
 Proactive Telegram alerts via the frozen services.guardian (import-only).
 Privacy hard rule (§9.4): passport numbers and identity-document values are
-STRIPPED from the payload before anything is built or sent. Token absent →
-delivery_status=skipped_not_failed + simulated=True (graceful skip, never
-an error, never a fabricated send).
+STRIPPED from the payload before anything is built or sent. An incomplete live
+delivery gate yields delivery_status=skipped_not_failed + simulated=True
+(graceful skip, never an error, never a fabricated send).
 """
 
 from typing import Any, Dict, Optional
 
-from config import settings
 from services.skills.base import SkillBase
 
 # identity-document fields never leave the agent (only masked forms may surface)
@@ -39,7 +38,7 @@ class GuardianPushSkill(SkillBase):
     name = "guardian_push"
     when_to_use = (
         "when a proactive alert is warranted; wraps services.guardian via "
-        "asyncio.to_thread — token absent yields skipped_not_failed"
+        "a non-blocking send — an incomplete live gate yields skipped_not_failed"
     )
     capabilities = frozenset({"telegram_send"})
 

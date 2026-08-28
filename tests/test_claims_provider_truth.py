@@ -4,6 +4,7 @@ import httpx
 
 from main import app
 from routers.v1 import claims
+from services.atlas_client import AtlasClient
 
 
 class StatusAtlas:
@@ -38,6 +39,34 @@ def test_claim_route_ignores_spoofed_client_airports(monkeypatch):
     route = response.json()["route"]
     assert route["origin_airport"] == "BKK"
     assert route["destination_airport"] == "RGN"
+
+
+def test_unknown_atlas_status_does_not_invent_disruption_or_route():
+    status = asyncio.run(AtlasClient().get_flight_status("ZZ999", "2030-01-01"))
+
+    assert status["flight_number"] == "ZZ999"
+    assert status["status"] == "UNKNOWN"
+    assert status["reason"] == "Flight status unavailable in Atlas Sandbox"
+    assert "origin" not in status
+    assert "destination" not in status
+    assert "compensation_amount_usd" not in status
+
+
+def test_unknown_atlas_claim_rejects_spoofed_client_airports(monkeypatch):
+    monkeypatch.setattr(claims, "atlas_client", AtlasClient())
+
+    response = asyncio.run(post_assess({
+        "flight_number": "ZZ999",
+        "origin_airport": "CDG",
+        "destination_airport": "BKK",
+    }))
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "Cannot determine true flight route from status."
+    )
+    assert "CDG" not in response.text
+    assert "BKK" not in response.text
 
 
 def test_claim_missing_provider_route_is_422_not_500(monkeypatch):

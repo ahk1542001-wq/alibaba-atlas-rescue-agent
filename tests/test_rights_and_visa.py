@@ -1,6 +1,7 @@
 """Tests for the Claim Autopilot (rights_engine) and visa_guard."""
 
 import asyncio
+import time
 
 import pytest
 
@@ -163,6 +164,70 @@ def test_guardian_requires_token_chat_and_live_flag_and_returns_preview(monkeypa
     assert out["preview"] == "🛟 Trip alert\n\nRoute BKK-SIN"
     assert "mocked_text" not in out
     assert "live" in out["reason"].lower()
+
+
+def test_guardian_live_send_is_nonblocking_and_plain_text(monkeypatch):
+    from services import guardian
+
+    monkeypatch.setattr(guardian.settings, "telegram_bot_token", "configured")
+    monkeypatch.setattr(guardian.settings, "telegram_chat_id", "demo-chat")
+    monkeypatch.setattr(guardian.settings, "telegram_live_test", True)
+    order = []
+    captured = {}
+
+    class Response:
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    def fake_post(url, json, timeout):
+        order.append("post-start")
+        captured.update({"url": url, "payload": json, "timeout": timeout})
+        time.sleep(0.05)
+        order.append("post-end")
+        return Response()
+
+    monkeypatch.setattr(guardian.httpx, "post", fake_post)
+
+    async def exercise():
+        async def tick():
+            await asyncio.sleep(0.005)
+            order.append("event-loop-tick")
+
+        result, _ = await asyncio.gather(
+            guardian.notify("<b>Trip</b>", "<a href='bad'>route</a>"),
+            tick(),
+        )
+        return result
+
+    out = asyncio.run(exercise())
+    assert out["sent"] is True
+    assert "parse_mode" not in captured["payload"]
+    assert captured["payload"]["text"] == (
+        "🛟 <b>Trip</b>\n\n<a href='bad'>route</a>"
+    )
+    assert order.index("event-loop-tick") < order.index("post-end")
+
+
+def test_guardian_live_rejection_does_not_return_provider_description(monkeypatch):
+    from services import guardian
+
+    monkeypatch.setattr(guardian.settings, "telegram_bot_token", "configured")
+    monkeypatch.setattr(guardian.settings, "telegram_chat_id", "demo-chat")
+    monkeypatch.setattr(guardian.settings, "telegram_live_test", True)
+
+    class Response:
+        @staticmethod
+        def json():
+            return {"ok": False, "description": "SENTINEL_PROVIDER_SECRET"}
+
+    monkeypatch.setattr(guardian.httpx, "post", lambda *args, **kwargs: Response())
+    out = asyncio.run(guardian.notify("Trip alert", "Route unavailable"))
+
+    assert out["sent"] is False
+    assert out["simulated"] is False
+    assert out["error"] == "telegram_delivery_rejected"
+    assert "SENTINEL_PROVIDER_SECRET" not in str(out)
 
 
 def test_rule_tables_consistent():

@@ -4,10 +4,11 @@ The rescue agent should find YOU, not the other way around. When the radar
 detects a disruption (or the rights engine finds unclaimed money), the
 guardian pushes a proactive Telegram message with a one-tap action link.
 
-Demo-safe: without TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID configured, sends
-are simulated and returned as previews so the hackathon demo never breaks.
+Demo-safe: unless TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, and the explicit live
+test flag are all configured, sends are simulated and returned as previews.
 """
 
+import asyncio
 import logging
 from typing import Any, Dict, Optional
 
@@ -48,9 +49,9 @@ async def notify(
         }
 
     url = f"{TELEGRAM_API}/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    payload = {"chat_id": chat_id, "text": text}
     try:
-        resp = httpx.post(url, json=payload, timeout=8)
+        resp = await asyncio.to_thread(httpx.post, url, json=payload, timeout=8)
         data: Dict[str, Any] = resp.json()
         ok = bool(data.get("ok"))
         return {
@@ -58,7 +59,7 @@ async def notify(
             "sent": ok,
             "simulated": False,
             "preview": text,
-            "error": None if ok else data.get("description"),
+            "error": None if ok else "telegram_delivery_rejected",
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("guardian send failed: %s", type(exc).__name__)
