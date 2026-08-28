@@ -553,12 +553,10 @@
         var out = s.outputs || {};
         if (firstUnansweredQuestion(s)) return 1;
         if (out.recovery || findApproval(s, 'recovery_booking')) return 5;
-        if (out.booking) return 5;
+        if (out.booking && out.booking.pnr) return 5;
         if (findApproval(s, 'approve_booking')) return 4;
         if (out.flight_search) {
-            var rs = ((out.clarify || {}).requested_services) || {};
-            if (rs.flight_booking === 'requested') return 2; // review waits w/ step 3
-            return 3; // flight_only: review closes the plan
+            return 3;
         }
         return 1;
     }
@@ -608,21 +606,35 @@
             }
             if (failed) {
                 var d = failed.details || {};
-                showStateBox('provider',
-                    (d.message || 'We hit a snag while planning.') +
-                    (d.hint ? ' ' + d.hint : '') +
-                    (deferredSkipIsEmpty(s) ? ''
-                        : ' Answering the open questions below can fix this.'),
-                    'Try again', function () {
+                var code = d.error_code || '';
+                var isTicketingError = (code === 'atlas_ticketing_unavailable' ||
+                                        code === 'ticketing_activation_required' ||
+                                        code === 'atlas_booking_unavailable');
+                var msg = isTicketingError
+                    ? 'Your plan is safe. Atlas Sandbox ticketing is not enabled for this account, so no booking or ticket was created.'
+                    : ((d.message || 'We hit a snag while planning.') +
+                       (d.hint ? ' ' + d.hint : '') +
+                       (deferredSkipIsEmpty(s) ? ''
+                           : ' Answering the open questions below can fix this.'));
+                var actionLabel = isTicketingError ? 'Back to review' : 'Try again';
+                var actionFn = isTicketingError
+                    ? function () {
+                        Trip.forceStep = 3;
+                        switchDestination('plan');
+                        editStep(3);
+                    }
+                    : function () {
                         Trip.terminal = false;
                         startWatching();
-                    });
+                    };
+                showStateBox('provider', msg, actionLabel, actionFn,
+                             isTicketingError ? 'aj-ticketing-safe-state' : null);
             }
         }
 
         // Auto-move to My trip once a booking lands (once per trip).
         if (deriveStep(s) === 5 && !Trip.switchedMytrip &&
-                ((s.outputs || {}).booking || (s.outputs || {}).recovery)) {
+                (((s.outputs || {}).booking && (s.outputs || {}).booking.pnr) || (s.outputs || {}).recovery)) {
             Trip.switchedMytrip = true;
             switchDestination('mytrip');
         }
@@ -1225,6 +1237,23 @@
                 'Last checked ' + (c.retrieved_date || '?')));
             body.appendChild(item);
         });
+        var itin = out.itinerary || null;
+        if (itin && (itin.items || []).length) {
+            (itin.items || []).forEach(function (it) {
+                var prov = it.provenance || {};
+                if (prov.source_url) {
+                    var isrc = el('div', 'aj-source-item');
+                    isrc.appendChild(el('span', 'aj-source-title', (it.name || 'Itinerary item') + ' \u00B7 ' + (it.source || 'suggestion')));
+                    isrc.appendChild(el('span', 'aj-source-url', prov.source_url));
+                    if (prov.researched_as_of) {
+                        isrc.appendChild(el('span', 'aj-source-date', 'Data as of ' + prov.researched_as_of));
+                    } else if (prov.retrieved_date) {
+                        isrc.appendChild(el('span', 'aj-source-date', 'Last checked ' + prov.retrieved_date));
+                    }
+                    body.appendChild(isrc);
+                }
+            });
+        }
         if (!body.childNodes.length) {
             body.appendChild(el('p', 'aj-source-empty', 'No sources yet.'));
         }
@@ -1410,6 +1439,17 @@
             }, null);
             total.textContent = 'From ' + priceNative(opts[0] && { amount: from, currency: (opts[0].price || {}).currency });
         }
+        if (findApproval(s, 'approve_booking')) {
+            var ctaRow = el('div', 'aj-review-actions');
+            var ctaBtn = el('button', 'aj-btn aj-btn-primary', 'Continue to booking \u2192');
+            ctaBtn.type = 'button';
+            tid(ctaBtn, 'aj-review-proceed');
+            ctaBtn.addEventListener('click', function () {
+                editStep(4);
+            });
+            ctaRow.appendChild(ctaBtn);
+            summary.appendChild(ctaRow);
+        }
     }
 
     function renderConfirm(s) {
@@ -1443,6 +1483,16 @@
                'You can still change plans before you approve.')
             : 'Approving requests a booking for your chosen Atlas Sandbox offer. No PNR is invented if ticketing is unavailable.';
         summary.appendChild(conseq);
+
+        var backRow = el('div', 'aj-confirm-actions');
+        var backBtn = el('button', 'aj-btn aj-btn-secondary', '\u2190 Back to plan review');
+        backBtn.type = 'button';
+        tid(backBtn, 'aj-confirm-back');
+        backBtn.addEventListener('click', function () {
+            editStep(3);
+        });
+        backRow.appendChild(backBtn);
+        summary.appendChild(backRow);
     }
 
     function renderStepRail(s, cur) {
@@ -2604,14 +2654,20 @@
             if (active) btn.setAttribute('aria-current', 'page');
             else btn.removeAttribute('aria-current');
         });
-        // My trip's single step is always expanded inside its destination.
-        var step5 = byId('aj-step-5');
-        var body5 = byId('aj-step-5-body');
         if (dest === 'mytrip') {
-            step5.classList.remove('is-future');
-            step5.classList.add('is-current');
-            step5.removeAttribute('aria-disabled');
+            transplant('trip-itinerary-block', 'aj-itinerary-slot');
+            transplant('aj-safety-card', 'aj-safety-slot-mytrip');
+            var step5 = byId('aj-step-5');
+            var body5 = byId('aj-step-5-body');
+            if (step5) {
+                step5.classList.remove('is-future');
+                step5.classList.add('is-current');
+                step5.removeAttribute('aria-disabled');
+            }
             if (body5) body5.hidden = false;
+        } else {
+            transplant('trip-itinerary-block', 'aj-step-3-itinerary-slot');
+            transplant('aj-safety-card', 'aj-step-3-safety-slot');
         }
     }
 
@@ -2859,9 +2915,10 @@
         transplant('trip-scope-block', 'aj-questions-slot');
         transplant('trip-options-block', 'aj-step-2-body'); // step 2
         transplant('trip-visa-block', 'aj-review-entry-req'); // step 3
+        transplant('aj-safety-card', 'aj-step-3-safety-slot'); // step 3 safety
+        transplant('trip-itinerary-block', 'aj-step-3-itinerary-slot'); // step 3 itinerary
         transplant('trip-approval-banner', 'aj-approval-slot'); // step 4
         transplant('trip-pnr-block', 'aj-pnr-slot');        // step 5
-        transplant('trip-itinerary-block', 'aj-itinerary-slot'); // step 5
         transplant('trip-status-strip', 'aj-trace-body');   // Agent Trace
         transplant('trip-dag', 'aj-trace-body');            // Agent Trace
         var consentLabel = byId('trip-consent') ? byId('trip-consent').parentElement : null;

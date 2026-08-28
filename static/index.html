@@ -337,6 +337,8 @@
                                 <div class="aj-step-body" id="aj-step-3-body">
                                     <div class="aj-review" id="aj-review-summary" data-testid="aj-review-summary"></div>
                                     <div class="aj-review-entry" id="aj-review-entry-req" data-testid="aj-review-entry-req"><!-- trip-visa-block transplanted here --></div>
+                                    <div id="aj-step-3-safety-slot"></div>
+                                    <div id="aj-step-3-itinerary-slot"><!-- trip-itinerary-block transplanted here for review --></div>
                                     <div class="aj-review-total" id="aj-review-total" data-testid="aj-review-total"></div>
                                     <p class="aj-sandbox-note" id="aj-review-sandbox-note" data-testid="aj-review-sandbox-note">Offers come from the official Atlas Sandbox. Approval requests a Sandbox booking; if ticketing is unavailable, no PNR or ticket is created.</p>
                                     <button type="button" class="aj-disclosure" id="aj-disclosure-sources" data-testid="aj-disclosure-sources" aria-expanded="false" aria-controls="aj-sources-body">
@@ -379,14 +381,16 @@
                                     <div class="aj-status-line" id="aj-next-action" data-testid="aj-next-action" hidden></div>
                                     <div class="aj-status-line" id="aj-monitor-status" data-testid="aj-monitor-status" hidden></div>
                                 </div>
-                                <section class="aj-safety-card" id="aj-safety-card" data-testid="aj-safety-card" data-testid-aj="aj-safety-card" aria-labelledby="aj-safety-title" hidden>
-                                    <div class="aj-safety-head">
-                                        <h3 class="aj-safety-title" id="aj-safety-title">Safety check</h3>
-                                        <span class="aj-safety-checked" id="aj-safety-checked" data-testid="aj-safety-checked" data-testid-aj="aj-safety-checked"></span>
-                                    </div>
-                                    <div class="aj-safety-body" id="aj-safety-body" data-testid="aj-safety-body" data-testid-aj="aj-safety-body"></div>
-                                    <div class="aj-safety-actions" id="aj-safety-actions" data-testid="aj-safety-actions" data-testid-aj="aj-safety-actions"></div>
-                                </section>
+                                <div id="aj-safety-slot-mytrip">
+                                    <section class="aj-safety-card" id="aj-safety-card" data-testid="aj-safety-card" data-testid-aj="aj-safety-card" aria-labelledby="aj-safety-title" hidden>
+                                        <div class="aj-safety-head">
+                                            <h3 class="aj-safety-title" id="aj-safety-title">Safety check</h3>
+                                            <span class="aj-safety-checked" id="aj-safety-checked" data-testid="aj-safety-checked" data-testid-aj="aj-safety-checked"></span>
+                                        </div>
+                                        <div class="aj-safety-body" id="aj-safety-body" data-testid="aj-safety-body" data-testid-aj="aj-safety-body"></div>
+                                        <div class="aj-safety-actions" id="aj-safety-actions" data-testid="aj-safety-actions" data-testid-aj="aj-safety-actions"></div>
+                                    </section>
+                                </div>
                                 <div id="aj-pnr-slot"><!-- trip-pnr-block transplanted here --></div>
                                 <div class="aj-recovery" id="aj-recovery-panel" data-testid="aj-recovery-panel" hidden></div>
                                 <div id="aj-itinerary-slot"><!-- trip-itinerary-block transplanted here --></div>

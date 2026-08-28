@@ -2262,3 +2262,87 @@ def test_AJ14_keyboard_navigation_views(tracked_page):
 
     # 4. asserts the focused controls expose role button and remain keyboard focusable
     assert page.evaluate("() => document.activeElement.getAttribute('role') === 'button'")
+
+
+def test_ui_step3_renders_full_plan_before_booking_approval(tracked_page):
+    preset_passport_home()
+    page = tracked_page
+    goto_trip(page)
+    start_goal(page, HAPPY_GOAL)
+
+    # Wait for approval step 4 to be ready (meaning step 3 full plan has completed and rendered)
+    expect(page.locator('[data-testid="approval-open"]')).to_be_visible(timeout=25000)
+
+    # 1. Step 3 is rendered
+    expect(page.locator("#aj-step-3")).to_be_visible()
+
+    # 2. Itinerary block is rendered in Step 3 slot
+    itin_block = page.locator("#aj-step-3-itinerary-slot #trip-itinerary-block")
+    expect(itin_block).to_be_visible()
+
+    # 3. Planned flight item has honesty badge "planned flight — not booked"
+    flight_item = page.locator("#trip-itinerary .trip-itin-flight")
+    expect(flight_item).to_be_visible()
+    expect(flight_item).to_contain_text("planned flight — not booked")
+    expect(flight_item).not_to_contain_text("PNR")
+
+    # 4. Hotels exist in itinerary
+    expect(page.locator("#trip-itinerary .trip-itin-hotel").first).to_be_visible()
+
+    # 5. Entry requirements / visa panel is rendered in Step 3
+    expect(page.locator("#aj-review-entry-req #trip-visa-block")).to_be_visible()
+
+    # 6. Step 4 Confirm consequence statement explains sandbox booking
+    expect(page.locator(".aj-confirm-consequence")).to_contain_text("Atlas Sandbox booking")
+
+    # Capture verified screenshots
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.screenshot(path=str(SHOTS / "full_plan_step3_desktop.png"), full_page=True)
+    page.set_viewport_size({"width": 375, "height": 812})
+    page.screenshot(path=str(SHOTS / "full_plan_step3_mobile.png"), full_page=True)
+
+
+def test_ui_ticketing_activation_required_shows_calm_safe_plan_and_back_button(tracked_page, tmp_path):
+    class TicketingUnavailableAtlas(FakeAtlas):
+        async def create_booking_order(self, offer_id, passenger, **kwargs):
+            from services.atlas_client import AtlasTicketingUnavailableError
+            raise AtlasTicketingUnavailableError("ticketing_activation_required",
+                                                "Atlas ticketing is not activated for this sandbox account")
+
+    store = ProfileStore(root=tmp_path / "profiles_ticketing")
+    set_profile_store(store)
+    orch = TripOrchestrator(
+        profile_store=store, atlas=TicketingUnavailableAtlas(),
+        web_intel=WebIntelClient(ddg_fetcher=_fresh_fetcher(),
+                                 tavily_api_key="", serper_api_key=""),
+        llm_chat=_no_llm,
+    )
+    set_trip_orchestrator(orch)
+
+    preset_passport_home()
+    page = tracked_page
+    goto_trip(page)
+    start_goal(page, HAPPY_GOAL)
+    expect(page.locator('[data-testid="approval-open"]')).to_be_visible(timeout=25000)
+
+    # Click Approve
+    page.click('[data-testid="approval-open"]')
+    expect(page.locator('[data-testid="trip-approval-overlay"]')).to_be_visible()
+    page.click('[data-testid="approval-approve"]')
+
+    # State box should render calm message with "Back to review"
+    expect(page.locator(".aj-state")).to_be_visible(timeout=10000)
+    expect(page.locator(".aj-state")).to_contain_text("Your plan is safe. Atlas Sandbox ticketing is not enabled")
+    back_btn = page.locator(".aj-state .aj-state-action")
+    expect(back_btn).to_contain_text("Back to review")
+
+    # Destination must NOT switch to My Trip
+    expect(page.locator("#aj-dest-mytrip")).to_be_hidden()
+    expect(page.locator("#aj-dest-plan")).to_be_visible()
+
+    # Click "Back to review"
+    back_btn.click()
+
+    # Step 3 must be open and complete itinerary still visible
+    expect(page.locator("#aj-step-3-itinerary-slot #trip-itinerary-block")).to_be_visible()
+    expect(page.locator("#trip-itinerary .trip-itin-hotel").first).to_be_visible()
