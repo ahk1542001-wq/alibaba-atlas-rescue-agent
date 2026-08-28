@@ -521,16 +521,27 @@
     }
 
     function showStateBox(kind, message, actionLabel, actionFn, testidExtra) {
-        clearStateBox();
         var slot = byId('aj-state-slot');
+        if (!slot) return null;
+        var testidVal = testidExtra || ('aj-state-' + kind);
+        var existing = slot.querySelector('.aj-state');
+        if (existing && existing.getAttribute('data-testid-aj') === testidVal) {
+            var msgEl = existing.querySelector('.aj-state-msg');
+            var btnEl = existing.querySelector('.aj-state-action');
+            if (msgEl && msgEl.textContent === message &&
+                ((!actionLabel && !btnEl) || (btnEl && btnEl.textContent === actionLabel))) {
+                return existing;
+            }
+        }
+        clearStateBox();
         var box = el('div', 'aj-state aj-state-' + kind);
-        tid(box, testidExtra || ('aj-state-' + kind));
-        tidAj(box, testidExtra || ('aj-state-' + kind));
+        tid(box, testidVal);
+        tidAj(box, testidVal);
         box.appendChild(el('p', 'aj-state-msg', message));
         if (actionLabel && actionFn) {
             var btn = el('button', 'aj-state-action', actionLabel);
             btn.type = 'button';
-            tid(btn, (testidExtra || ('aj-state-' + kind)) + '-retry');
+            tid(btn, testidVal + '-retry');
             btn.addEventListener('click', actionFn);
             box.appendChild(btn);
         }
