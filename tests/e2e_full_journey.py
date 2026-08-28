@@ -4,15 +4,15 @@ Covers the whole demo use case in a real Chromium:
   1. Legacy Rescue destination empty state (opened explicitly from the
      beginner-friendly Trip Agent landing page)
   2. Add Flight modal (user-typed data, no prefills; MM passport default)
-  3. Simulate Disruption -> banner, reasoning trail, packages + visa badges,
-     compensation card, Claims Autopilot panel (honest no-regime verdict on
-     BKK-RGN), guardian/visa trail entries
+  3. Explicitly simulate disruption -> demo banner, reasoning trail, packages
+     + visa badges, compensation card, and an honest unable-to-verify rights
+     panel because Atlas Sandbox exposes no flight-status route
   4. Radar view + scan
   5. Concierge chat via the configured LLM or deterministic fallback
   6. Flight search results (typed route)
   7. Mobile viewport sanity
-Plus an API-level positive case: AF198 CDG-BKK must yield EU261 with a real
-distance-band entitlement, and /api/claims/appeal must draft a cited letter.
+Plus an API-level provider-truth case: client-supplied CDG-BKK hints must not
+manufacture EU261 when the connected provider exposes no flight-status route.
 """
 
 import sys
@@ -70,7 +70,7 @@ with sync_playwright() as p:
     def simulate():
         page.click("#btn-simulate")
         expect(page.locator("#disruption-banner")).to_be_visible()
-        expect(page.locator("#banner-title")).to_contain_text("CANCELLED")
+        expect(page.locator("#banner-title")).to_contain_text("DEMO CANCELLATION")
         expect(page.locator("#banner-sub")).to_contain_text(
             "policy-ranked options ready", timeout=30000)
     check("simulate disruption shows banner", simulate)
@@ -91,47 +91,31 @@ with sync_playwright() as p:
     check("compensation card visible", lambda: expect(
         page.locator("#compensation-card")).to_be_visible())
 
-    # ---------- claims autopilot panel (honest no-regime case) ----------
+    # ---------- claims autopilot panel (honest provider limitation) ----------
     def rights_panel():
         panel = page.locator("#rights-panel")
         expect(panel).to_be_visible(timeout=45000)  # waits for /assess incl Qwen
         sub = page.locator("#rights-sub").inner_text()
-        assert "No mandatory" in sub and "Duty-of-care" in sub, \
-            f"BKK-RGN must honestly report no regime + duty-of-care, got: {sub!r}"
+        assert "Unable to verify rights" in sub, \
+            f"missing provider route must fail closed, got: {sub!r}"
         badge = page.locator("#rights-regime-badge")
         assert badge.inner_text().strip() == "", "no regime badge may be shown on BKK-RGN"
-    check("Claims Autopilot panel: honest no-regime verdict on BKK-RGN", rights_panel)
+    check("Claims Autopilot panel: missing provider route fails closed", rights_panel)
 
-    # ---------- positive EU261 case via API (CDG-BKK) ----------
-    def eu261_positive():
-        assess = httpx.post(
+    # ---------- provider-truth case via API (client hints are not truth) ----------
+    def claims_provider_truth():
+        response = httpx.post(
             f"{BASE}/api/claims/assess",
             json={"flight_number": "AF198", "date": FLIGHT_DATE,
                   "passenger_name": "E2E Tester",
                   "origin_airport": "CDG", "destination_airport": "BKK"},
             timeout=90.0,
-        ).json()
-        assert assess["best"]["id"] == "EU261", assess.get("best")
-        route = assess["route"]
-        assert route["origin_country"] == "FR" and route["carrier_country"] == "FR"
-        assert route["distance_km"] > 3500, route
-        cash = assess["entitlement"]["fixed_cash_compensation"]
-        assert cash["currency"] == "EUR" and cash["amount"] == 600, cash
-        appeal = httpx.post(
-            f"{BASE}/api/claims/appeal",
-            json={"claim": {
-                "jurisdiction_id": "EU261", "airline": "Air France",
-                "flight_number": "AF198", "date": FLIGHT_DATE,
-                "passenger_name": "E2E Tester", "reason": assess["reason"],
-                "disruption_type": assess.get("classification", {}).get("classification"),
-                "classification": assess.get("classification", {}).get("classification"),
-                "entitlement": assess["entitlement"],
-            }, "rejection_reason": "Extraordinary circumstances beyond our control"},
-            timeout=90.0,
-        ).json()
-        letter = appeal.get("letter") or appeal.get("appeal_letter") or ""
-        assert len(letter) > 100, f"appeal letter too short: {len(letter)}"
-    check("API EU261 positive: CDG-BKK -> EUR600 + cited appeal letter", eu261_positive)
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"] == \
+            "Cannot determine true flight route from status."
+        assert "EU261" not in response.text
+    check("Claims API ignores client route hints and fails closed", claims_provider_truth)
 
     # ---------- radar ----------
     def trail_nodes():

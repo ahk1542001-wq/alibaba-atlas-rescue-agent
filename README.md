@@ -18,9 +18,9 @@
 
 Flight cancellations strand travelers for hours while the compensation they are legally owed goes unclaimed — roughly EUR 5.9B/year under EU261 alone, and airlines wrongfully reject ~52% of claims citing "extraordinary circumstances".
 
-**TravelCare AI** is an autonomous travel agent that watches your flights, reacts to disruptions before you do, rebooks you through the Atlas GDS with visa-aware intelligence for passport-constrained travelers, and runs a Claims Autopilot that detects which air-passenger-rights regime actually applies to *your* route — then computes an honest entitlement and drafts regulation-cited claim/appeal letters.
+**TravelCare AI** is an agentic travel assistant that searches the official Atlas Sandbox, ranks visa-aware options for passport-constrained travelers, and runs a Claims Autopilot that detects which air-passenger-rights regime actually applies to *your* route — then computes an honest entitlement and drafts regulation-cited claim/appeal letters.
 
-**Core flow:** Radar detects disruption → agent pre-builds rescue plans → visa-safe packages ranked → 1-click rebook on Atlas Sandbox → Claims Autopilot resolves jurisdiction (EU261 / UK261 / Turkey SHY / US DOT / none) from the real airports + carrier → distance-band entitlement + Qwen cause classification → evidence pack, claim letter, appeal letter.
+**Core flow:** traveler describes a trip → Atlas Sandbox offers are searched and filtered to the exact airports → visa-safe options are ranked → traveler explicitly approves a booking attempt → the app verifies the selected provider offer → ticketing either creates a real Sandbox order or fails closed without a PNR → Claims Autopilot resolves jurisdiction (EU261 / UK261 / Turkey SHY / US DOT / none).
 
 The agent is honest by design: on routes where no mandatory scheme exists (e.g. BKK→RGN), it says so and registers the duty-of-care/refund route instead of inventing cash.
 
@@ -30,17 +30,16 @@ Atlas organizers confirmed (2026-08): *"We did not prepare a separate 'Hackathon
 
 | Layer | State |
 |---|---|
-| Flight search & fares | Live Atlas Sandbox via official `atlas-flight` CLI (`ATLAS_USE_CLI=true`); offers may carry `price_status=reference`, disclosed in the UI |
-| Booking | Sandbox order settlement (`POST /api/rescue/book`) |
+| Flight search & fares | Official Atlas Sandbox through the authenticated `atlas-flight` CLI; exact-airport results only, with provider `price_status` and `bookable` truth preserved |
+| Booking | Fail-closed Sandbox order path. This account currently reports `TICKETING_ACTIVATION_REQUIRED`; no PNR or ticket is fabricated |
 | LLM reasoning | Configured ModelScope-compatible model via `LLM_BASE_URL` + `ALIBABA_MODEL_API_KEY`; deterministic fallback when no model is configured |
 | Rights engine | Deterministic rule tables grounded in published regulations |
 | Visa rules | Conservative curated table (2026-08), flags RISK over CLEAR |
 | Telegram Guardian | Live push requires `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` + `TELEGRAM_LIVE_TEST=true`; returns redacted simulated preview otherwise |
-| Transit hotels / care vouchers / baggage / seatmap | Demo content |
-| Predictive radar numbers | Simulated telemetry |
+| Disruption rescue, transit hotels, care vouchers, baggage, seatmap, predictive radar | Explicitly labeled demo simulation only; never a provider fallback |
 | `GET /api/graph/state` | Canned replay (`mode=demo_replay`); live DAG trace ships inside every analyze response |
 
-No hardcoded passenger names, dates, routes or payouts exist anywhere in the pipeline.
+Runtime Atlas search and verification never fall back to product-coded offers. Hermetic test doubles remain in tests, and the visible “Simulate Disruption” experience is explicitly labeled simulation data.
 
 ## Quickstart
 
@@ -49,7 +48,6 @@ No hardcoded passenger names, dates, routes or payouts exist anywhere in the pip
 cp .env.example .env   # if provided; else create .env with:
 # ALIBABA_MODEL_API_KEY=...        # ModelScope key
 # LLM_BASE_URL=https://api-inference.modelscope.cn/v1
-# ATLAS_USE_CLI=true               # use atlas-flight CLI auth
 # TELEGRAM_BOT_TOKEN=...           # optional, from @BotFather (requires CHAT_ID + LIVE_TEST=true)
 # TELEGRAM_CHAT_ID=...
 # TELEGRAM_LIVE_TEST=false
@@ -75,8 +73,9 @@ atlas-flight auth login            # one-time Atlas Sandbox auth
 | Action | Method | Endpoint |
 |---|---|---|
 | Health + AI engine info | GET | `/api/health` |
-| Disruption analyze (full agentic run) | POST | `/api/disruption/analyze` |
-| Self-healing recovery | POST | `/api/disruption/self-heal?flight_number=` |
+| Real disruption analyze (fails closed until a status source exists) | POST | `/api/disruption/analyze` |
+| Explicit disruption demo | POST | `/api/disruption/analyze?allow_sim=true` |
+| Explicit self-healing demo | POST | `/api/disruption/self-heal?flight_number=` |
 | Flight search | POST | `/api/flights/search` |
 | 1-click rebook | POST | `/api/rescue/book` |
 | Claims Autopilot assess | POST | `/api/claims/assess` |
@@ -105,7 +104,7 @@ alibaba-atlas-rescue-agent/
 │   ├── radar.py               # watchlist, scan, SSE stream
 │   └── telemetry.py           # baggage, seatmap, predictive radar, graph replay
 ├── services/
-    ├── atlas_client.py        # Atlas Sandbox client (CLI bridge + mock fallback)
+    ├── atlas_client.py        # Strict Atlas Sandbox CLI boundary + explicit demo fixtures
     ├── rescue_engine.py       # DAG orchestration, package curation, claims
     ├── rights_engine.py       # jurisdictions, distance bands, letters, airport maps
     ├── visa_guard.py          # passport-aware rebooking filter/rank
@@ -125,12 +124,16 @@ alibaba-atlas-rescue-agent/
 ## 3-Minute Video Demo Flow
 
 1. **(0:00–0:20)** Dashboard empty state → Add Flight: type flight (TG303), date, passenger name, MM passport
-2. **(0:20–0:40)** Simulate Disruption → banner + reasoning trail animates (VisaGuard, Guardian push steps appear)
-3. **(0:40–1:10)** Visa-safe rescue packages fade in with live Sandbox fares ("Sandbox reference price" chip) → 1-Click Rebook → timeline → boarding pass
-4. **(1:10–1:40)** Claims Autopilot panel: honest verdict — no mandatory regime on BKK→RGN, duty-of-care refund route registered
-5. **(1:40–2:10)** API call: AF198 CDG→BKK → EU261 detected, real great-circle distance banding → EUR 600 entitlement + cited appeal letter via configured LLM or deterministic fallback
-6. **(2:10–2:40)** Concierge chat (configured LLM or deterministic fallback) + multi-currency flight search
-7. **(2:40–3:00)** Mobile viewport: bottom nav, stacked cards
+2. **(0:20–0:40)** Simulate Disruption → explicitly labeled demo banner + reasoning trail animates; no Atlas provider call or external notification occurs
+3. **(0:40–1:10)** Demo visa-safe rescue packages fade in. Separately show a real Atlas Sandbox search in the trip flow; booking remains unavailable until provider ticketing is activated
+4. **(1:10–1:35)** Approve one real Sandbox offer → show the honest `TICKETING_ACTIVATION_REQUIRED` response and confirm that no PNR or ticket appears
+5. **(1:35–2:05)** Explicit disruption simulation → demo-only recovery graph, visa-aware ranking, and no external notification or booking
+6. **(2:05–2:30)** Claims panel → show that a missing provider flight route fails closed instead of manufacturing a jurisdiction or payout
+7. **(2:30–2:50)** Evidence → 14/14 legacy browser canary, strict provider tests, security gate, and exact-airport filtering
+8. **(2:50–3:00)** Mobile viewport + closing value statement
+
+This is a provisional storyboard. Confirm the official Devpost video duration,
+hosting, visibility, and form fields before recording the final cut.
 
 ---
 

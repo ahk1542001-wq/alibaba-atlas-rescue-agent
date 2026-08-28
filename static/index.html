@@ -338,7 +338,7 @@
                                     <div class="aj-review" id="aj-review-summary" data-testid="aj-review-summary"></div>
                                     <div class="aj-review-entry" id="aj-review-entry-req" data-testid="aj-review-entry-req"><!-- trip-visa-block transplanted here --></div>
                                     <div class="aj-review-total" id="aj-review-total" data-testid="aj-review-total"></div>
-                                    <p class="aj-sandbox-note" id="aj-review-sandbox-note" data-testid="aj-review-sandbox-note">Bookings are made in the Atlas Sandbox &mdash; a safe practice environment with researched mock data.</p>
+                                    <p class="aj-sandbox-note" id="aj-review-sandbox-note" data-testid="aj-review-sandbox-note">Offers come from the official Atlas Sandbox. Approval requests a Sandbox booking; if ticketing is unavailable, no PNR or ticket is created.</p>
                                     <button type="button" class="aj-disclosure" id="aj-disclosure-sources" data-testid="aj-disclosure-sources" aria-expanded="false" aria-controls="aj-sources-body">
                                         <span class="aj-disclosure-label">Sources</span><span class="aj-caret" aria-hidden="true"></span>
                                     </button>
@@ -358,7 +358,7 @@
                                         <span class="aj-confirm-price" id="aj-confirm-price" data-testid="aj-confirm-price"></span>
                                         <span class="aj-confirm-pax" id="aj-confirm-pax" data-testid="aj-confirm-pax"></span>
                                     </div>
-                                    <p class="aj-sandbox-note" id="aj-confirm-sandbox-note" data-testid="aj-confirm-sandbox-note">Bookings are made in the Atlas Sandbox &mdash; a safe practice environment with researched mock data.</p>
+                                    <p class="aj-sandbox-note" id="aj-confirm-sandbox-note" data-testid="aj-confirm-sandbox-note">Offers come from the official Atlas Sandbox. Approval requests a Sandbox booking; if ticketing is unavailable, no PNR or ticket is created.</p>
                                     <div id="aj-approval-slot"><!-- trip-approval-banner transplanted here --></div>
                                 </div>
                             </li>
@@ -399,11 +399,11 @@
                             <h3 class="aj-help-title">How Atlas Journey works</h3>
                             <div class="aj-help-item">
                                 <h4>What is the Atlas Sandbox?</h4>
-                                <p>Bookings are made in the Atlas Sandbox &mdash; a safe practice environment with researched mock data. Nothing here is a live airline seat, and we say so on every booking screen.</p>
+                                <p>Flight offers come from the official Atlas Sandbox, not a runtime mock fallback. Sandbox results are not production airline inventory, and provider booking limits are shown honestly.</p>
                             </div>
                             <div class="aj-help-item">
                                 <h4>What does &ldquo;approval&rdquo; mean?</h4>
-                                <p>The agent never books on its own. Before anything is booked you see the exact flight and price, and you press the approve button yourself. Changing your mind before that point costs nothing.</p>
+                                <p>The agent never books on its own. Before a booking attempt you see the exact provider offer and price, then approve it yourself. Approval can still fail safely when Sandbox ticketing is unavailable.</p>
                             </div>
                             <div class="aj-help-item">
                                 <h4>How do I change my plan?</h4>
@@ -538,7 +538,7 @@
         <div class="trip-approval-card" role="dialog" aria-modal="true" aria-labelledby="trip-approval-title">
             <div class="trip-approval-kicker">Your decision needed &middot; Atlas Sandbox booking</div>
             <h3 class="trip-approval-title" id="trip-approval-title">Approve this booking?</h3>
-            <p class="trip-approval-sub" id="trip-approval-sub">Pick one flight, then press &ldquo;Approve Sandbox booking&rdquo;. Nothing is booked until you do &mdash; and you can still change your plan before that.</p>
+            <p class="trip-approval-sub" id="trip-approval-sub">Pick one flight, then press &ldquo;Approve Sandbox booking&rdquo;. This requests a provider booking; no PNR is created unless Atlas confirms it.</p>
             <div class="trip-approval-options" id="trip-approval-options" data-testid="trip-approval-options"></div>
             <div class="trip-approval-note" id="trip-approval-note" data-testid="trip-approval-note" hidden></div>
             <div class="trip-approval-actions">

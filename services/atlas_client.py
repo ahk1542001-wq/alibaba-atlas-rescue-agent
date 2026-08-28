@@ -3,11 +3,33 @@ import datetime
 import json as _json
 import logging
 import shutil
-import uuid
 from typing import Dict, Any, List, Optional
-from config import settings
 
 logger = logging.getLogger("atlas")
+
+
+class AtlasProviderError(RuntimeError):
+    """Safe, typed failure at the Atlas Sandbox boundary."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class AtlasSandboxUnavailableError(AtlasProviderError):
+    pass
+
+
+class AtlasMalformedResponseError(AtlasProviderError):
+    pass
+
+
+class AtlasTicketingUnavailableError(AtlasProviderError):
+    pass
+
+
+class AtlasTravelerDataRequiredError(AtlasProviderError):
+    pass
 
 
 def tomorrow_iso() -> str:
@@ -34,21 +56,21 @@ class AtlasClient:
     }
 
     def __init__(self):
-        self.base_url = settings.atrip_api_base
-        self.ak = settings.atrip_ak
-        self.sk = settings.atrip_sk
-        self.use_mock = settings.use_mock_fallback
         self.last_cli_envelope: Optional[Dict[str, Any]] = None
 
     # ------------------------------------------------------------------
     # Official atlas-flight CLI bridge (real Atlas Sandbox)
-    # Enabled when ATLAS_USE_CLI=true AND auth completed via `atlas-flight auth`.
-    # Any failure returns None so callers fall back to curated mock data.
+    # Authentication is completed once via `atlas-flight auth login`.
+    # Any failure is typed and fail-closed; runtime callers never fall back to
+    # fabricated provider data.
     # ------------------------------------------------------------------
-    async def _run_cli(self, args: List[str]) -> Optional[Dict[str, Any]]:
+    async def _run_cli(self, args: List[str]) -> Dict[str, Any]:
         binary = shutil.which("atlas-flight")
-        if not settings.atlas_use_cli or not binary:
-            return None
+        if not binary:
+            raise AtlasSandboxUnavailableError(
+                "ATLAS_CLI_UNAVAILABLE",
+                "Atlas Sandbox CLI is unavailable.",
+            )
         cmd = [binary] + args + ["--json"]
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -60,35 +82,65 @@ class AtlasClient:
             line = stdout.decode().strip()
             if not line:
                 logger.warning("atlas-flight returned no JSON output")
-                return None
+                raise AtlasSandboxUnavailableError(
+                    "ATLAS_EMPTY_RESPONSE",
+                    "Atlas Sandbox returned no usable response.",
+                )
             envelope = _json.loads(line.splitlines()[-1])
             self.last_cli_envelope = {
                 "status": envelope.get("status"),
                 "code": envelope.get("code"),
             }
-            if (
-                envelope.get("status") == "success"
-                and envelope.get("data") is not None
-            ):
-                return envelope["data"]
+            data = envelope.get("data")
+            if envelope.get("status") == "action_required":
+                details = envelope.get("details") or {}
+                blocker = str(details.get("ticketing_blocker") or "").strip()
+                if blocker or envelope.get("code") == "SUBSCRIPTION_REQUIRED":
+                    raise AtlasTicketingUnavailableError(
+                        blocker or "TICKETING_ACTIVATION_REQUIRED",
+                        "Atlas Sandbox ticketing is not activated for this account.",
+                    )
+                raise AtlasSandboxUnavailableError(
+                    str(envelope.get("code") or "ATLAS_ACTION_REQUIRED"),
+                    "Atlas Sandbox requires an account action before this request can continue.",
+                )
+            if envelope.get("status") == "success" and isinstance(data, dict):
+                return data
             logger.warning(
-                "atlas-flight action_required code=%s",
+                "atlas-flight request failed code=%s",
                 envelope.get("code"),
             )
-            return None
+            raise AtlasSandboxUnavailableError(
+                str(envelope.get("code") or "ATLAS_REQUEST_FAILED"),
+                "Atlas Sandbox request could not be completed.",
+            )
         except FileNotFoundError:
             logger.warning("atlas-flight binary not found")
-            return None
+            raise AtlasSandboxUnavailableError(
+                "ATLAS_CLI_UNAVAILABLE",
+                "Atlas Sandbox CLI is unavailable.",
+            )
+        except AtlasProviderError:
+            raise
+        except (_json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logger.warning("atlas-flight returned malformed JSON")
+            raise AtlasMalformedResponseError(
+                "ATLAS_MALFORMED_RESPONSE",
+                "Atlas Sandbox returned a malformed response.",
+            ) from exc
         except Exception as exc:  # noqa: BLE001 — CLI bridge must never break the API
             logger.warning("atlas-flight CLI failed (%s)", type(exc).__name__)
-            return None
+            raise AtlasSandboxUnavailableError(
+                "ATLAS_REQUEST_FAILED",
+                "Atlas Sandbox request could not be completed.",
+            ) from exc
 
     async def cli_search_flights(
         self, origin: str, destination: str, date: str, adults: int, currency: str
     ) -> List[Dict[str, Any]]:
-        """Real live flight search through the signed atlas-flight CLI.
+        """Flight search through the authenticated Atlas Sandbox CLI.
 
-        Returns [] when the CLI is disabled/unauthenticated/failed — caller falls back.
+        Provider failures raise a typed error; no runtime mock fallback exists.
         """
         data = await self._run_cli(
             [
@@ -100,28 +152,35 @@ class AtlasClient:
                 "--currency", currency,
             ]
         )
-        if data is None:
-            return []
         # The success envelope may carry the offer list directly or nested;
-        # normalize defensively until the first live payload is inspected.
+        # normalize the official CLI payload defensively.
         offers = data if isinstance(data, list) else None
         if offers is None and isinstance(data, dict):
             for key in ("offers", "results", "items", "flights"):
                 if isinstance(data.get(key), list):
                     offers = data[key]
                     break
-        return offers or []
-
-    def _get_headers(self) -> Dict[str, str]:
-        return {
-            "Content-Type": "application/json",
-            "X-Atlas-Access-Key": self.ak,
-            "X-Atlas-Signature": "sandbox_sig_validated",
-            "User-Agent": "AtlasRescueAgent/3.0 (Qoder Hackathon 2026 Production)"
-        }
+        if offers is None:
+            raise AtlasMalformedResponseError(
+                "ATLAS_OFFERS_MISSING",
+                "Atlas Sandbox response did not contain an offer list.",
+            )
+        return offers
 
     async def get_flight_status(self, flight_number: str, date: str) -> Dict[str, Any]:
-        """Check live flight status for disruptions."""
+        """Report the honest boundary: the Atlas CLI has no status command."""
+        clean_code = flight_number.upper().replace(" ", "").replace("-", "")
+        return {
+            "flight_number": clean_code,
+            "airline_code": clean_code[:2],
+            "status": "UNKNOWN",
+            "reason": "Flight status is not available from the Atlas Sandbox CLI",
+        }
+
+    async def get_demo_flight_status(
+        self, flight_number: str, date: str
+    ) -> Dict[str, Any]:
+        """Explicit fictional disruption fixtures for the labeled demo flow."""
         clean_code = flight_number.upper().replace(" ", "").replace("-", "")
         
         disruptions = {
@@ -248,6 +307,12 @@ class AtlasClient:
 
     def _normalize_cli_offer(self, o: Dict[str, Any], rate: float, symbol: str, display_currency: str = "USD") -> Dict[str, Any]:
         """Map a live atlas-flight CLI offer onto the app's FlightOffer shape."""
+        offer_id = str(o.get("offer_id") or "").strip()
+        if not offer_id:
+            raise AtlasMalformedResponseError(
+                "ATLAS_OFFER_ID_MISSING",
+                "Atlas Sandbox returned an offer without an identifier.",
+            )
         segments = o.get("segments") or []
         first = segments[0] if segments else {}
         last = segments[-1] if segments else {}
@@ -259,7 +324,7 @@ class AtlasClient:
         )
         duration = sum(int(s.get("duration_minutes") or 0) for s in segments) or None
         return {
-            "offer_id": o.get("offer_id") or f"off_cli_{uuid.uuid4().hex[:10]}",
+            "offer_id": offer_id,
             "airline": self.CARRIER_NAMES.get(carrier, carrier or "Unknown Carrier"),
             "airline_code": carrier,
             "flight_number": first.get("flight_number") or "",
@@ -292,25 +357,45 @@ class AtlasClient:
                 date = tomorrow_iso()
         except (TypeError, ValueError):
             pass
-        # Real Atlas Sandbox first (official atlas-flight CLI), curated mock as fallback.
+        origin = origin.upper().strip()
+        destination = destination.upper().strip()
+        # Atlas Sandbox only (official atlas-flight CLI). No runtime mock
+        # fallback exists.
         # Always query the CLI in USD: Atlas returns total_price in the requested
         # currency, so requesting the display currency here would double-convert.
         # Display-currency conversion happens locally via RATES below.
         cli_offers = await self.cli_search_flights(
             origin=origin, destination=destination, date=date, adults=passengers, currency="USD"
         )
-        if cli_offers:
-            upper = currency.upper()
-            rate = self.RATES.get(upper, 1.0)
-            symbol = self.SYMBOLS.get(upper, "$")
-            return [
-                self._normalize_cli_offer(o, rate, symbol, display_currency=upper)
-                for o in cli_offers
-            ]
+        if not cli_offers:
+            raise AtlasSandboxUnavailableError(
+                "ATLAS_NO_OFFERS",
+                "Atlas Sandbox returned no flight offers for this route.",
+            )
+        upper = currency.upper()
+        rate = self.RATES.get(upper, 1.0)
+        symbol = self.SYMBOLS.get(upper, "$")
+        normalized = [
+            self._normalize_cli_offer(o, rate, symbol, display_currency=upper)
+            for o in cli_offers
+        ]
+        exact = [
+            offer for offer in normalized
+            if offer["origin"].upper() == origin
+            and offer["destination"].upper() == destination
+        ]
+        if not exact:
+            raise AtlasSandboxUnavailableError(
+                "ATLAS_EXACT_ROUTE_UNAVAILABLE",
+                "Atlas Sandbox returned no offers for the exact airports requested.",
+            )
+        return exact
 
-        if not getattr(settings, "use_mock_fallback", True):
-            raise RuntimeError("Provider offline and mocks disabled")
-
+    async def demo_search_flights(
+        self, origin: str, destination: str, date: str,
+        currency: str = "USD",
+    ) -> List[Dict[str, Any]]:
+        """Explicit fictional offers for labeled simulation flows only."""
         origin = origin.upper().strip()
         destination = destination.upper().strip()
         currency = currency.upper().strip() if currency in self.RATES else "USD"
@@ -467,18 +552,39 @@ class AtlasClient:
         return base_offers
 
     async def verify_fare(self, offer_id: str) -> Dict[str, Any]:
-        """Verify fare price and seat availability before locking."""
+        """Create a real Atlas Sandbox booking context for an offer."""
+        data = await self._run_cli(
+            ["offer", "verify", "--offer-id", offer_id]
+        )
+        booking_id = str(data.get("booking_id") or "").strip()
+        if not booking_id:
+            raise AtlasMalformedResponseError(
+                "ATLAS_BOOKING_ID_MISSING",
+                "Atlas Sandbox fare verification returned no booking context.",
+            )
+        price_change = str(data.get("price_change") or "unknown")
         return {
-            "verified": True,
+            "verified": price_change != "increased",
             "offer_id": offer_id,
-            "fare_lock_expires_in_seconds": 900,
-            "price_guarantee": "Locked by Atlas Sandbox GDS",
-            "verified_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            "booking_id": booking_id,
+            "previous_price": data.get("previous_price"),
+            "current_price": data.get("current_price"),
+            "currency": data.get("currency"),
+            "price_change": price_change,
+            "price_confirmation_required": price_change == "increased",
+            "requirements": data.get("requirements") or {},
+            "travelers": data.get("travelers") or [],
+            "segments": data.get("segments") or [],
+            "baggage_supported": bool(data.get("baggage_supported")),
+            "seat_supported": bool(data.get("seat_supported")),
+            "verified_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
 
     async def get_seat_map(self, flight_number: str) -> Dict[str, Any]:
-        """Get aircraft seat map with available vs occupied seats."""
+        """Return the explicit demo seat-map fixture."""
         return {
+            "provenance": "explicit_demo_simulation",
+            "simulated": True,
             "flight_number": flight_number,
             "aircraft": "Airbus A320 / Boeing 737-800",
             "configuration": "3-3",
@@ -524,8 +630,10 @@ class AtlasClient:
         }
 
     async def get_baggage_status(self, pnr: str) -> Dict[str, Any]:
-        """Track baggage transfer status during disruption."""
+        """Return the explicit demo baggage-transfer fixture."""
         return {
+            "provenance": "explicit_demo_simulation",
+            "simulated": True,
             "pnr": pnr,
             "tag_number": f"BKK-{pnr[-4:]}-8921",
             "weight": "24.5 kg",
@@ -541,28 +649,22 @@ class AtlasClient:
         }
 
     async def create_booking_order(
-        self, offer_id: str, passenger: Dict[str, Any], baggage_addon: Optional[str] = None, seat_selected: str = "12A"
+        self, booking_id: str, passenger: Dict[str, Any],
+        baggage_addon: Optional[str] = None, seat_selected: str = "12A"
     ) -> Dict[str, Any]:
-        """Execute Sandbox booking order and settle via Atlas balance."""
-        order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
-        pnr = f"ATLAS-{uuid.uuid4().hex[:6].upper()}"
-        
-        return {
-            "order_id": order_id,
-            "pnr": pnr,
-            "status": "CONFIRMED",
-            "offer_id": offer_id,
-            "passenger_name": passenger.get("name", ""),
-            "payment_status": "SETTLED_VIA_ATLAS_BALANCE",
-            "amount_paid_usd": passenger.get("price_usd", 145.00),
-            "baggage_confirmed": baggage_addon or "30kg Priority Allowance Included",
-            "seat_assigned": seat_selected or "12A (Window)",
-            "booking_timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "ticket_number": f"140-{uuid.uuid4().int % 1000000000:010d}",
-            "gate": "D4",
-            "boarding_time": "11:05 AM",
-            "terminal": "Terminal 1 Concourse D"
-        }
+        """Fail closed until Atlas ticketing and an approved PII flow exist."""
+        status = await self._run_cli(["auth", "status"])
+        if not status.get("ticketing_available"):
+            raise AtlasTicketingUnavailableError(
+                str(status.get("ticketing_blocker")
+                    or "ATLAS_TICKETING_UNAVAILABLE"),
+                "Atlas Sandbox ticketing is not activated for this account.",
+            )
+        raise AtlasTravelerDataRequiredError(
+            "ATLAS_TRAVELER_DATA_REQUIRED",
+            "Atlas Sandbox order creation requires an approved ephemeral "
+            "traveler-data flow; no order was created.",
+        )
 
     async def search_transit_hotels(self, airport_code: str = "BKK") -> List[Dict[str, Any]]:
         """Search Booking.com / Agoda partner emergency transit hotels near airport."""

@@ -8,7 +8,11 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from models.schemas import BookingRequest
-from services.atlas_client import AtlasClient
+from services.atlas_client import (
+    AtlasClient,
+    AtlasTicketingUnavailableError,
+    AtlasTravelerDataRequiredError,
+)
 
 router = APIRouter(prefix="/api/rescue", tags=["Bookings"])
 atlas_client = AtlasClient()
@@ -64,8 +68,17 @@ async def execute_rescue_booking(
                         "was created."
                     ),
                 )
+            booking_id = str(verify_res.get("booking_id") or "").strip()
+            if not booking_id:
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        "Atlas Sandbox returned no booking context; no order "
+                        "was created."
+                    ),
+                )
             order_res = await atlas_client.create_booking_order(
-                offer_id=req.offer_id,
+                booking_id=booking_id,
                 passenger={
                     "name": req.passenger_name,
                     "price_usd": req.price_usd,
@@ -74,6 +87,22 @@ async def execute_rescue_booking(
                 baggage_addon=req.baggage_addon,
                 seat_selected=req.seat_selected or "12A",
             )
+        except AtlasTicketingUnavailableError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Atlas Sandbox ticketing is not activated; no booking "
+                    "or PNR was created."
+                ),
+            ) from exc
+        except AtlasTravelerDataRequiredError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Atlas Sandbox requires an approved ephemeral traveler-"
+                    "data flow; no booking or PNR was created."
+                ),
+            ) from exc
         except HTTPException:
             raise
         except Exception as exc:

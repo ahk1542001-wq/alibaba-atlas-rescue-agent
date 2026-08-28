@@ -2,10 +2,12 @@ import asyncio
 import json
 import logging
 
+import pytest
+
 import services.atlas_client as atlas_module
 import services.llm as llm
 from config import settings
-from services.atlas_client import AtlasClient
+from services.atlas_client import AtlasClient, AtlasSandboxUnavailableError
 from services.radar import RescueRadar
 
 
@@ -50,7 +52,6 @@ def test_llm_parse_and_call_failures_do_not_log_raw_content(monkeypatch, caplog)
 
 def test_atlas_cli_exception_and_provider_message_are_redacted(monkeypatch, caplog):
     caplog.set_level(logging.WARNING)
-    monkeypatch.setattr(atlas_module.settings, "atlas_use_cli", True)
     monkeypatch.setattr(atlas_module.shutil, "which", lambda binary: "/bin/atlas-flight")
     client = AtlasClient()
 
@@ -58,7 +59,8 @@ def test_atlas_cli_exception_and_provider_message_are_redacted(monkeypatch, capl
         raise RuntimeError(SENTINEL)
 
     monkeypatch.setattr(atlas_module.asyncio, "create_subprocess_exec", explode)
-    assert asyncio.run(client._run_cli(["search"])) is None
+    with pytest.raises(AtlasSandboxUnavailableError):
+        asyncio.run(client._run_cli(["search"]))
     assert SENTINEL not in caplog.text
 
     class ProviderResponse:
@@ -81,7 +83,8 @@ def test_atlas_cli_exception_and_provider_message_are_redacted(monkeypatch, capl
         "create_subprocess_exec",
         provider_response,
     )
-    assert asyncio.run(client._run_cli(["search"])) is None
+    with pytest.raises(AtlasSandboxUnavailableError):
+        asyncio.run(client._run_cli(["search"]))
     assert SENTINEL not in caplog.text
     assert SENTINEL not in json.dumps(client.last_cli_envelope)
 

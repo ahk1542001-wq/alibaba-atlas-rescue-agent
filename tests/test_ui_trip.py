@@ -56,7 +56,7 @@ XSS_GOAL = ('I need to get to <script>window.__xss=1</script>Singapore from '
 INVALID_DATE_GOAL = "Fly on February 30 2026"   # deterministic 422 trigger
 
 # G4.5 / R2 sanitized static/app.js pin: zero injection sinks.
-APP_JS_SHA256 = "0bb512ac2aea6d3afe9a7426ca52b94ad16d3a1cbee1084fdf61d4f15370c08e"
+APP_JS_SHA256 = "c1473b8c27749983ce9ceee21293598f2ad125c98f5b47e487c498618d32c080"
 
 
 # --- G3-pattern fakes ---------------------------------------------------------
@@ -90,6 +90,7 @@ class FakeAtlas:
 
     async def verify_fare(self, offer_id):
         return {"verified": True, "offer_id": offer_id,
+                "booking_id": f"book_{offer_id}",
                 "verified_at": datetime.now(timezone.utc).isoformat()}
 
     async def create_booking_order(self, offer_id, passenger, **kwargs):
@@ -1859,6 +1860,53 @@ def test_legacy_rebook_ui_sends_and_reuses_idempotency_key(
     keys = [headers.get("idempotency-key") for headers in seen_headers]
     assert all(keys), "legacy booking request omitted Idempotency-Key"
     assert keys[0] == keys[1], "same offer retry used a different key"
+
+
+def test_legacy_rebook_never_renders_placeholder_pnr(
+    tracked_page, install_orch
+):
+    """A malformed provider-success payload cannot become a fake boarding pass."""
+    install_orch()
+    page = tracked_page
+    page.route(
+        "**/api/rescue/book",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"success": True, "ticket": {}}),
+        ),
+    )
+    page.goto(BASE)
+    page.click('[data-testid="nav-rescue"]')
+    page.evaluate("""() => {
+        monitoredFlights = [{ passenger_name: 'Demo Traveler' }];
+        rescueData = {
+            compensation_claim: { eligible_payout_usd: 0 },
+            rescue_packages: [{
+                offer_id: 'off_ui_missing_pnr',
+                package_type: 'FASTEST_RECOVERY',
+                airline: 'Sandbox Air',
+                flight_number: 'SB101',
+                origin: 'BKK',
+                destination: 'SIN',
+                duration_minutes: 150,
+                price_usd: 210,
+                price_converted: 210,
+                currency_symbol: '$',
+                visa_status: 'CLEAR'
+            }]
+        };
+        renderPackages(rescueData.rescue_packages);
+    }""")
+    page.on("dialog", lambda dialog: dialog.accept())
+
+    page.locator(".btn-rebook").click()
+
+    expect(page.locator("#toast")).to_contain_text("Booking failed", timeout=15000)
+    expect(page.locator("#modal-overlay")).not_to_have_class(
+        re.compile(r"\bvisible\b")
+    )
+    assert "ATLAS-XXXXXX" not in page.locator("body").inner_text()
 
 
 def test_AJ13_legacy_canary(tracked_page, install_orch):

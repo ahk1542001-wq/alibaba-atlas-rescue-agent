@@ -717,7 +717,9 @@ def test_safety_research_skill_capability_is_network_read_only():
 
 def test_safety_research_skill_assesses_with_injected_transport():
     url, payload = _gov_uk_route("Exercise a high degree of caution.")
-    skill = SafetyResearchSkill(fetch=_fake_fetch({url: payload}))
+    skill = SafetyResearchSkill(
+        fetch=_fake_fetch({url: payload}), engine=_engine()
+    )
     out = _run(skill.run({"destination_country": "Singapore",
                           "cities": ["Singapore"],
                           "travel_window": {"start": "2026-09-29",
@@ -891,7 +893,8 @@ class _CountingAtlas:
 
     async def verify_fare(self, option_id):
         self.calls.append(("verify_fare", option_id))
-        return {"verified": True, "verified_at": "2026-08-27T11:00:00Z"}
+        return {"verified": True, "booking_id": f"book_{option_id}",
+                "verified_at": "2026-08-27T11:00:00Z"}
 
     async def search_flights(self, origin, destination, date_iso):
         self.search_calls.append((origin, destination, date_iso))

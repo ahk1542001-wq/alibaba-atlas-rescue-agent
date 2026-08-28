@@ -46,7 +46,9 @@ def test_unknown_atlas_status_does_not_invent_disruption_or_route():
 
     assert status["flight_number"] == "ZZ999"
     assert status["status"] == "UNKNOWN"
-    assert status["reason"] == "Flight status unavailable in Atlas Sandbox"
+    assert status["reason"] == (
+        "Flight status is not available from the Atlas Sandbox CLI"
+    )
     assert "origin" not in status
     assert "destination" not in status
     assert "compensation_amount_usd" not in status

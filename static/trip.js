@@ -1437,11 +1437,11 @@
         paxEl.textContent = 'Travellers: 1';
         var conseq = el('div', 'aj-confirm-consequence');
         conseq.textContent = chosen
-            ? ('Approving books ' + (chosen.carrier || '') + ' ' + (chosen.flight_no || '') +
+            ? ('Approving requests an Atlas Sandbox booking for ' + (chosen.carrier || '') + ' ' + (chosen.flight_no || '') +
                ', ' + ((chosen.dep && chosen.dep.airport) || '?') + ' \u2192 ' +
-               ((chosen.arr && chosen.arr.airport) || '?') + ' in the Atlas Sandbox. ' +
+               ((chosen.arr && chosen.arr.airport) || '?') + '. A PNR exists only if Atlas confirms it. ' +
                'You can still change plans before you approve.')
-            : 'Approving books your chosen flight in the Atlas Sandbox. You can still change plans before you approve.';
+            : 'Approving requests a booking for your chosen Atlas Sandbox offer. No PNR is invented if ticketing is unavailable.';
         summary.appendChild(conseq);
     }
 
@@ -1651,9 +1651,9 @@
             byId('trip-approval-banner').hidden = true;
             Trip.approval = null;
             addChat('agent', decision === 'approve'
-                ? 'Approved \u2014 booking through the Atlas Sandbox now.'
+                ? 'Approved \u2014 requesting the booking from Atlas Sandbox now.'
                 : 'Rejected \u2014 nothing was booked.');
-            announce(decision === 'approve' ? 'Approved. Booking now.' : 'Booking rejected. Nothing was booked.');
+            announce(decision === 'approve' ? 'Approved. Requesting the Sandbox booking now.' : 'Booking rejected. Nothing was booked.');
             if (result && result.error) {
                 showError(plainError(result.error));
             }
@@ -2478,8 +2478,8 @@
         // (c) SEPARATE recovery approval with its own consequence sentence
         if (approval) {
             var note = el('p', 'aj-recovery-consequence',
-                'Approving books ONLY the replacement flight in the Atlas Sandbox. ' +
-                'Your original booking record is kept for reference.');
+                'Approving requests ONLY the replacement flight from Atlas Sandbox. ' +
+                'No replacement PNR exists unless Atlas confirms it; your original record is preserved.');
             tid(note, 'aj-recovery-consequence');
             panel.appendChild(note);
             var actions = el('div', 'aj-recovery-actions');

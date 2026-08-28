@@ -1039,3 +1039,20 @@ results.
 The durable requirement maps, proof commands, and limitations are maintained
 in `FINAL_REPORT.md`. Fresh results and repository state are reported only in
 the execution handoff.
+
+## R8 Strict Atlas Sandbox Boundary (2026-08-28)
+
+- Runtime flight search always calls the official authenticated `atlas-flight`
+  CLI and fails closed on provider, schema, or exact-airport mismatch errors.
+- Offer IDs and booking context must come from Atlas. The product never
+  generates a fallback offer ID, PNR, ticket number, or successful receipt.
+- Fare verification calls `atlas-flight offer verify`; booking checks provider
+  ticketing state and stops safely while ticketing or the approved ephemeral
+  traveler-data flow is unavailable.
+- Hermetic tests use injected provider doubles. They never probe the live
+  Sandbox and cannot silently substitute product-coded arrays.
+- Fictional disruption, ancillary, and self-healing data is available only
+  through explicit simulation actions, carries
+  `provenance=explicit_demo_simulation`, and creates no booking.
+- Health and UI copy expose the Sandbox-only boundary and distinguish a
+  booking request from a provider-confirmed booking.

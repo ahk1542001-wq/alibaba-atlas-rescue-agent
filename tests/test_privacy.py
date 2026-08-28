@@ -372,7 +372,7 @@ def _evidence(**over):
 
 
 def test_engine_assessment_serialization_stays_free_of_query_secrets():
-    engine = SafetyPolicyEngine()
+    engine = SafetyPolicyEngine(clock=lambda: NOW)
     q = SafetyQuery(destination_country="Singapore", passport_country="MM",
                     travel_window=DateWindow(start=NOW.date(),
                                              end=(NOW + timedelta(days=2)).date()))
@@ -458,7 +458,7 @@ def test_malicious_fetched_content_is_inert_data():
     assert report.status == "ok"
     ev = evs[0]
     assert ev.normalized_level == "increased_caution"
-    engine = SafetyPolicyEngine()
+    engine = SafetyPolicyEngine(clock=lambda: NOW)
     a = engine.assess(q, [ev])
     blob = json.dumps(a.model_dump(mode="json"))
     assert "attacker@evil" not in a.recommended_actions

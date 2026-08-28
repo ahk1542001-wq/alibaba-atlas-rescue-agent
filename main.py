@@ -132,8 +132,8 @@ async def health_check():
         "status": "healthy",
         "service": settings.app_name,
         "version": settings.version,
-        "atlas_endpoint": settings.atrip_api_base,
-        "mock_mode": settings.use_mock_fallback,
+        "atlas_mode": "sandbox_only",
+        "atlas_provider": "atlas-flight CLI",
         "runtime": "Python 3.13 / FastAPI Async Gateway",
         "ai_engine": (
             f"{settings.default_model} via {llm.provider_name()}"

@@ -337,8 +337,8 @@
 
             // Show banner immediately
             const banner = document.getElementById('disruption-banner');
-            document.getElementById('banner-title').textContent = flightNum + ' CANCELLED \u2014 Autonomous Rescue Active';
-            document.getElementById('banner-sub').textContent = 'Scanning 140+ airlines via Atlas GDS...';
+            document.getElementById('banner-title').textContent = flightNum + ' DEMO CANCELLATION \u2014 Simulation Active';
+            document.getElementById('banner-sub').textContent = 'Running an explicit demo with fictional disruption data. No booking will be created.';
             banner.classList.add('visible');
 
             // Show reasoning trail with sequential steps
@@ -348,10 +348,10 @@
             trailList.textContent = '';
 
             const steps = [
-                { label: 'Detected ' + flightNum + ' cancellation via Atlas GDS', time: 'just now', delay: 300 },
-                { label: 'Searched 140+ airlines across Atlas Sandbox', time: '0.8s', delay: 600 },
-                { label: 'AI ranking: time + price + coverage across Atlas Sandbox', time: '0.3s', delay: 900 },
-                { label: 'Fare locked on 2 alternatives \u2014 awaiting selection', time: 'active', delay: 1200, active: true }
+                { label: 'Loaded fictional ' + flightNum + ' disruption fixture', time: 'just now', delay: 300 },
+                { label: 'Loaded demo-only recovery options', time: '0.8s', delay: 600 },
+                { label: 'Ranked demo options by time, price, and visa constraints', time: '0.3s', delay: 900 },
+                { label: 'Simulation prepared \u2014 no fare verified or locked', time: 'active', delay: 1200, active: true }
             ];
 
             for (const step of steps) {
@@ -362,7 +362,7 @@
 
             // Call the API
             try {
-                const res = await fetch('/api/disruption/analyze', {
+                const res = await fetch('/api/disruption/analyze?allow_sim=true', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -374,6 +374,9 @@
                     })
                 });
                 rescueData = await res.json();
+                if (!res.ok) {
+                    throw new Error(rescueData.detail || 'Unable to run the disruption simulation.');
+                }
                 renderRescueData(rescueData);
 
                 // Update reasoning trail: mark last step done + add final step
@@ -466,6 +469,11 @@
                     })
                 });
                 const rights = await res.json();
+                if (!res.ok) {
+                    document.getElementById('rights-sub').textContent =
+                        'Unable to verify rights: the connected provider did not supply a flight route.';
+                    return;
+                }
                 renderRightsPanel(rights);
             } catch (err) {
                 console.error('Claims autopilot failed:', err);
@@ -792,7 +800,7 @@
                 { label: 'Verifying fare lock via Atlas GDS', sub: (pkg.airline || '') + ' ' + (pkg.flight_number || '') + ' \u2014 $' + (pkg.price_usd || 0).toFixed(2) },
                 { label: 'Agent assigns seat 12A', sub: 'Window seat \u2014 30kg priority baggage' },
                 { label: 'Transferring baggage to rescue flight', sub: 'Auto-routed to Cargo Bay 2' },
-                { label: 'Issuing e-ticket via Atlas Sandbox', sub: 'PNR generation \u2014 instant settlement' },
+                { label: 'Requesting an Atlas Sandbox booking', sub: 'The provider may require ticketing activation; no PNR is invented' },
                 { label: payout > 0 ? 'Filing ' + payout.toFixed(0) + ' USD compensation claim' : 'Registering refund & duty-of-care route',
                   sub: payout > 0 ? ((claim.jurisdiction && claim.jurisdiction.id) ? claim.jurisdiction.id + ' passenger rights applied' : 'Passenger rights applied') : 'No fixed-cash scheme on this route \u2014 cause-blind care still applies' }
             ];
@@ -857,12 +865,15 @@
                 if (!res.ok || !result.success) {
                     throw new Error('Sandbox booking request was not confirmed');
                 }
+                if (!result.ticket || !String(result.ticket.pnr || '').trim()) {
+                    throw new Error('Atlas Sandbox returned no confirmed booking reference');
+                }
                 if (result.success) {
                     showBoardingPass(result.ticket, pkg);
                     showImpactCard(pkg);
                 }
             } catch (err) {
-                console.error('Rebooking failed:', err);
+                console.warn('Sandbox booking was not confirmed.');
                 showToast('Booking failed. Please try rebooking again.');
             }
         }
@@ -881,22 +892,23 @@
 
         function showBoardingPass(ticket, pkg) {
             const overlay = document.getElementById('modal-overlay');
-            if (!overlay) return;
+            const confirmedPnr = String((ticket && ticket.pnr) || '').trim();
+            if (!overlay || !confirmedPnr) return;
             document.getElementById('bp-airline').textContent = pkg.airline || '';
             document.getElementById('bp-origin').textContent = pkg.origin || '';
             document.getElementById('bp-origin-name').textContent = pkg.origin_airport || pkg.origin || '';
             document.getElementById('bp-dest').textContent = pkg.destination || '';
             document.getElementById('bp-dest-name').textContent = pkg.destination_airport || pkg.destination || '';
             document.getElementById('bp-flight').textContent = pkg.flight_number || '';
-            document.getElementById('bp-gate').textContent = (ticket && ticket.gate) || pkg.gate || 'D4';
-            document.getElementById('bp-seat').textContent = (ticket && ticket.seat_assigned) || '12A';
-            document.getElementById('bp-boarding').textContent = (ticket && ticket.boarding_time) || '11:05 AM';
-            document.getElementById('bp-pnr').textContent = (ticket && ticket.pnr) || 'ATLAS-XXXXXX';
+            document.getElementById('bp-gate').textContent = ticket.gate || 'Not assigned';
+            document.getElementById('bp-seat').textContent = ticket.seat_assigned || 'Not assigned';
+            document.getElementById('bp-boarding').textContent = ticket.boarding_time || 'Not assigned';
+            document.getElementById('bp-pnr').textContent = confirmedPnr;
 
             const barcode = document.getElementById('bp-barcode');
             if (barcode) {
                 barcode.textContent = '';
-                const pnr = (ticket && ticket.pnr) || 'ATLAS-XXXXXX';
+                const pnr = confirmedPnr;
                 for (let i = 0; i < 50; i++) {
                     const charCode = pnr.charCodeAt(i % pnr.length);
                     const isThick = (charCode + i) % 3 === 0;

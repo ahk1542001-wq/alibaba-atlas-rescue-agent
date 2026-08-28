@@ -12,7 +12,7 @@ rescue_engine = RescueEngine(atlas_client)
 logger = logging.getLogger("disruptions")
 
 @router.post("/analyze")
-async def analyze_disruption(req: DisruptionEvent):
+async def analyze_disruption(req: DisruptionEvent, allow_sim: bool = False):
     """Trigger agentic AI analysis, multi-carrier scan, and Pareto package curation."""
     try:
         result = await rescue_engine.handle_disruption(
@@ -20,7 +20,8 @@ async def analyze_disruption(req: DisruptionEvent):
             passenger_name=req.passenger_name,
             date=req.date,
             currency=req.currency or "USD",
-            nationality=req.nationality or "MM"
+            nationality=req.nationality or "MM",
+            simulation=allow_sim,
         )
         return JSONResponse(content=result)
     except FlightStatusUnavailableError as exc:

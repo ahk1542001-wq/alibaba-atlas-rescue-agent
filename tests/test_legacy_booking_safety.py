@@ -32,13 +32,16 @@ class CountingAtlas:
         self.verified = verified
         self.verify_calls = 0
         self.order_calls = 0
+        self.booking_ids = []
 
     async def verify_fare(self, offer_id):
         self.verify_calls += 1
-        return {"verified": self.verified, "offer_id": offer_id}
+        return {"verified": self.verified, "offer_id": offer_id,
+                "booking_id": f"book_{offer_id}"}
 
-    async def create_booking_order(self, offer_id, passenger, **kwargs):
+    async def create_booking_order(self, booking_id, passenger, **kwargs):
         self.order_calls += 1
+        self.booking_ids.append(booking_id)
         if self.slow:
             await asyncio.sleep(0.05)
         if self.fail_first and self.order_calls == 1:
@@ -47,7 +50,7 @@ class CountingAtlas:
             "order_id": "ORD-LEGACY-1",
             "pnr": "ATLAS-LEG1",
             "status": "CONFIRMED",
-            "offer_id": offer_id,
+            "booking_id": booking_id,
         }
 
 
@@ -91,6 +94,7 @@ def test_legacy_booking_replays_exact_response_without_second_provider_call(
     assert first.status_code == second.status_code == 200
     assert second.json() == first.json()
     assert isolated_booking_state.order_calls == 1
+    assert isolated_booking_state.booking_ids == ["book_off_legacy_safe_1"]
 
 
 def test_legacy_booking_rejects_same_key_with_altered_payload(

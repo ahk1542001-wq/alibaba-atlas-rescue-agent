@@ -14,17 +14,6 @@ def settings_default_model() -> str:
     return _s.default_model
 
 
-CONCIERGE_SYSTEM_PROMPT = (
-    "You are the 24/7 AI Travel Concierge of TravelCare AI, an autonomous flight "
-    "rescue agent. Current passenger context: original flight TG303 BKK-RGN was "
-    "cancelled; the agent rebooked the passenger on Myanmar Airways International "
-    "8M 336 (BKK-RGN, departs 11:45, gate D4, seat 12A, PNR issued); baggage was "
-    "auto-transferred; a $250 compensation claim and a $25 dining voucher are active. "
-    "Answer the passenger's question concisely (max 3 sentences), warm and specific. "
-    "Never invent facts outside the context unless clearly generic advice."
-)
-
-
 def _build_concierge_prompt(context: Optional[Dict[str, Any]]) -> str:
     """Ground the concierge on the live session state instead of a canned story."""
     if not context:
@@ -102,7 +91,8 @@ class RescueEngine:
         passenger_name: str = "",
         date: str = None,
         currency: str = "USD",
-        nationality: str = "MM"
+        nationality: str = "MM",
+        simulation: bool = False,
     ) -> Dict[str, Any]:
         if not date:
             date = datetime.date.today().strftime("%Y-%m-%d")
@@ -110,14 +100,18 @@ class RescueEngine:
         dag = DisruptionRecoveryDAG()
 
         # Node 1: IngestionRadar
-        dag.record_step("IngestionRadar", 8.2, {"source": "Atlas Live Webhook", "flight": flight_number})
+        source = "Explicit demo simulation" if simulation else "Atlas Sandbox"
+        dag.record_step("IngestionRadar", 8.2, {"source": source, "flight": flight_number})
 
         # Node 2: PredictiveEvaluator
         predictive_radar = self.get_predictive_radar(flight_number)
         dag.record_step("PredictiveEvaluator", 14.5, {"cancellation_risk_percent": predictive_radar["predicted_cancellation_risk_percent"]})
 
         # Node 3: DisruptionConfirmed
-        disruption_info = await self.atlas.get_flight_status(flight_number, date)
+        if simulation:
+            disruption_info = await self.atlas.get_demo_flight_status(flight_number, date)
+        else:
+            disruption_info = await self.atlas.get_flight_status(flight_number, date)
         origin = str(disruption_info.get("origin") or "").upper()
         destination = str(disruption_info.get("destination") or "").upper()
         if (str(disruption_info.get("status") or "").upper() == "UNKNOWN"
@@ -129,7 +123,14 @@ class RescueEngine:
         dag.record_step("DisruptionConfirmed", 11.0, {"status": disruption_info.get("status"), "reason": disruption_info.get("reason")})
 
         # Node 4: ParetoOptimizer (Query 140+ carriers & Rank)
-        all_offers = await self.atlas.search_flights(origin, destination, date, currency=currency)
+        if simulation:
+            all_offers = await self.atlas.demo_search_flights(
+                origin, destination, date, currency=currency
+            )
+        else:
+            all_offers = await self.atlas.search_flights(
+                origin, destination, date, currency=currency
+            )
         packages = self._curate_rescue_packages(all_offers, disruption_info)
 
         # Node 4b: VisaGuard — filter/rank packages by passport transit rules
@@ -141,16 +142,30 @@ class RescueEngine:
         })
 
         # Node 4c: Proactive Guardian push (Telegram; simulated when unconfigured)
-        guardian_push = await guardian.notify(
-            title=f"Disruption detected on {flight_number}",
-            body=(
-                f"Your flight {flight_number} is {disruption_info.get('status','disrupted')} "
-                f"({disruption_info.get('reason','')}). The agent has already locked "
-                f"{len(packages)} visa-safe rescue options for your "
-                f"{visa_result['passport']} passport."
-            ),
-            action_label="Open Rescue Hub",
-        )
+        if simulation:
+            guardian_push = {
+                "channel": "demo_preview",
+                "sent": False,
+                "simulated": True,
+                "preview": (
+                    f"Disruption detected on {flight_number}; "
+                    f"{len(packages)} demo rescue options prepared."
+                ),
+                "reason": "Explicit demo simulation never sends external notifications.",
+                "error": None,
+            }
+        else:
+            guardian_push = await guardian.notify(
+                title=f"Disruption detected on {flight_number}",
+                body=(
+                    f"Your flight {flight_number} is "
+                    f"{disruption_info.get('status','disrupted')} "
+                    f"({disruption_info.get('reason','')}). The agent found "
+                    f"{len(packages)} visa-safe rescue options for your "
+                    f"{visa_result['passport']} passport."
+                ),
+                action_label="Open Rescue Hub",
+            )
         if guardian_push.get("sent") or guardian_push.get("simulated"):
             dag.record_step("ProactiveGuardian", 4.1, {
                 "channel": "telegram",
@@ -159,19 +174,52 @@ class RescueEngine:
 
         dag.record_step("ParetoOptimizer", 14.8, {"offers_evaluated": len(all_offers), "packages_curated": len(packages)})
 
-        # Node 5: FareLockHold
-        fare_lock = await self.atlas.verify_fare("off_atlas_mai_801")
-        dag.record_step("FareLockHold", 38.0, {"lock_status": "LOCKED", "expires_in": 900})
+        # Node 5: verify the provider offer. Verification is not a booking or lock.
+        if simulation:
+            fare_lock = {
+                "simulated": True,
+                "verified": False,
+                "reason": "Demo simulation; no Atlas fare was verified or locked.",
+            }
+            dag.record_step("FareVerification", 0.0, {"status": "SIMULATED"})
+        elif packages:
+            fare_lock = await self.atlas.verify_fare(packages[0]["offer_id"])
+            fare_lock["simulated"] = False
+            dag.record_step(
+                "FareVerification",
+                38.0,
+                {"status": "VERIFIED" if fare_lock.get("verified") else "REVIEW_REQUIRED"},
+            )
+        else:
+            raise FlightStatusUnavailableError(
+                "Atlas Sandbox returned no usable recovery offers; "
+                "no recovery plan was created."
+            )
 
         # Ancillary & Support Data
-        advisory = self._generate_disruption_advisory(disruption_info)
-        seat_map = await self.atlas.get_seat_map(flight_number)
+        advisory = self._generate_disruption_advisory(disruption_info) if simulation else {
+            "available": False,
+            "reason": "No live rights or airline-entitlement source is connected.",
+        }
+        seat_map = await self.atlas.get_seat_map(flight_number) if simulation else {
+            "available": False,
+            "reason": "No Atlas Sandbox seat map was requested.",
+        }
         claim = await self.generate_compensation_claim(disruption_info, passenger_name, nationality)
-        hotels = await self.atlas.search_transit_hotels(origin)
-        care_gifts = await self.atlas.issue_care_gift_vouchers(f"ATLAS-{flight_number}")
-        flight_diff = self.generate_flight_diff("TG303", "8M336")
+        hotels = await self.atlas.search_transit_hotels(origin) if simulation else []
+        care_gifts = await self.atlas.issue_care_gift_vouchers(
+            f"DEMO-{flight_number}"
+        ) if simulation else {
+            "available": False,
+            "reason": "No live care-voucher provider is connected.",
+        }
+        flight_diff = self.generate_flight_diff("TG303", "8M336") if simulation else {
+            "available": False,
+            "reason": "No replacement flight has been selected or booked.",
+        }
 
         result = {
+            "provenance": "explicit_demo_simulation" if simulation else "atlas_sandbox",
             "session_id": dag.session_id,
             "disruption": disruption_info,
             "passenger": {
@@ -190,15 +238,20 @@ class RescueEngine:
                 "blocked_count": visa_result["blocked_count"],
             },
             "guardian_push": guardian_push,
+            "fare_lock": fare_lock,
             "transit_hotels": hotels,
             "care_gifts": care_gifts,
             "seat_map": seat_map,
             "advisory": advisory,
             "compensation_claim": claim,
             "dag_telemetry": dag.get_graph_telemetry(),
-            "status": "PACKAGES_READY_FOR_CONFIRMATION"
+            "status": (
+                "DEMO_PACKAGES_READY" if simulation
+                else "PACKAGES_READY_FOR_CONFIRMATION"
+            ),
         }
         self.last_session_context = {
+            "provenance": result["provenance"],
             "disruption": disruption_info,
             "rescue_packages": packages[:2],
             "visa_guard": result["visa_guard"],
@@ -208,8 +261,10 @@ class RescueEngine:
         return result
 
     def get_predictive_radar(self, flight_number: str = "TG303") -> Dict[str, Any]:
-        """Provides AI-driven 45m early pre-cancellation warning based on inbound tail tracking & weather."""
+        """Return explicitly simulated predictive telemetry for the demo UI."""
         return {
+            "provenance": "explicit_demo_simulation",
+            "simulated": True,
             "flight_number": flight_number,
             "inbound_aircraft_tail": "HS-TKF (Boeing 777-300ER)",
             "inbound_route": "LHR ➔ BKK (Delayed 3h 15m in London Heathrow)",
@@ -390,52 +445,57 @@ class RescueEngine:
         return await self._rule_based_concierge(query)
 
     async def _rule_based_concierge(self, query: str) -> Dict[str, Any]:
-        """Deterministic keyword concierge (fallback when LLM unavailable)."""
-        q_lower = query.lower()
+        """Deterministic, session-grounded reply when the LLM is unavailable."""
+        if not self.last_session_context:
+            return {
+                "reply": (
+                    "I do not have an active disruption or booking session to report. "
+                    "Start a search or an explicitly labeled demo simulation first."
+                ),
+                "action_taken": "NO_ACTIVE_SESSION",
+            }
 
-        if "meal" in q_lower or "food" in q_lower or "vegetarian" in q_lower:
+        q_lower = query.lower()
+        context = self.last_session_context
+        disruption = context.get("disruption") or {}
+        packages = context.get("rescue_packages") or []
+        claim = context.get("compensation_claim") or {}
+        demo_note = (
+            " This is demo simulation data; no booking was created."
+            if context.get("provenance") == "explicit_demo_simulation" else ""
+        )
+
+        if "claim" in q_lower or "compensation" in q_lower or "refund" in q_lower:
             return {
-                "reply": "🥗 Special meal request confirmed! Your Asian Vegetarian Meal (AVML) has been recorded for flight MAI 8M 336. In addition, a $25 Airport Dining Voucher #DV-9012 is active at all Terminal 1 restaurants.",
-                "action_taken": "MEAL_PREFERENCE_UPDATED",
-                "voucher_code": "DV-9012"
+                "reply": (
+                    f"The current assessment status is {claim.get('status', 'unavailable')}. "
+                    f"The recorded basis is {claim.get('rights_basis') or 'still being assessed'}."
+                    + demo_note
+                ),
+                "action_taken": "SESSION_CLAIM_SUMMARY",
             }
-        elif "bag" in q_lower or "luggage" in q_lower or "suitcase" in q_lower:
-            return {
-                "reply": "🧳 Baggage Tag #BKK-45BA-8921 (24.5 kg) was safely unloaded from Thai Airways and is currently in Transit Hub Concourse D. It is assigned to Cargo Bay 2 on MAI 8M 336. You do NOT need to re-check your bag.",
-                "action_taken": "BAGGAGE_TRACKING_RETRIEVED",
-                "bag_status": "Loaded on Cargo Bay 2"
-            }
-        elif "lounge" in q_lower or "wait" in q_lower:
-            return {
-                "reply": "☕ As a Gold Priority passenger, your complimentary access to the Miracle Lounge (Concourse D, near Gate D5) is confirmed. Simply present your new digital boarding pass for entrance.",
-                "action_taken": "LOUNGE_DIRECTIONS_PROVIDED",
-                "lounge": "Miracle Lounge Concourse D"
-            }
-        elif "claim" in q_lower or "compensation" in q_lower or "money" in q_lower or "refund" in q_lower:
-            return {
-                "reply": "💵 I have generated your $250.00 Disruption Compensation Claim (#CLM-2026-8941) under Aviation Passenger Rights. It is pre-filled and approved for instant deposit to your Atlas travel wallet.",
-                "action_taken": "COMPENSATION_CLAIM_ISSUED",
-                "amount": "$250.00"
-            }
-        elif "gate" in q_lower or "terminal" in q_lower:
-            return {
-                "reply": "🚪 Your new flight departs from Gate D4 (Suvarnabhumi Terminal 1). Walking time from your current location is approximately 6 minutes. Boarding begins at 11:05 AM.",
-                "action_taken": "GATE_INFO_PROVIDED",
-                "gate": "D4"
-            }
-        else:
-            return {
-                "reply": f"🤖 I am your Autonomous Rescue Assistant. Your rebooked flight is confirmed on MAI 8M 336 (Departs 11:45 AM). I have verified your fare, transferred your baggage, and activated your lounge pass. How else can I assist your journey?",
-                "action_taken": "GENERAL_ASSISTANCE"
-            }
+        top = packages[0] if packages else {}
+        option_text = (
+            f" The top option shown is {top.get('airline', 'an airline')} "
+            f"{top.get('flight_number', '')}; it is not booked."
+            if top else " No replacement option is currently available."
+        )
+        return {
+            "reply": (
+                f"Flight {disruption.get('flight_number', '')} is recorded as "
+                f"{disruption.get('status', 'unknown')}."
+                + option_text + demo_note
+            ),
+            "action_taken": "SESSION_STATUS_SUMMARY",
+        }
 
     async def execute_self_healing_recovery(self, flight_number: str, passenger_name: str = "") -> Dict[str, Any]:
         """
-        Demonstrates Graph & Loop Engineering Self-Healing with Fault Injection:
+        Explicitly simulated Graph & Loop Engineering fault injection:
         1. Attempts to lock Primary Choice (MAI 8M 336).
         2. Simulates 'SEATS_EXHAUSTED_409' Verifier Rejection.
         3. Catches fault without crashing and triggers Self-Healing Graph Loop.
-        4. Loops back to ParetoOptimizer node and automatically settles Fallback Choice (Thai Airways TG 307).
+        4. Selects a fictional fallback without creating an Atlas order.
         """
         dag = DisruptionRecoveryDAG()
         dag.record_step("IngestionRadar", 8.0, {"flight": flight_number})
@@ -455,25 +515,33 @@ class RescueEngine:
             "selected_fallback": "Thai Airways TG 307 (18:00 Departure • Star Alliance)"
         })
 
-        # Settle Fallback Option
-        dag.record_step("FareLockHold_Fallback", 28.0, {"locked_flight": "TG 307", "status": "CONFIRMED_LOCKED"})
-        dag.record_step("TicketSettlement", 41.0, {"pnr": "ATLAS-THAI-7781", "seat": "14A", "gate": "C7"})
-        dag.record_step("ClosedLoopVerified", 6.0, {"status": "SELF_HEALED_SUCCESSFULLY"})
+        # Demonstrate selection only. No Atlas order, PNR, seat, or ticket exists.
+        dag.record_step("FallbackSelection", 28.0, {
+            "selected_demo_option": "Thai Airways TG 307",
+            "status": "SIMULATED_NOT_BOOKED",
+        })
+        dag.record_step("ClosedLoopVerified", 6.0, {"status": "SIMULATION_COMPLETED"})
 
         return {
-            "status": "SELF_HEALING_COMPLETED",
+            "provenance": "explicit_demo_simulation",
+            "simulated": True,
+            "booking_created": False,
+            "status": "SELF_HEALING_SIMULATION_COMPLETED",
             "primary_attempted": "MAI 8M 336 (Exhausted)",
-            "healed_flight_assigned": "Thai Airways TG 307 (Departs 18:00 • Suvarnabhumi)",
-            "pnr": "ATLAS-THAI-7781",
-            "assigned_seat": "14A (Star Alliance Priority)",
-            "gate": "C7",
+            "demo_fallback_selected": "Thai Airways TG 307 (Departs 18:00 • Suvarnabhumi)",
+            "demo_reference": "SIM-SELF-HEAL-TG307",
             "dag_telemetry": dag.get_graph_telemetry(),
-            "explanation": "Agentic Self-Healing Loop successfully recovered from seat exhaustion in 144.2ms without user re-intervention."
+            "explanation": (
+                "The explicit demo loop selected a fallback after simulated seat "
+                "exhaustion. It did not call Atlas ticketing or create a booking."
+            ),
         }
 
     def get_agent_prompt_telemetry(self) -> Dict[str, Any]:
-        """Provides transparency into Qoder / Qwen-2.5 agent reasoning, token economics, and verifier suite."""
+        """Return explicitly simulated prompt/telemetry content for the demo UI."""
         return {
+            "provenance": "explicit_demo_simulation",
+            "simulated": True,
             "model": getattr(settings, "default_model", "Qwen/Qwen2.5-72B-Instruct"),
             "system_prompt": (
                 "You are the Autonomous Flight Rescue Agent. When an airline disruption webhook triggers, "

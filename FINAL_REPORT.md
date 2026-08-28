@@ -7,8 +7,12 @@ reported in the execution handoff instead of being frozen here.
 
 ## Product and Safety Boundaries
 
-- Flight search, booking, and disruption scenarios use Atlas Sandbox or
-  explicitly labeled deterministic fixtures.
+- Runtime flight search and fare verification use only the authenticated,
+  official `atlas-flight` Sandbox CLI. Provider failure returns a recoverable
+  error; there is no automatic runtime offer fallback.
+- Disruption and self-healing fixtures are reachable only through explicitly
+  labeled simulation actions. They never call Atlas, send notifications, or
+  return a fabricated PNR or ticket.
 - Unknown flight-status lookups return `UNKNOWN` without route, cancellation,
   or compensation facts. Claims cannot use client-supplied airport hints as
   provider truth.
@@ -23,9 +27,8 @@ reported in the execution handoff instead of being frozen here.
   provider URLs and raw response messages are not exposed as telemetry labels.
 - No repository workflow authorizes push, deployment, publication, a live
   booking, or use of real traveler data.
-- Hermetic test runs never edit `BLOCKERS.md`; transient Atlas Sandbox
-  unavailability is reported in test output while the documented curated
-  fallback remains explicitly labeled.
+- Hermetic tests inject provider doubles and never edit `BLOCKERS.md` or make
+  a live Atlas call. Live Sandbox verification is a separate opt-in gate.
 
 ## F1–F20 Proof Map
 
@@ -33,7 +36,7 @@ reported in the execution handoff instead of being frozen here.
 |---|---|---|---|
 | F1 | Conversational goal intake | `services/skills/goal_intake.py`, `routers/v1/trip.py` | `tests/test_skills_behavior.py`, `tests/test_e2e_trip_journey.py` |
 | F2 | Clarification loop | `services/skills/clarify_loop.py`, `services/skills/profile_capture.py` | `tests/test_skills_behavior.py`, `tests/test_canonical_gaps.py` |
-| F3 | Flight search and booking | `services/skills/flight_search.py`, `services/skills/flight_book.py`, `services/atlas_client.py` | `tests/test_skills_behavior.py`, `tests/test_e2e_trip_journey.py` |
+| F3 | Flight search and booking | `services/skills/flight_search.py`, `services/skills/flight_book.py`, `services/atlas_client.py` | `tests/test_atlas_sandbox_only.py`, `tests/test_skills_behavior.py`, `tests/test_e2e_trip_journey.py` |
 | F4 | Hybrid visa checks | `services/skills/visa_check.py`, `services/visa_guard.py`, `services/web_intel_client.py` | `tests/test_skills_behavior.py`, `tests/test_web_intel.py` |
 | F5 | Profile store and editing | `services/profile_store.py`, `routers/v1/profile.py`, `services/skills/profile_edit.py` | `tests/test_profile_store.py`, `tests/test_privacy.py` |
 | F6 | Passenger-rights and claims | `services/rights_engine.py`, `services/skills/rights_check.py`, `routers/v1/claims.py` | `tests/test_rights_and_visa.py`, `tests/test_claims_provider_truth.py` |
@@ -48,7 +51,7 @@ reported in the execution handoff instead of being frozen here.
 | F15 | Recovery approval | `services/skills/recovery_plan.py`, `routers/v1/trip.py` | `tests/test_canonical_gaps.py` |
 | F16 | Full itinerary | `services/skills/itinerary.py`, `routers/v1/trip.py` | `tests/test_canonical_gaps.py` |
 | F17 | Privacy | `models/schemas.py`, `services/profile_store.py`, `services/skills/guardian_push.py` | `tests/test_privacy.py`, `tests/test_provider_log_redaction.py` |
-| F18 | Honest degraded operation | `services/llm.py`, `services/web_intel_client.py`, `services/atlas_client.py`, `services/rescue_engine.py` | `tests/test_e2e_trip_journey.py`, `tests/test_skills_behavior.py`, `tests/test_claims_provider_truth.py`, `tests/test_api_error_sanitization.py` |
+| F18 | Honest degraded operation | `services/llm.py`, `services/web_intel_client.py`, `services/atlas_client.py`, `services/rescue_engine.py` | `tests/test_atlas_sandbox_only.py`, `tests/test_e2e_trip_journey.py`, `tests/test_skills_behavior.py`, `tests/test_claims_provider_truth.py`, `tests/test_api_error_sanitization.py` |
 | F19 | Accessibility | `static/styles.css`, `static/index.html`, `static/trip.js` | `tests/test_ui_trip.py` |
 | F20 | Evidence integrity | `FINAL_REPORT.md`, `PLAN.md`, `DECISIONS.tsv`, `BLOCKERS.md` | `tests/test_docs_integrity.py` and the live verification commands below |
 
@@ -107,8 +110,14 @@ created for that smoke.
 
 ## Honest Limitations
 
-- Live airline status, booking, LLM, web-research, and Telegram credentials are
-  optional and are not proven by hermetic tests.
+- The Atlas CLI exposes search and offer verification, but no flight-status
+  command. Real disruption recovery therefore fails closed until a trusted
+  status source is added.
+- The currently authenticated Sandbox account reports
+  `TICKETING_ACTIVATION_REQUIRED`. Order creation also needs an approved
+  ephemeral traveler-data flow, so no booking or PNR is claimed today.
+- LLM, web-research, and Telegram integrations are optional and are not proven
+  by hermetic tests.
 - Trip state and active watches are in-process; multi-instance persistence is
   outside the local single-user architecture.
 - Authentication and multi-tenancy are not part of this local product.

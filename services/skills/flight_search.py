@@ -11,7 +11,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 from models.schemas import FlightEndpoint, FlightOption, Money
-from services.atlas_client import AtlasClient
+from services.atlas_client import AtlasClient, AtlasProviderError
 from services.skills.base import SkillBase, SkillError
 
 
@@ -58,8 +58,16 @@ class FlightSearchSkill(SkillBase):
             travel_date = travel_date.isoformat()
         passengers = int(payload.get("passengers") or 1)
 
-        offers = await self._atlas.search_flights(
-            origin, destination, str(travel_date), passengers=passengers)
+        try:
+            offers = await self._atlas.search_flights(
+                origin, destination, str(travel_date), passengers=passengers)
+        except AtlasProviderError as exc:
+            raise SkillError(
+                "atlas_sandbox_unavailable",
+                "Atlas Sandbox flight search is temporarily unavailable; "
+                "retry the search without changing your trip details.",
+                recoverable=True,
+            ) from exc
         options: List[Dict[str, Any]] = []
         filtered_mismatched_routes = 0
         for offer in offers:

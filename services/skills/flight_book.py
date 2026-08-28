@@ -30,7 +30,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from models.schemas import BookingRecord, FlightOption
-from services.atlas_client import AtlasClient
+from services.atlas_client import (
+    AtlasClient,
+    AtlasProviderError,
+    AtlasTicketingUnavailableError,
+    AtlasTravelerDataRequiredError,
+)
 from services.rights_engine import airports_to_countries
 from services.skills.base import SkillBase, SkillError
 
@@ -145,11 +150,34 @@ class FlightBookSkill(SkillBase):
         async with lock:
             # Refresh and reverify inside the per-booking lock. Concurrent
             # identical calls cannot both cross the provider-create boundary.
-            verification = await self._atlas.verify_fare(option_id)
+            try:
+                verification = await self._atlas.verify_fare(option_id)
+            except AtlasTicketingUnavailableError as exc:
+                raise SkillError(
+                    "atlas_ticketing_unavailable",
+                    "Atlas Sandbox ticketing is not activated; no booking "
+                    "or PNR was created.",
+                    recoverable=True,
+                ) from exc
+            except AtlasProviderError as exc:
+                raise SkillError(
+                    "atlas_fare_verification_unavailable",
+                    "Atlas Sandbox could not re-verify this fare; search "
+                    "again before approving a booking.",
+                    recoverable=True,
+                ) from exc
             if not verification.get("verified"):
                 raise SkillError("fare_unverified",
                                  f"fare '{option_id}' failed re-verification; "
                                  "booking refused", recoverable=True)
+            booking_id = str(verification.get("booking_id") or "").strip()
+            if not booking_id:
+                raise SkillError(
+                    "atlas_booking_context_missing",
+                    "Atlas Sandbox returned no booking context; search and "
+                    "verify the fare again.",
+                    recoverable=True,
+                )
 
             if idempotency_key in self._booked:
                 replay = dict(self._booked[idempotency_key])
@@ -157,12 +185,34 @@ class FlightBookSkill(SkillBase):
                 return replay
 
             passenger = payload.get("passenger") or {}
-            order = await self._atlas.create_booking_order(
-                option_id,
-                {"name": passenger.get("name", ""),
-                 "price_usd": ((payload.get("option") or {}).get("price") or {})
-                              .get("amount")},
-            )
+            try:
+                order = await self._atlas.create_booking_order(
+                    booking_id,
+                    {"name": passenger.get("name", ""),
+                     "price_usd": ((payload.get("option") or {}).get("price") or {})
+                                  .get("amount")},
+                )
+            except AtlasTicketingUnavailableError as exc:
+                raise SkillError(
+                    "atlas_ticketing_unavailable",
+                    "Atlas Sandbox ticketing is not activated; no booking "
+                    "or PNR was created.",
+                    recoverable=True,
+                ) from exc
+            except AtlasTravelerDataRequiredError as exc:
+                raise SkillError(
+                    "atlas_traveler_data_required",
+                    "Atlas Sandbox requires an approved ephemeral traveler-"
+                    "data flow before an order can be created.",
+                    recoverable=True,
+                ) from exc
+            except AtlasProviderError as exc:
+                raise SkillError(
+                    "atlas_booking_unavailable",
+                    "Atlas Sandbox could not create the order; no booking or "
+                    "PNR was created.",
+                    recoverable=True,
+                ) from exc
 
             option_dump = payload.get("option")
             option = FlightOption(**option_dump) if option_dump else None

@@ -73,6 +73,7 @@ class FakeAtlas:
     async def verify_fare(self, offer_id):
         self.calls.append("verify")
         return {"verified": self.verified, "offer_id": offer_id,
+                "booking_id": f"book_{offer_id}",
                 "fare_lock_expires_in_seconds": 900}
 
     async def create_booking_order(self, offer_id, passenger, baggage_addon=None,
@@ -1196,9 +1197,8 @@ def test_s13_recovery_plan_discards_wrong_airport_replacements():
                and row["arr"]["airport"] == "SIN" for row in options)
 
 
-def test_atlas_client_mock_disabled_raises_runtime_error(monkeypatch):
-    from services.atlas_client import AtlasClient
-    from config import settings
+def test_atlas_client_always_fails_closed_without_sandbox_offers(monkeypatch):
+    from services.atlas_client import AtlasClient, AtlasSandboxUnavailableError
 
     client = AtlasClient()
 
@@ -1206,9 +1206,11 @@ def test_atlas_client_mock_disabled_raises_runtime_error(monkeypatch):
         return []
 
     monkeypatch.setattr(client, "cli_search_flights", empty_cli)
-    monkeypatch.setattr(settings, "use_mock_fallback", False)
 
-    with pytest.raises(RuntimeError, match="Provider offline and mocks disabled"):
+    with pytest.raises(
+        AtlasSandboxUnavailableError,
+        match="Atlas Sandbox returned no flight offers",
+    ):
         _run(client.search_flights("BKK", "SIN", "2026-09-29"))
 
 
