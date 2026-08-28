@@ -142,6 +142,14 @@ _HINTS = {
     "provider_failure":
         "an upstream provider failed — retry shortly; the trip degrades, "
         "it does not fabricate results",
+    "atlas_ticketing_unavailable":
+        "Your plan is safe. Atlas Sandbox ticketing is not enabled for this account, "
+        "so no booking or ticket was created.",
+    "ticketing_activation_required":
+        "Your plan is safe. Atlas Sandbox ticketing is not enabled for this account, "
+        "so no booking or ticket was created.",
+    "atlas_traveler_data_required":
+        "Atlas Sandbox requires an approved traveler data flow before creating an order.",
     # safety intelligence pipeline (Task #13)
     "safety_do_not_travel":
         "an official do-not-travel advisory applies — booking is blocked "
@@ -1048,6 +1056,10 @@ class TripOrchestrator:
                     hint="choose an option id listed on this approval")
             approval.immutable_option = selected
             approval.price_snapshot = selected.get("price")
+            # Reconcile itinerary preview with the selected option before booking attempt
+            if trip.context.get("itinerary"):
+                trip.context["itinerary"] = ItinerarySkill.reconcile_flight(
+                    trip.context["itinerary"], option=selected)
             # Task #13: deterministic safety precheck BEFORE booking resumes
             # (do_not_travel blocks outright; reconsider_travel needs the
             # separate risk acknowledgement; unable_to_verify retries once).
@@ -1056,6 +1068,11 @@ class TripOrchestrator:
             await self.executor.resolve_approval(trip_id, approval_id, resolved)
         except GraphError as exc:
             raise self._graph_error(exc)
+        # On booking success, promote itinerary flight to confirmed booking
+        fb = trip.context.get("flight_book") or {}
+        if fb.get("booking") and trip.context.get("itinerary"):
+            trip.context["itinerary"] = ItinerarySkill.reconcile_flight(
+                trip.context["itinerary"], booking=fb["booking"])
         res = self.resume_result(trip_id)
         if ledger_key and payload_hash:
             self._idempotency_ledger[ledger_key] = (payload_hash, res)
@@ -1465,6 +1482,11 @@ class TripOrchestrator:
         rights = ctx.get("rights")
         if rights:
             outputs["rights"] = rights
+        for domain in ("hotel", "activities", "local_transport"):
+            domain_key = f"{domain}_research"
+            domain_res = ctx.get(domain_key)
+            if domain_res:
+                outputs[domain_key] = domain_res
         # Task #13: safety assessment + change events surface in trip state
         outputs["safety_enabled"] = self.safety is not None
         safety = ctx.get("safety")

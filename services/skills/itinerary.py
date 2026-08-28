@@ -58,30 +58,150 @@ class ItinerarySkill(SkillBase):
         self._providers = [("organizer", organizer), ("amadeus", amadeus),
                            ("osm", osm)]
 
-    # -- flight item (always atlas_real) -----------------------------------------
+    # -- flight items (atlas_real when booked, atlas_sandbox when planned) -------
 
     @staticmethod
     def _flight_item(booking: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         option = booking.get("option") or {}
         if not option:
             return None
-        dep = option.get("dep") or {}
-        arr = option.get("arr") or {}
+        dep = option.get("dep") if isinstance(option.get("dep"), dict) else {}
+        arr = option.get("arr") if isinstance(option.get("arr"), dict) else {}
+        carrier = option.get("carrier") or option.get("airline_code") or option.get("airline") or ""
+        flight_no = option.get("flight_no") or option.get("flight_number") or "x"
+        dep_airport = dep.get("airport") or option.get("origin") or "?"
+        arr_airport = arr.get("airport") or option.get("destination") or "?"
+        dep_time = dep.get("time") or option.get("departure_time")
+        arr_time = arr.get("time") or option.get("arrival_time")
+        pnr = booking.get("pnr")
         return {
-            "item_id": f"itin-flt-{(option.get('flight_no') or 'x')[:8]}",
-            "name": f"{option.get('carrier', '')} {option.get('flight_no', '')} "
-                    f"{dep.get('airport', '?')}→{arr.get('airport', '?')}".strip(),
+            "item_id": f"itin-flt-{(flight_no or 'x')[:8]}",
+            "name": f"{carrier} {flight_no} {dep_airport}→{arr_airport}".strip(),
             "kind": "flight",
-            "source": "atlas_real",
-            "honesty_label": "booked flight (Atlas sandbox record)",
+            "source": "atlas_real" if pnr else "atlas_sandbox",
+            "honesty_label": "booked flight (Atlas sandbox record)" if pnr else "planned flight — not booked",
             "price_range_sgd": None,
-            "details": {"pnr": booking.get("pnr"),
-                        "dep_time": dep.get("time"), "arr_time": arr.get("time"),
-                        "status": booking.get("status")},
-            "provenance": {"source_url": None, "retrieved_date": None,
-                           "researched_as_of": None, "degraded": False},
-            "booked": True,
+            "details": {
+                "pnr": pnr,
+                "dep_time": dep_time,
+                "arr_time": arr_time,
+                "carrier": carrier,
+                "flight_no": flight_no,
+                "status": booking.get("status") or ("CONFIRMED" if pnr else "PLANNED"),
+            },
+            "provenance": {
+                "source_url": None,
+                "retrieved_date": date.today().isoformat() if pnr else None,
+                "researched_as_of": None,
+                "degraded": False,
+            },
+            "booked": bool(pnr),
         }
+
+    @staticmethod
+    def _planned_flight_item(option: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not option or not isinstance(option, dict):
+            return None
+        dep = option.get("dep") if isinstance(option.get("dep"), dict) else {}
+        arr = option.get("arr") if isinstance(option.get("arr"), dict) else {}
+        carrier = option.get("carrier") or option.get("airline_code") or option.get("airline") or ""
+        flight_no = option.get("flight_no") or option.get("flight_number") or "x"
+        dep_airport = dep.get("airport") or option.get("origin") or "?"
+        arr_airport = arr.get("airport") or option.get("destination") or "?"
+        dep_time = dep.get("time") or option.get("departure_time")
+        arr_time = arr.get("time") or option.get("arrival_time")
+
+        price_range_sgd = None
+        price_obj = option.get("price")
+        if isinstance(price_obj, dict) and price_obj.get("amount") is not None:
+            try:
+                amt = float(price_obj["amount"])
+                price_range_sgd = [amt, amt]
+            except (ValueError, TypeError):
+                pass
+        elif option.get("price_usd") is not None:
+            try:
+                amt = float(option["price_usd"])
+                price_range_sgd = [amt, amt]
+            except (ValueError, TypeError):
+                pass
+
+        return {
+            "item_id": f"itin-flt-{(flight_no or 'x')[:8]}",
+            "name": f"{carrier} {flight_no} {dep_airport}→{arr_airport}".strip(),
+            "kind": "flight",
+            "source": "atlas_sandbox",
+            "honesty_label": "planned flight — not booked",
+            "price_range_sgd": price_range_sgd,
+            "details": {
+                "pnr": None,
+                "option_id": option.get("id") or option.get("offer_id"),
+                "carrier": carrier,
+                "flight_no": flight_no,
+                "dep_time": dep_time,
+                "arr_time": arr_time,
+                "status": "PLANNED",
+            },
+            "provenance": {
+                "source_url": option.get("source_url") or f"atlas-sandbox://offers/{option.get('id') or option.get('offer_id') or flight_no}",
+                "retrieved_date": date.today().isoformat(),
+                "researched_as_of": None,
+                "degraded": False,
+            },
+            "booked": False,
+        }
+
+    @classmethod
+    def reconcile_flight(cls, itinerary: Dict[str, Any],
+                         option: Optional[Dict[str, Any]] = None,
+                         booking: Optional[Dict[str, Any]] = None,
+                         timezone_name: Optional[str] = None) -> Dict[str, Any]:
+        """Reconciles the flight entry in an existing itinerary dict.
+
+        If a confirmed booking is provided, promotes the flight item to booked=True with PNR.
+        If an option is provided without confirmed booking, sets the flight item as planned (booked=False).
+        Preserves all leisure items (hotels, activities, transport, replacements).
+        """
+        if not isinstance(itinerary, dict):
+            itinerary = {"items": []}
+        items = list(itinerary.get("items") or [])
+
+        new_flight = None
+        if booking and (booking.get("pnr") or booking.get("option")):
+            new_flight = cls._flight_item(booking)
+        elif option:
+            new_flight = cls._planned_flight_item(option)
+
+        if new_flight is None:
+            return itinerary
+
+        flight_idx = None
+        for idx, it in enumerate(items):
+            if it.get("kind") == "flight":
+                flight_idx = idx
+                break
+
+        if flight_idx is not None:
+            new_flight["item_id"] = items[flight_idx].get("item_id") or new_flight["item_id"]
+            items[flight_idx] = new_flight
+        else:
+            items.insert(0, new_flight)
+
+        tz = timezone_name or itinerary.get("timezone")
+        if not tz:
+            if booking:
+                tz = cls._timezone_for_booking(booking)
+            elif option:
+                arr = (option.get("arr") or {}).get("airport") or option.get("destination") or ""
+                tz = _AIRPORT_TIMEZONES.get(str(arr).upper(), "Asia/Singapore")
+            else:
+                tz = "Asia/Singapore"
+
+        summary = cls.summarize(items, tz)
+        result = dict(itinerary)
+        result["items"] = items
+        result.update(summary)
+        return result
 
     # -- researched-mock file (tolerant) -------------------------------------------
 
@@ -140,7 +260,7 @@ class ItinerarySkill(SkillBase):
                     "source": name, "honesty_label": "live data",
                     "price_range_sgd": e.get("price_range_sgd"),
                     "details": {k: v for k, v in e.items()
-                                if k not in ("name", "type")},
+                                 if k not in ("name", "type")},
                     "provenance": {"source_url": e.get("source_url"),
                                    "retrieved_date": date.today().isoformat(),
                                    "researched_as_of": None, "degraded": False},
@@ -153,14 +273,30 @@ class ItinerarySkill(SkillBase):
 
     async def run(self, payload: Dict[str, Any],
                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        booking = payload.get("booking") or {}
+        booking = payload.get("booking")
+        if booking is None and context:
+            booking = (context.get("flight_book") or {}).get("booking")
         if hasattr(booking, "model_dump"):  # BookingRecord accepted too
             booking = booking.model_dump(mode="json")
 
         items: List[Dict[str, Any]] = []
-        flight = self._flight_item(booking)
-        if flight:
-            items.append(flight)
+        option = None
+        if booking and (booking.get("option") or booking.get("pnr")):
+            flight = self._flight_item(booking)
+            if flight:
+                items.append(flight)
+        else:
+            option = payload.get("option")
+            if not option:
+                options = payload.get("options")
+                if not options and context:
+                    options = (context.get("flight_search") or {}).get("options")
+                if options and isinstance(options, list) and len(options) > 0:
+                    option = options[0]
+            if option:
+                flight = self._planned_flight_item(option)
+                if flight:
+                    items.append(flight)
 
         providers_tried: List[str] = []
         items.extend(await self._enrich(providers_tried))
@@ -170,7 +306,14 @@ class ItinerarySkill(SkillBase):
             if "item_id" not in item:
                 item["item_id"] = f"itin-{i:03d}-{item.get('kind', 'item')[:4]}"
 
-        timezone_name = self._timezone_for_booking(booking)
+        if booking:
+            timezone_name = self._timezone_for_booking(booking)
+        elif option:
+            arr_apt = str(((option.get("arr") or {}).get("airport")) or option.get("destination") or "").upper()
+            timezone_name = _AIRPORT_TIMEZONES.get(arr_apt, "Asia/Singapore")
+        else:
+            timezone_name = "Asia/Singapore"
+
         return {
             "items": items,
             "providers_tried": providers_tried,
@@ -180,8 +323,9 @@ class ItinerarySkill(SkillBase):
     @staticmethod
     def _timezone_for_booking(booking: Dict[str, Any]) -> str:
         option = booking.get("option") or {}
-        airport = str(((option.get("arr") or {}).get("airport")) or "").upper()
-        return _AIRPORT_TIMEZONES.get(airport, "UTC")
+        airport = str(((option.get("arr") or {}).get("airport")) or option.get("destination") or "").upper()
+        return _AIRPORT_TIMEZONES.get(airport, "Asia/Singapore")
+
 
     @staticmethod
     def _parse_time(value: Any, timezone_name: str) -> Optional[datetime]:

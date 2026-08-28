@@ -584,9 +584,28 @@ def plan_trip(intent: TripIntent) -> Plan:
                                   NodeEdge(when=lambda out, ctx: bool(
                                       (out or {}).get("visa_blocked")),
                                       to="flight_search"),
-                                  NodeEdge(when=lambda out, ctx: True,
-                                           to="approve_booking"),
                               ]))
+
+    for domain in ("hotel", "activities", "local_transport"):
+        if getattr(rs, domain) == "requested":
+            nodes.append(NodeSpec(name=f"{domain}_research",
+                                  skill_ref=f"{domain}_research",
+                                  input_map={
+                                      "domain": lambda ctx, d=domain: d,
+                                      "destination": "goal_intake.goal.dest_city",
+                                      "date_window": "goal_intake.goal.date_window",
+                                  }))
+
+    # itinerary only when leisure research exists: a flight-only booking
+    # already owns its flight record; mounting an unrequested assembler
+    # would violate intent-first routing (owner correction B)
+    if any(getattr(rs, d) == "requested" for d in
+           ("hotel", "activities", "local_transport")):
+        nodes.append(NodeSpec(name="itinerary", skill_ref="itinerary",
+                              input_map={
+                                  "booking": lambda ctx: (ctx.get("flight_book") or {}).get("booking"),
+                                  "options": "flight_search.options",
+                              }))
 
     nodes.append(NodeSpec(
         name="approve_booking", skill_ref="approval_gate", gate=True,
@@ -611,33 +630,23 @@ def plan_trip(intent: TripIntent) -> Plan:
                                   ((ctx.get("flight_book") or {}).get("booking") or {})
                                   .get("option", {}).get("flight_no")]
                           }))
-    for domain in ("hotel", "activities", "local_transport"):
-        if getattr(rs, domain) == "requested":
-            nodes.append(NodeSpec(name=f"{domain}_research",
-                                  skill_ref=f"{domain}_research",
-                                  input_map={
-                                      "domain": lambda ctx, d=domain: d,
-                                      "destination": "goal_intake.goal.dest_city",
-                                      "date_window": "goal_intake.goal.date_window",
-                                  }))
-    # itinerary only when leisure research exists: a flight-only booking
-    # already owns its flight record; mounting an unrequested assembler
-    # would violate intent-first routing (owner correction B)
-    if any(getattr(rs, d) == "requested" for d in
-           ("hotel", "activities", "local_transport")):
-        nodes.append(NodeSpec(name="itinerary", skill_ref="itinerary",
-                              input_map={"booking": "flight_book.booking"}))
     return Plan(nodes=_with_linear_continuation(nodes))
 
 
 def _with_linear_continuation(nodes: List[NodeSpec]) -> List[NodeSpec]:
     """Give edge-less interior nodes an always-true edge to their successor.
 
-    Nodes that already carry conditional edges (e.g. the approval gate) keep
-    theirs — a rejected branch falls off the edge list and terminates.
+    Nodes that already carry conditional edges without an unconditional fallback
+    (such as visa_check with a replan edge) receive a fallback edge to their
+    successor. Gate nodes (e.g. approve_booking) only branch on approval.
     """
     for i, node in enumerate(nodes[:-1]):
         if not node.edges:
             node.edges = [NodeEdge(when=lambda out, ctx: True,
                                    to=nodes[i + 1].name)]
+        elif node.name == "visa_check":
+            if not any(e.when({}, {}) is True for e in node.edges if e.to == nodes[i + 1].name):
+                node.edges.append(NodeEdge(when=lambda out, ctx: True,
+                                           to=nodes[i + 1].name))
     return nodes
+
