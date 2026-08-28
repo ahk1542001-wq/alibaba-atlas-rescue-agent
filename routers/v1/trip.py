@@ -1405,8 +1405,13 @@ class TripOrchestrator:
             failed = next((n for n in reversed(trip.trace)
                            if n.status == "FAILED"), None)
             code = (failed.details or {}).get("error_code") if failed else None
-            route_complete = goal.get("origin_city") and goal.get("dest_city")
-            if code in _RESUMABLE_ROUTE_ERRORS and route_complete:
+            required_trip_facts_complete = (
+                goal.get("origin_city")
+                and goal.get("dest_city")
+                and goal.get("date_window")
+            )
+            if code in _RESUMABLE_ROUTE_ERRORS \
+                    and required_trip_facts_complete:
                 rs = RequestedServices(**seed["requested_services"])
                 async with trip.lock:
                     rest = self._build_plan_rest(seed, rs)

@@ -413,6 +413,47 @@ def test_b1_goal_chat_clarify_chips_confirm(tracked_page, install_orch):
     page.screenshot(path=str(SHOTS / "g4_b1_clarify_chips.png"))
 
 
+def test_failed_trip_state_renders_without_calling_missing_trip_method(tracked_page):
+    """A recoverable failed snapshot must render instead of crashing the UI.
+
+    The real clarification flow produces failed snapshots while route/date
+    facts are still being collected, so this is a normal runtime state rather
+    than an exceptional test-only shape.
+    """
+    page = tracked_page
+    goto_trip(page)
+
+    error = page.evaluate("""() => {
+        try {
+            window.__tripRender({
+                status: 'failed',
+                current_state: 'flight_search',
+                nodes: [{
+                    node_id: 'node_failed_search',
+                    name: 'flight_search',
+                    status: 'FAILED',
+                    latency_ms: 1,
+                    details: {
+                        message: 'flight search requires origin and destination',
+                        recoverable: true
+                    }
+                }],
+                outputs: {},
+                approvals: [],
+                confirmation_chips: [],
+                missing_fields: ['origin_city']
+            });
+            return null;
+        } catch (err) {
+            return String(err && err.message ? err.message : err);
+        }
+    }""")
+
+    assert error is None, error
+    expect(page.locator('[data-testid="aj-state-provider"]')) \
+        .to_contain_text("flight search requires origin and destination")
+
+
 # --- B2 + B3: sandbox option cards → approval modal → PNR screen ------------------
 
 

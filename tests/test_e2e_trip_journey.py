@@ -1012,6 +1012,50 @@ def test_clarify_answer_feeds_trip_goal_and_resumes(harness):
     _run(flow())
 
 
+def test_clarify_waits_for_route_and_dates_before_resuming_search(harness):
+    """The beginner quick-start collects route and dates one at a time.
+
+    Confirming the destination must not launch Atlas while the date window is
+    still missing; the final date confirmation resumes exactly one search.
+    """
+    atlas = FakeAtlas()
+    harness(atlas=atlas)
+
+    async def flow():
+        async with _client() as client:
+            trip_id = await _start(
+                client,
+                "Plan my complete trip — flights, hotel and activities.",
+                "sequential_clarify_user",
+            )
+            assert not [call for call in atlas.calls if call[0] == "search"]
+
+            origin = await client.post(
+                f"/api/trip/{trip_id}/clarify-answers",
+                json={"field": "origin_city", "value": "Bangkok"},
+            )
+            assert origin.status_code == 200, origin.text
+            assert not [call for call in atlas.calls if call[0] == "search"]
+
+            destination = await client.post(
+                f"/api/trip/{trip_id}/clarify-answers",
+                json={"field": "dest_city", "value": "Singapore"},
+            )
+            assert destination.status_code == 200, destination.text
+            assert not [call for call in atlas.calls if call[0] == "search"]
+
+            dates = await client.post(
+                f"/api/trip/{trip_id}/clarify-answers",
+                json={"field": "date_window", "value": "Sep 29-30"},
+            )
+            assert dates.status_code == 200, dates.text
+            search = [call for call in atlas.calls if call[0] == "search"]
+            assert len(search) == 1
+            assert search[0][1:] == ("BKK", "SIN", "2026-09-29")
+
+    _run(flow())
+
+
 def test_clarify_answer_date_window_parses_and_rejects_garbage(harness):
     """G4-DA-fix F4: date_window answers parse into a real window; hostile
     or unknown payloads get the §6 envelope, never a silent 200."""

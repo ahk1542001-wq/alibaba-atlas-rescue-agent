@@ -611,7 +611,7 @@
                 showStateBox('provider',
                     (d.message || 'We hit a snag while planning.') +
                     (d.hint ? ' ' + d.hint : '') +
-                    (Trip.deferredSkipIsEmpty(s) ? ''
+                    (deferredSkipIsEmpty(s) ? ''
                         : ' Answering the open questions below can fix this.'),
                     'Try again', function () {
                         Trip.terminal = false;
