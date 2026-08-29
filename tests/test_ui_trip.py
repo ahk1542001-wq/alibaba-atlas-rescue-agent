@@ -56,7 +56,7 @@ XSS_GOAL = ('I need to get to <script>window.__xss=1</script>Singapore from '
 INVALID_DATE_GOAL = "Fly on February 30 2026"   # deterministic 422 trigger
 
 # G4.5 / R2 sanitized static/app.js pin: zero injection sinks.
-APP_JS_SHA256 = "c1473b8c27749983ce9ceee21293598f2ad125c98f5b47e487c498618d32c080"
+APP_JS_SHA256 = "512cac443c07a9995d71b3d447fcceecc32058383b9eb4bf54181be7c26765ea"
 
 
 # --- G3-pattern fakes ---------------------------------------------------------
@@ -753,6 +753,7 @@ def test_hostile_provider_and_api_payloads_render_inert(tracked_page, install_or
     assert page.locator("#search-results script").count() == 0
     assert page.locator("#search-results img").count() == 0
 
+
     # 2. Test radar flights & alerts rendering hostile HTML
     page.evaluate("""() => {
         renderRadar({
@@ -802,6 +803,32 @@ def test_hostile_provider_and_api_payloads_render_inert(tracked_page, install_or
     assert page.evaluate("window.__xss_pkg2 === undefined")
     assert page.locator("#rescue-packages script").count() == 0
     assert page.locator("#rescue-packages img").count() == 0
+
+
+def test_legacy_search_provider_failure_is_not_rendered_as_no_flights(
+        app_server, ui_browser):
+    """A provider outage is an error state, not a successful empty search."""
+    context = ui_browser.new_context()
+    page = context.new_page()
+    page.route(
+        "**/api/flights/search",
+        lambda route: route.fulfill(
+            status=503,
+            content_type="application/json",
+            body='{"detail":"Atlas Sandbox unavailable"}',
+        ),
+    )
+    page.goto(BASE)
+    page.click('[data-testid="nav-search"]')
+    page.fill("#search-origin", "BKK")
+    page.fill("#search-destination", "SIN")
+    page.click('[data-testid="btn-search"]')
+
+    expect(page.locator("#search-results .search-error")).to_contain_text(
+        "Search failed", timeout=15000)
+    expect(page.locator("#search-results")).not_to_contain_text(
+        "No flights found")
+    context.close()
 
 
 # --- narrow viewports: no horizontal overflow at 375 AND 360 --------------------------
@@ -2377,7 +2404,7 @@ def test_ui_conversation_card_rendered_and_interactive(tracked_page, install_orc
 
     # Click actionable conversation controller button
     action_btn = page.locator('[data-testid="aj-conv-action-approve"]')
-    if action_btn.is_visible():
-        action_btn.click()
-        # Verify approval modal opens
-        expect(page.locator('[data-testid="trip-approval-overlay"]')).to_be_visible()
+    expect(action_btn).to_be_visible(timeout=15000)
+    action_btn.click()
+    # Verify approval modal opens
+    expect(page.locator('[data-testid="trip-approval-overlay"]')).to_be_visible()

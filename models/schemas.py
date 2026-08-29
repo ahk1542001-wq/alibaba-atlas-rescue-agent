@@ -31,7 +31,8 @@ class FlightSearchRequest(BaseModel):
     date: Optional[str] = Field(None, description="Departure date YYYY-MM-DD (defaults to next search day)")
     passengers: Optional[int] = Field(1, ge=1, le=9)
     cabin_class: Optional[str] = Field("ECONOMY")
-    currency: Optional[str] = Field("USD")
+    currency: Optional[Literal["USD", "THB", "SGD", "MMK", "EUR"]] = \
+        Field("USD")
 
 class PredictiveDisruptionRadar(BaseModel):
     flight_number: str
@@ -218,12 +219,19 @@ class Money(BaseModel):
 
 class FlightOption(BaseModel):
     id: str
+    search_id: Optional[str] = None
     carrier: str
     flight_no: str
     dep: FlightEndpoint
     arr: FlightEndpoint
     duration_min: int
+    # `price` is always the complete total for every requested passenger.
+    # The per-passenger amount remains explicit so the UI never has to infer
+    # whether a provider amount was already multiplied.
     price: Money
+    price_per_passenger: Optional[Money] = None
+    passenger_count: int = Field(1, ge=1)
+    price_status: str = "unknown"
     sandbox_provenance: Literal[True] = True
 
 

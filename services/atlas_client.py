@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json as _json
 import logging
+import math
 import shutil
 from typing import Dict, Any, List, Optional
 
@@ -60,14 +61,14 @@ class AtlasClient:
             raise ValueError(f"AtlasClient only supports 'sandbox' environment (attempted: {environment!r})")
         self.environment = "sandbox"
         self.last_cli_envelope: Optional[Dict[str, Any]] = None
+        self._capability_status: Optional[Dict[str, Any]] = None
 
     def get_capability_boundary(self) -> Dict[str, Any]:
         """Return the 8-field provider capability boundary.
         Defaults are conservative: activation_url=None, order/payment/ticketing unavailable
         unless returned by normalized atlas-flight auth status envelope.
         """
-        env = self.last_cli_envelope or {}
-        auth_data = env.get("auth") or env.get("capabilities") or {}
+        auth_data = self._capability_status or {}
         return {
             "search_available": bool(auth_data.get("search_available", False)),
             "verification_available": bool(auth_data.get("verification_available", False)),
@@ -114,7 +115,42 @@ class AtlasClient:
                 "code": envelope.get("code"),
             }
             data = envelope.get("data")
+            if args == ["auth", "status"]:
+                provider = data if isinstance(data, dict) else {}
+                details = envelope.get("details")
+                details = details if isinstance(details, dict) else {}
+                # Cache only the allowlisted capability surface. Provider
+                # auth payloads may contain account metadata that must never
+                # enter public state or logs.
+                self._capability_status = {
+                    "search_available": bool(
+                        provider.get("search_available", False)),
+                    "verification_available": bool(
+                        provider.get("verification_available", False)),
+                    "order_creation_available": bool(
+                        provider.get("order_creation_available", False)),
+                    "payment_available": bool(
+                        provider.get("payment_available", False)),
+                    "ticketing_available": bool(
+                        provider.get("ticketing_available", False)),
+                    "blocker_code": (
+                        provider.get("blocker_code")
+                        or provider.get("ticketing_blocker")
+                        or details.get("ticketing_blocker")
+                        or (envelope.get("code")
+                            if envelope.get("status") != "success" else None)
+                    ),
+                    "activation_url": (
+                        provider.get("ticketing_activation_url")
+                        or provider.get("activation_url")
+                        or details.get("ticketing_activation_url")
+                        or details.get("activation_url")
+                    ),
+                }
             if envelope.get("status") == "action_required":
+                if (envelope.get("code") == "PRICE_CONFIRMATION_REQUIRED"
+                        and isinstance(data, dict)):
+                    return data
                 details = envelope.get("details") or {}
                 blocker = str(details.get("ticketing_blocker") or "").strip()
                 if blocker or envelope.get("code") == "SUBSCRIPTION_REQUIRED":
@@ -187,7 +223,14 @@ class AtlasClient:
                 "ATLAS_OFFERS_MISSING",
                 "Atlas Sandbox response did not contain an offer list.",
             )
-        return offers
+        search_id = data.get("search_id") if isinstance(data, dict) else None
+        if search_id is None:
+            return offers
+        return [
+            {"search_id": search_id, **offer}
+            if isinstance(offer, dict) else offer
+            for offer in offers
+        ]
 
     async def get_flight_status(self, flight_number: str, date: str) -> Dict[str, Any]:
         """Report the honest boundary: the Atlas CLI has no status command."""
@@ -327,7 +370,10 @@ class AtlasClient:
             return f"{s[0:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
         return s
 
-    def _normalize_cli_offer(self, o: Dict[str, Any], rate: float, symbol: str, display_currency: str = "USD") -> Dict[str, Any]:
+    def _normalize_cli_offer(
+        self, o: Dict[str, Any], rate: float, symbol: str,
+        display_currency: str = "USD", passengers: int = 1,
+    ) -> Dict[str, Any]:
         """Map a live atlas-flight CLI offer onto the app's FlightOffer shape."""
         offer_id = str(o.get("offer_id") or "").strip()
         if not offer_id:
@@ -347,6 +393,7 @@ class AtlasClient:
         duration = sum(int(s.get("duration_minutes") or 0) for s in segments) or None
         return {
             "offer_id": offer_id,
+            "search_id": o.get("search_id"),
             "airline": self.CARRIER_NAMES.get(carrier, carrier or "Unknown Carrier"),
             "airline_code": carrier,
             "flight_number": first.get("flight_number") or "",
@@ -357,6 +404,7 @@ class AtlasClient:
             "duration_minutes": duration,
             "price_usd": float(total) if isinstance(total, (int, float)) else 0.0,
             "price_converted": round(float(total) * rate, 2) if isinstance(total, (int, float)) else 0.0,
+            "price_amount": round(float(total) * rate, 2) if isinstance(total, (int, float)) else 0.0,
             "currency": display_currency,
             "currency_symbol": symbol,
             "cabin_class": cabin_name,
@@ -366,6 +414,10 @@ class AtlasClient:
             "via": [s.get("departure_airport") for s in segments[1:] if s.get("departure_airport")],
             "bookable": bool(o.get("bookable")),
             "price_status": o.get("price_status", ""),
+            # Atlas CLI `total_price` is already the total for every traveler
+            # in the search. Downstream normalization must not multiply it.
+            "price_scope": "trip_total",
+            "passenger_count": passengers,
         }
 
     async def search_flights(
@@ -381,6 +433,12 @@ class AtlasClient:
             pass
         origin = origin.upper().strip()
         destination = destination.upper().strip()
+        upper = currency.upper().strip()
+        if upper not in self.RATES:
+            raise ValueError(
+                f"Unsupported display currency: {upper}. Supported values: "
+                f"{', '.join(sorted(self.RATES))}"
+            )
         # Atlas Sandbox only (official atlas-flight CLI). No runtime mock
         # fallback exists.
         # Always query the CLI in USD: Atlas returns total_price in the requested
@@ -394,11 +452,13 @@ class AtlasClient:
                 "ATLAS_NO_OFFERS",
                 "Atlas Sandbox returned no flight offers for this route.",
             )
-        upper = currency.upper()
-        rate = self.RATES.get(upper, 1.0)
-        symbol = self.SYMBOLS.get(upper, "$")
+        rate = self.RATES[upper]
+        symbol = self.SYMBOLS[upper]
         normalized = [
-            self._normalize_cli_offer(o, rate, symbol, display_currency=upper)
+            self._normalize_cli_offer(
+                o, rate, symbol, display_currency=upper,
+                passengers=passengers,
+            )
             for o in cli_offers
         ]
         exact = [
@@ -594,6 +654,46 @@ class AtlasClient:
             "currency": data.get("currency"),
             "price_change": price_change,
             "price_confirmation_required": price_change == "increased",
+            "requirements": data.get("requirements") or {},
+            "travelers": data.get("travelers") or [],
+            "segments": data.get("segments") or [],
+            "baggage_supported": bool(data.get("baggage_supported")),
+            "seat_supported": bool(data.get("seat_supported")),
+            "verified_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+
+    async def confirm_price(self, booking_id: str) -> Dict[str, Any]:
+        """Confirm a previously verified increased fare by opaque booking ID."""
+        data = await self._run_cli(
+            ["booking", "confirm-price", "--booking-id", booking_id]
+        )
+        returned_id = str(data.get("booking_id") or "").strip()
+        if not returned_id or returned_id != booking_id:
+            raise AtlasMalformedResponseError(
+                "ATLAS_BOOKING_ID_MISMATCH",
+                "Atlas Sandbox price confirmation returned an invalid booking context.",
+            )
+        current_price = data.get("current_price")
+        currency = str(data.get("currency") or "").upper().strip()
+        if (not isinstance(current_price, (int, float))
+                or isinstance(current_price, bool)
+                or not math.isfinite(float(current_price))
+                or currency not in self.RATES):
+            raise AtlasMalformedResponseError(
+                "ATLAS_CONFIRMED_PRICE_INVALID",
+                "Atlas Sandbox price confirmation returned no valid explicit "
+                "amount and currency.",
+            )
+        return {
+            "verified": True,
+            "offer_id": data.get("offer_id"),
+            "booking_id": returned_id,
+            "previous_price": data.get("previous_price"),
+            "current_price": float(current_price),
+            "currency": currency,
+            "price_change": str(data.get("price_change") or "increased"),
+            "price_confirmation_required": False,
+            "price_confirmed": True,
             "requirements": data.get("requirements") or {},
             "travelers": data.get("travelers") or [],
             "segments": data.get("segments") or [],

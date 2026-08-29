@@ -7,9 +7,9 @@ allowed-tools: atlas_call, approval_required
 # Procedure
 
 1. Confirm the ApprovalGate decision is approve for the chosen option_id.
-2. Verify fare immediately before order creation; if price increased, pause and request price reapproval.
+2. Verify fare immediately before order creation; if price increased, pause and request price reapproval. After approval, call the official `booking confirm-price` operation with the server-bound opaque booking_id before creating the order; do not re-verify the original offer. Require the returned booking_id, amount, and currency to match the immutable approved snapshot exactly; otherwise create a fresh approval and zero orders.
 3. Preserve opaque identifiers (offer_id, order_id, booking_id) without normalization or alteration.
-4. Call atlas_client create_booking_order with passenger refs; branch on normalized provider status/code.
+4. Call atlas_client create_booking_order with passenger refs and the confirmed snapshot price; build the BookingRecord from that same snapshot, then branch on normalized provider status/code.
 5. If ticketing is unavailable (e.g. TICKETING_ACTIVATION_REQUIRED), preserve the trip plan without fabricating a PNR or ticket.
 6. If ticketing succeeds, persist the BookingRecord (pnr, booked_at, monitor_armed=true).
 7. Never automatically retry order creation, payment, or side-effect operations.

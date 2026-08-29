@@ -149,8 +149,17 @@ with sync_playwright() as p:
         page.fill("#search-origin", "BKK")
         page.fill("#search-destination", "SIN")
         page.click(".btn-search")
-        expect(page.locator("#search-results > *").first).to_be_visible(timeout=25000)
-    check("flight search returns offers", search)
+        outcome = page.locator(
+            "#search-results .search-result-card, "
+            "#search-results .search-error")
+        expect(outcome.first).to_be_visible(timeout=25000)
+        if page.locator("#search-results .search-error").count():
+            expect(page.locator("#search-results .search-error")) \
+                .to_contain_text("Search failed")
+        else:
+            expect(page.locator("#search-results .search-result-card").first) \
+                .to_contain_text("BKK")
+    check("flight search renders Atlas offers or an honest unavailable state", search)
 
     # ---------- 8. mobile ----------
     def mobile():

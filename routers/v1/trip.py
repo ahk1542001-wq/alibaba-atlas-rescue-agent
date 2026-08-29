@@ -1066,6 +1066,32 @@ class TripOrchestrator:
             # (do_not_travel blocks outright; reconsider_travel needs the
             # separate risk acknowledgement; unable_to_verify retries once).
             await self._booking_safety_precheck(trip)
+            trip.context.pop("_confirmed_price_snapshot", None)
+            if approval.purpose == "price_reapproval":
+                binding = (trip.context.get("_price_reapproval_bindings")
+                           or {}).get(approval_id)
+                if (not isinstance(binding, dict)
+                        or binding.get("offer_id") != resolved["option_id"]
+                        or not binding.get("booking_id")):
+                    raise TripApiError(
+                        409, "price_reapproval_context_missing",
+                        "The verified fare context is no longer available.",
+                        recoverable=True,
+                        hint="verify the fare again and request a fresh approval")
+                bound_price = binding.get("price") or {}
+                if (bound_price.get("amount") is None
+                        or not bound_price.get("currency")):
+                    raise TripApiError(
+                        409, "price_reapproval_context_missing",
+                        "The approved fare snapshot is no longer available.",
+                        recoverable=True,
+                        hint="verify the fare again and request a fresh approval")
+                trip.context["_confirmed_price_snapshot"] = {
+                    "booking_id": binding["booking_id"],
+                    "offer_id": binding["offer_id"],
+                    "amount": bound_price["amount"],
+                    "currency": bound_price["currency"],
+                }
         try:
             await self.executor.resolve_approval(trip_id, approval_id, resolved)
         except GraphError as exc:
@@ -1079,6 +1105,7 @@ class TripOrchestrator:
             new_price = details.get("current_price")
             curr = details.get("currency", "USD")
             oid = details.get("offer_id") or resolved.get("option_id")
+            booking_id = details.get("booking_id")
             verified_at = details.get("verified_at") or _now_iso()
 
             selected_opt = deepcopy(approval.immutable_option or {})
@@ -1109,6 +1136,14 @@ class TripOrchestrator:
                 expires_at=(datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
             )
             async with trip.lock:
+                bindings = trip.context.setdefault(
+                    "_price_reapproval_bindings", {})
+                bindings[new_app_id] = {
+                    "booking_id": booking_id,
+                    "offer_id": oid,
+                    "verified_at": verified_at,
+                    "price": {"amount": new_price, "currency": curr},
+                }
                 trip.pending_approvals.append(new_approval)
                 trip.status = "awaiting_approval"
                 trip.current = "approve_booking"

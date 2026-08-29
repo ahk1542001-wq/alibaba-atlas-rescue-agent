@@ -11,7 +11,9 @@ import-only). Owner correction (C) enforced here:
   verified (non-unable_to_verify) status exists — a failed verification
   retry never clears it (G4.6-DA fix F1);
 - fares are REFRESHED and REVERIFIED (verify_fare) IMMEDIATELY before the
-  booking order — never booked on stale search data;
+  booking order — never booked on stale search data; when Atlas requires
+  increased-fare confirmation, the resumed run confirms the server-bound
+  opaque booking context instead of re-verifying the original offer;
 - idempotency map (trip_id, option_id) -> PNR: the lookup runs AFTER every
   safety gate (visa freshness, passport known, no baseline block, fare
   re-verification), so a replay can never skip a gate, and the key is scoped
@@ -26,7 +28,9 @@ import-only). Owner correction (C) enforced here:
 """
 
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Optional
 
 from models.schemas import BookingRecord, FlightOption
@@ -150,8 +154,29 @@ class FlightBookSkill(SkillBase):
         async with lock:
             # Refresh and reverify inside the per-booking lock. Concurrent
             # identical calls cannot both cross the provider-create boundary.
+            confirmed_snapshot = payload.get("confirmed_price_snapshot")
+            confirmed_snapshot = (confirmed_snapshot
+                                  if isinstance(confirmed_snapshot, dict)
+                                  else None)
+            confirmed_booking_id = str(
+                (confirmed_snapshot or {}).get("booking_id") or "").strip()
+            if confirmed_snapshot:
+                if ((confirmed_snapshot.get("offer_id") or "") != option_id
+                        or confirmed_snapshot.get("amount") is None
+                        or not confirmed_snapshot.get("currency")
+                        or not confirmed_booking_id):
+                    raise SkillError(
+                        "price_reapproval_context_invalid",
+                        "The approved fare snapshot is incomplete or does not "
+                        "match the selected offer.",
+                        recoverable=True,
+                    )
             try:
-                verification = await self._atlas.verify_fare(option_id)
+                if confirmed_booking_id:
+                    verification = await self._atlas.confirm_price(
+                        confirmed_booking_id)
+                else:
+                    verification = await self._atlas.verify_fare(option_id)
             except AtlasTicketingUnavailableError as exc:
                 raise SkillError(
                     "atlas_ticketing_unavailable",
@@ -170,15 +195,55 @@ class FlightBookSkill(SkillBase):
             opt_dict = payload.get("option") or {}
             opt_price = opt_dict.get("price")
             opt_amt = opt_price.get("amount") if isinstance(opt_price, dict) else opt_dict.get("price_usd")
+            confirmed_price = verification.get("current_price")
+            confirmed_currency = verification.get("currency")
             curr = verification.get("currency") or (opt_price.get("currency") if isinstance(opt_price, dict) else "USD")
             new_price = verification.get("current_price") or verification.get("price_usd")
             prev_price = verification.get("previous_price") or opt_amt
+
+            if confirmed_snapshot:
+                expected_currency = str(
+                    confirmed_snapshot["currency"]).upper()
+                actual_currency = str(confirmed_currency or "").upper()
+                try:
+                    expected_amount = Decimal(str(
+                        confirmed_snapshot["amount"]))
+                    actual_amount = Decimal(str(confirmed_price))
+                except (InvalidOperation, TypeError, ValueError):
+                    expected_amount = actual_amount = None
+                if (expected_amount is None or actual_amount is None
+                        or not expected_amount.is_finite()
+                        or not actual_amount.is_finite()
+                        or actual_amount != expected_amount
+                        or actual_currency != expected_currency):
+                    err = SkillError(
+                        "fare_price_increased",
+                        "The confirmed Atlas fare no longer matches the "
+                        "amount and currency that were approved; a fresh "
+                        "approval is required before booking.",
+                        recoverable=True,
+                    )
+                    err.details = {
+                        "price_change": "changed_after_approval",
+                        "previous_price": confirmed_snapshot["amount"],
+                        "current_price": confirmed_price,
+                        "currency": actual_currency or expected_currency,
+                        "offer_id": option_id,
+                        "booking_id": verification.get("booking_id"),
+                        "verified_at": verification.get("verified_at")
+                        or datetime.now(timezone.utc).isoformat(),
+                    }
+                    raise err
 
             notice = None
             if price_change == "decreased" or (prev_price and new_price and float(new_price) < float(prev_price)):
                 notice = f"Fare decreased from {curr} {prev_price} to {curr} {new_price}."
 
-            if price_change == "increased" or verification.get("price_confirmation_required") or (prev_price and new_price and float(new_price) > float(prev_price)):
+            if (not verification.get("price_confirmed") and (
+                    price_change == "increased"
+                    or verification.get("price_confirmation_required")
+                    or (prev_price and new_price
+                        and float(new_price) > float(prev_price)))):
                 err = SkillError(
                     "fare_price_increased",
                     f"Fare for option '{option_id}' increased from {curr} {prev_price} to {curr} {new_price}; re-approval required before booking.",
@@ -190,6 +255,7 @@ class FlightBookSkill(SkillBase):
                     "current_price": new_price,
                     "currency": curr,
                     "offer_id": option_id,
+                    "booking_id": verification.get("booking_id"),
                     "verified_at": verification.get("verified_at") or datetime.now(timezone.utc).isoformat(),
                 }
                 raise err
@@ -212,12 +278,30 @@ class FlightBookSkill(SkillBase):
                 replay["idempotent_replay"] = True
                 return replay
 
+            option_dump = deepcopy(payload.get("option") or {})
+            if confirmed_snapshot:
+                confirmed_amount = float(Decimal(str(
+                    confirmed_snapshot["amount"])))
+                confirmed_currency = str(
+                    confirmed_snapshot["currency"]).upper()
+                option_dump["price"] = {
+                    "amount": confirmed_amount,
+                    "currency": confirmed_currency,
+                }
+                option_dump["price_usd"] = confirmed_amount
+                passenger_count = max(1, int(
+                    option_dump.get("passenger_count") or 1))
+                if option_dump.get("price_per_passenger") is not None:
+                    option_dump["price_per_passenger"] = {
+                        "amount": confirmed_amount / passenger_count,
+                        "currency": confirmed_currency,
+                    }
             passenger = payload.get("passenger") or {}
             try:
                 order = await self._atlas.create_booking_order(
                     booking_id,
                     {"name": passenger.get("name", ""),
-                     "price_usd": ((payload.get("option") or {}).get("price") or {})
+                     "price_usd": (option_dump.get("price") or {})
                                   .get("amount")},
                 )
             except AtlasTicketingUnavailableError as exc:
@@ -242,7 +326,6 @@ class FlightBookSkill(SkillBase):
                     recoverable=True,
                 ) from exc
 
-            option_dump = payload.get("option")
             option = FlightOption(**option_dump) if option_dump else None
             record = BookingRecord(
                 pnr=order["pnr"],

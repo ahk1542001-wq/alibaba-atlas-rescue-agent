@@ -2,6 +2,7 @@
 
 import pytest
 import asyncio
+import json
 from models.schemas import AtlasCapabilityBoundary
 from services.atlas_client import AtlasClient, AtlasTicketingUnavailableError
 from services.skills.flight_book import FlightBookSkill
@@ -47,6 +48,84 @@ def test_unsupported_payment_methods_fail_closed():
     client = AtlasClient()
     boundary = client.get_capability_boundary()
     assert boundary["payment_available"] is False
+
+
+def test_auth_status_updates_capability_boundary_from_provider_data(monkeypatch):
+    """A real auth-status response, not defaults, drives the public boundary."""
+    envelope = {
+        "status": "success",
+        "code": "OK",
+        "data": {
+            "authenticated": True,
+            "search_available": True,
+            "verification_available": True,
+            "order_creation_available": False,
+            "payment_available": False,
+            "ticketing_available": False,
+            "ticketing_blocker": "TICKETING_ACTIVATION_REQUIRED",
+            "ticketing_activation_url": "https://provider.example/activate",
+            "private_token": "must-not-be-cached",
+        },
+    }
+
+    class FakeProcess:
+        async def communicate(self):
+            return json.dumps(envelope).encode(), b""
+
+    async def fake_subprocess(*_args, **_kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr("services.atlas_client.shutil.which",
+                        lambda _name: "/atlas-flight")
+    monkeypatch.setattr(
+        "services.atlas_client.asyncio.create_subprocess_exec",
+        fake_subprocess,
+    )
+
+    client = AtlasClient()
+    asyncio.run(client._run_cli(["auth", "status"]))
+    boundary = client.get_capability_boundary()
+
+    assert boundary["search_available"] is True
+    assert boundary["verification_available"] is True
+    assert boundary["ticketing_available"] is False
+    assert boundary["blocker_code"] == "TICKETING_ACTIVATION_REQUIRED"
+    assert boundary["activation_url"] == "https://provider.example/activate"
+    assert "private_token" not in json.dumps(client.last_cli_envelope)
+    assert "private_token" not in json.dumps(boundary)
+
+
+def test_successful_auth_status_does_not_expose_ok_as_a_blocker(monkeypatch):
+    envelope = {
+        "status": "success",
+        "code": "OK",
+        "data": {
+            "search_available": True,
+            "verification_available": True,
+            "order_creation_available": True,
+            "payment_available": True,
+            "ticketing_available": True,
+        },
+    }
+
+    class FakeProcess:
+        async def communicate(self):
+            return json.dumps(envelope).encode(), b""
+
+    async def fake_subprocess(*_args, **_kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr("services.atlas_client.shutil.which",
+                        lambda _name: "/atlas-flight")
+    monkeypatch.setattr(
+        "services.atlas_client.asyncio.create_subprocess_exec",
+        fake_subprocess,
+    )
+
+    client = AtlasClient()
+    asyncio.run(client._run_cli(["auth", "status"]))
+
+    assert client.get_capability_boundary()["blocker_code"] is None
 
 
 def test_ticketing_activation_required_does_not_fabricate_pnr():

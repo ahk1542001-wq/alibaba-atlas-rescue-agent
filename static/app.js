@@ -983,14 +983,16 @@
                     })
                 });
                 const data = await res.json();
+                if (!res.ok) {
+                    throw new Error('Atlas Sandbox search unavailable');
+                }
                 renderSearchResults(data.offers);
             } catch (err) {
                 results.textContent = '';
                 const errDiv = document.createElement('div');
-                errDiv.className = 'loading';
+                errDiv.className = 'loading search-error';
                 errDiv.textContent = 'Search failed. Please try again.';
                 results.appendChild(errDiv);
-                console.error('Search failed:', err);
             }
         }
 

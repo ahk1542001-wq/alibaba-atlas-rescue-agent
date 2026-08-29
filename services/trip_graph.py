@@ -631,6 +631,7 @@ def plan_trip(intent: TripIntent) -> Plan:
         "passport_country": "profile.passport_country",
         "passenger": "profile",
         "option": _selected_option,
+        "confirmed_price_snapshot": "_confirmed_price_snapshot",
     }))
     nodes.append(NodeSpec(name="disruption_monitor", skill_ref="disruption_monitor",
                           input_map={
