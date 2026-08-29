@@ -476,6 +476,29 @@
       "price_notes": "public memorial park (61 m memorial, unveiled 1967), free",
       "researched": true,
       "researched_as_of": "2026-08-26"
+    },
+    {
+      "name": "Changi Airport MRT to the city",
+      "type": "local_transport",
+      "price_range_sgd": null,
+      "source_url": "https://www.changiairport.com/id/en/at-changi/transport-and-directions/leaving-the-airport.html",
+      "route_notes": "Take the train from Changi Airport MRT Station (CG2) to Tanah Merah (EW4), then transfer to the East-West Line toward the city. Check LTA journey planning for current fares and service times.",
+      "price_notes": "No fixed fare recorded; LTA calculates fares by journey and payment method, so the app does not invent a price.",
+      "researched": true,
+      "researched_as_of": "2026-08-29"
+    },
+    {
+      "name": "Metered taxi from Changi Airport to the city",
+      "type": "local_transport",
+      "price_range_sgd": [
+        25,
+        45
+      ],
+      "source_url": "https://www.changiairport.com/id/en/at-changi/transport-and-directions/leaving-the-airport.html",
+      "route_notes": "Official taxi stands are available in the arrival areas of Terminals 1, 2, 3 and 4. The airport states that a city ride takes about 30 minutes.",
+      "price_notes": "Official airport estimate before applicable airport, midnight or peak-hour surcharges; all fares are metered.",
+      "researched": true,
+      "researched_as_of": "2026-08-29"
     }
   ]
 }

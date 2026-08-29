@@ -267,26 +267,41 @@ class GoalIntakeSkill(SkillBase):
             fields = None
         if fields is None:
             fields = deterministic_extract(free_text)
-        origin = fields.get("origin_city") or None
-        destination = fields.get("dest_city") or None
-        origin_candidates, confirmed_origin = _airport_resolution(
-            free_text, origin)
-        destination_candidates, confirmed_destination = _airport_resolution(
-            free_text, destination)
-        goal = TripGoal(
-            goal_id=f"goal_{uuid.uuid4().hex[:8]}",
-            raw_text=free_text,
-            origin_city=origin,
-            origin_airport_candidates=origin_candidates,
-            confirmed_origin_airport=confirmed_origin,
-            dest_city=destination,
-            destination_airport_candidates=destination_candidates,
-            confirmed_destination_airport=confirmed_destination,
-            date_window=fields.get("date_window") or None,
-            passengers=int(fields.get("passengers") or 1),
-            budget_hint=fields.get("budget_hint") or None,
-            purpose=fields.get("purpose") or None,
-        )
+        def build_goal(extracted: Dict[str, Any]) -> TripGoal:
+            origin = extracted.get("origin_city") or None
+            destination = extracted.get("dest_city") or None
+            origin_candidates, confirmed_origin = _airport_resolution(
+                free_text, origin)
+            destination_candidates, confirmed_destination = _airport_resolution(
+                free_text, destination)
+            return TripGoal(
+                goal_id=f"goal_{uuid.uuid4().hex[:8]}",
+                raw_text=free_text,
+                origin_city=origin,
+                origin_airport_candidates=origin_candidates,
+                confirmed_origin_airport=confirmed_origin,
+                dest_city=destination,
+                destination_airport_candidates=destination_candidates,
+                confirmed_destination_airport=confirmed_destination,
+                date_window=extracted.get("date_window") or None,
+                passengers=int(extracted.get("passengers") or 1),
+                budget_hint=extracted.get("budget_hint") or None,
+                purpose=extracted.get("purpose") or None,
+            )
+
+        try:
+            goal = build_goal(fields)
+        except (TypeError, ValueError):
+            # LLM extraction is optional enrichment.  A syntactically valid
+            # JSON reply can still carry an impossible date or malformed
+            # passenger value, so validate it before trusting it and degrade
+            # to the deterministic parser instead of failing the whole intake.
+            if extraction != "llm":
+                raise
+            fields = deterministic_extract(free_text)
+            extraction = "deterministic_stub"
+            degraded = True
+            goal = build_goal(fields)
         requested = _infer_services(free_text)
         return {
             "goal": goal.model_dump(mode="json"),

@@ -21,4 +21,3 @@ allowed-tools: llm_call
 
 - §8 unit suite: every llm item carries the suggestion chip flag; researched
   mock entries carry as_of chip (F11, §15.2 labeling).
-

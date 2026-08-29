@@ -2264,7 +2264,12 @@ def test_AJ14_keyboard_navigation_views(tracked_page):
     assert page.evaluate("() => document.activeElement.getAttribute('role') === 'button'")
 
 
-def test_ui_step3_renders_full_plan_before_booking_approval(tracked_page):
+def test_ui_step3_renders_full_plan_before_booking_approval(
+        tracked_page, install_safety_orch):
+    # Install an explicit, deterministic safety state.  The UI suite exercises
+    # several shared-orchestrator safety scenarios, so evidence screenshots
+    # must never inherit the previous test's advisory.
+    install_safety_orch("Exercise normal precautions.")
     preset_passport_home()
     page = tracked_page
     goto_trip(page)
@@ -2286,8 +2291,10 @@ def test_ui_step3_renders_full_plan_before_booking_approval(tracked_page):
     expect(flight_item).to_contain_text("planned flight — not booked")
     expect(flight_item).not_to_contain_text("PNR")
 
-    # 4. Hotels exist in itinerary
+    # 4. Every requested leisure category is visible without expanding a wall
     expect(page.locator("#trip-itinerary .trip-itin-hotel").first).to_be_visible()
+    expect(page.locator("#trip-itinerary .trip-itin-activity").first).to_be_visible()
+    expect(page.locator("#trip-itinerary .trip-itin-local_transport").first).to_be_visible()
 
     # 5. Entry requirements / visa panel is rendered in Step 3
     expect(page.locator("#aj-review-entry-req #trip-visa-block")).to_be_visible()

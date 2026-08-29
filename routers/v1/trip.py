@@ -739,6 +739,7 @@ class TripOrchestrator:
             return trip_id
 
         rs = RequestedServices(**clarify_out["requested_services"])
+        trip.context["requested_services"] = rs.model_dump()
         rest = self._build_plan_rest(seed, rs)
         trip.nodes = rest
         trip.nodes_by_name = {n.name: n for n in rest}

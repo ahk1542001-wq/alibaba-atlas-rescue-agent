@@ -12,6 +12,7 @@ chain actually attempted.
 """
 
 import json
+import re
 from copy import deepcopy
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -42,11 +43,24 @@ def _valid_entry(entry: Any) -> bool:
             and isinstance(entry.get("type"), str) and entry["type"].strip())
 
 
+def _flight_label(carrier: Any, flight_no: Any) -> str:
+    carrier_text = str(carrier or "").strip()
+    number_text = str(flight_no or "").strip()
+    # Atlas may return carrier="TR" with flight_no="TR609". Preserve the
+    # provider value without displaying the duplicated "TR TR609" label.
+    if (carrier_text and len(carrier_text) <= 3 and number_text and
+            re.match(rf"^{re.escape(carrier_text)}\s*\d",
+                     number_text, re.IGNORECASE)):
+        return number_text
+    return " ".join(x for x in (carrier_text, number_text) if x)
+
+
 class ItinerarySkill(SkillBase):
     name = "itinerary"
     when_to_use = (
-        "after booking confirmation; builds itinerary items where flights stay "
-        "atlas_real and hotels/activities carry suggestion/researched-mock chips"
+        "before approval for an honest planned preview, and after booking "
+        "confirmation to promote only the provider-confirmed flight; leisure "
+        "items carry suggestion/researched-mock provenance"
     )
     capabilities = frozenset({"llm_call"})
 
@@ -76,7 +90,8 @@ class ItinerarySkill(SkillBase):
         pnr = booking.get("pnr")
         return {
             "item_id": f"itin-flt-{(flight_no or 'x')[:8]}",
-            "name": f"{carrier} {flight_no} {dep_airport}→{arr_airport}".strip(),
+            "name": (f"{_flight_label(carrier, flight_no)} "
+                     f"{dep_airport}→{arr_airport}").strip(),
             "kind": "flight",
             "source": "atlas_real" if pnr else "atlas_sandbox",
             "honesty_label": "booked flight (Atlas sandbox record)" if pnr else "planned flight — not booked",
@@ -112,23 +127,28 @@ class ItinerarySkill(SkillBase):
         arr_time = arr.get("time") or option.get("arrival_time")
 
         price_range_sgd = None
+        native_price = None
         price_obj = option.get("price")
         if isinstance(price_obj, dict) and price_obj.get("amount") is not None:
             try:
                 amt = float(price_obj["amount"])
-                price_range_sgd = [amt, amt]
+                currency = str(price_obj.get("currency") or "").upper()
+                native_price = {"amount": amt, "currency": currency}
+                if currency == "SGD":
+                    price_range_sgd = [amt, amt]
             except (ValueError, TypeError):
                 pass
         elif option.get("price_usd") is not None:
             try:
                 amt = float(option["price_usd"])
-                price_range_sgd = [amt, amt]
+                native_price = {"amount": amt, "currency": "USD"}
             except (ValueError, TypeError):
                 pass
 
         return {
             "item_id": f"itin-flt-{(flight_no or 'x')[:8]}",
-            "name": f"{carrier} {flight_no} {dep_airport}→{arr_airport}".strip(),
+            "name": (f"{_flight_label(carrier, flight_no)} "
+                     f"{dep_airport}→{arr_airport}").strip(),
             "kind": "flight",
             "source": "atlas_sandbox",
             "honesty_label": "planned flight — not booked",
@@ -141,6 +161,7 @@ class ItinerarySkill(SkillBase):
                 "dep_time": dep_time,
                 "arr_time": arr_time,
                 "status": "PLANNED",
+                "price": native_price,
             },
             "provenance": {
                 "source_url": option.get("source_url") or f"atlas-sandbox://offers/{option.get('id') or option.get('offer_id') or flight_no}",
@@ -244,7 +265,35 @@ class ItinerarySkill(SkillBase):
 
     # -- provider chain (§15.2): organizer → amadeus → osm → researched_mock -------
 
-    async def _enrich(self, providers_tried: List[str]) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _select_plan_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Choose a compact plan, not a sum of mutually exclusive alternatives."""
+        limits = {"hotel": 1, "activity": 3, "local_transport": 1}
+        counts = {kind: 0 for kind in limits}
+        selected: List[Dict[str, Any]] = []
+        for entry in entries:
+            kind = entry.get("type")
+            if kind not in limits or counts[kind] >= limits[kind]:
+                continue
+            selected.append(entry)
+            counts[kind] += 1
+        return selected
+
+    async def _enrich(self, providers_tried: List[str],
+                      requested_domains: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        allowed_kinds = None
+        if requested_domains is not None:
+            allowed_kinds = {
+                "activity" if domain == "activities" else domain
+                for domain in requested_domains
+                if domain in ("hotel", "activities", "local_transport")
+            }
+            if not allowed_kinds:
+                return []
+
+        def requested(entry: Dict[str, Any]) -> bool:
+            return allowed_kinds is None or entry.get("type") in allowed_kinds
+
         for name, provider in self._providers:
             if provider is None:
                 continue
@@ -253,7 +302,8 @@ class ItinerarySkill(SkillBase):
                 entries = await provider()
             except Exception:  # noqa: BLE001 — hostile providers degrade, chain moves on
                 continue
-            valid = [e for e in (entries or []) if _valid_entry(e)]
+            valid = self._select_plan_entries([
+                e for e in (entries or []) if _valid_entry(e) and requested(e)])
             if valid:
                 return [{
                     "name": e["name"], "kind": e.get("type", "hotel"),
@@ -269,7 +319,9 @@ class ItinerarySkill(SkillBase):
         # researched-mock fallback — always attempted when nothing live won
         providers_tried.append("researched_mock")
         mock = self._read_researched_mock()
-        return [self._mock_item(e) for e in mock["entries"]]
+        selected = self._select_plan_entries(
+            [e for e in mock["entries"] if requested(e)])
+        return [self._mock_item(e) for e in selected]
 
     async def run(self, payload: Dict[str, Any],
                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -298,8 +350,11 @@ class ItinerarySkill(SkillBase):
                 if flight:
                     items.append(flight)
 
+        requested_domains = payload.get("requested_domains")
+        if requested_domains is not None and not isinstance(requested_domains, list):
+            requested_domains = []
         providers_tried: List[str] = []
-        items.extend(await self._enrich(providers_tried))
+        items.extend(await self._enrich(providers_tried, requested_domains))
 
         # Assign stable item_ids to all items
         for i, item in enumerate(items):
@@ -491,6 +546,18 @@ class ItinerarySkill(SkillBase):
                     "recoverable": True}
 
         target_item = items[target_idx]
+
+        # Every flight change must go through option selection so the itinerary,
+        # approval snapshot, fare verification, and provider request stay aligned.
+        if target_item.get("kind") == "flight" and not target_item.get("booked"):
+            return {
+                "error": "flight_section_requires_selection",
+                "message": "planned flights must be changed through the flight "
+                           "option selector, not the leisure-section editor",
+                "recoverable": True,
+                "hint": "return to Choose your options and select another "
+                        "Atlas Sandbox offer",
+            }
 
         # Booked flights require a new explicit booking flow
         if target_item.get("booked") or (

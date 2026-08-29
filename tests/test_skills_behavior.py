@@ -198,6 +198,28 @@ def test_s1_adversarial_empty_and_garbage_never_raise():
         assert out["degraded"] is True
 
 
+def test_s1_invalid_llm_extraction_falls_back_to_deterministic_parser():
+    async def invalid_llm(_messages, **_kwargs):
+        return json.dumps({
+            "origin_city": "BKK",
+            "dest_city": "SIN",
+            "date_window": {"start": "2026-02-30", "end": "2026-03-01"},
+            "passengers": 1,
+            "budget_hint": None,
+            "purpose": "conference",
+        })
+
+    text = "Bangkok to Singapore, Sep 29-30, 2026. Plan my complete trip."
+    out = _run(GoalIntakeSkill(llm_chat=invalid_llm).run({"free_text": text}))
+
+    assert out["extraction"] == "deterministic_stub"
+    assert out["degraded"] is True
+    assert out["goal"]["origin_city"] == "BKK"
+    assert out["goal"]["dest_city"] == "SIN"
+    assert out["goal"]["date_window"] == {
+        "start": "2026-09-29", "end": "2026-09-30"}
+
+
 # --- S2/L1 clarify_loop ---------------------------------------------------------------
 
 @pytest.fixture()

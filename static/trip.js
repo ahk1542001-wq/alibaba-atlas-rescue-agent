@@ -408,7 +408,7 @@
         clear(optionsBox);
         optionsBox.appendChild(optEmpty);
         var itinEmpty = el('div', 'trip-empty',
-            'Nothing planned yet \u2014 the itinerary appears after a confirmed booking.');
+            'Nothing planned yet \u2014 complete-trip suggestions appear before booking approval.');
         tid(itinEmpty, 'trip-itinerary-empty');
         var itinBox = byId('trip-itinerary');
         clear(itinBox);
@@ -1409,9 +1409,21 @@
         return list[0] || null;
     }
 
+    function flightLabel(o) {
+        if (!o) return '';
+        var carrier = String(o.carrier || '').trim();
+        var number = String(o.flight_no || '').trim();
+        if (carrier && carrier.length <= 3 && number &&
+                number.toUpperCase().indexOf(carrier.toUpperCase()) === 0 &&
+                /^\D{1,3}\s*\d/.test(number)) {
+            return number;
+        }
+        return (carrier + ' ' + number).trim();
+    }
+
     function optionLine(o) {
         if (!o) return '';
-        return ((o.carrier || '') + ' ' + (o.flight_no || '')).trim() + ' \u00B7 ' +
+        return flightLabel(o) + ' \u00B7 ' +
             ((o.dep && o.dep.airport) || '?') + ' \u2192 ' + ((o.arr && o.arr.airport) || '?') +
             ' \u00B7 ' + hhmm(o.dep && o.dep.time) + ' \u2013 ' + hhmm(o.arr && o.arr.time);
     }
@@ -1488,7 +1500,7 @@
         paxEl.textContent = 'Travellers: 1';
         var conseq = el('div', 'aj-confirm-consequence');
         conseq.textContent = chosen
-            ? ('Approving requests an Atlas Sandbox booking for ' + (chosen.carrier || '') + ' ' + (chosen.flight_no || '') +
+            ? ('Approving requests an Atlas Sandbox booking for ' + flightLabel(chosen) +
                ', ' + ((chosen.dep && chosen.dep.airport) || '?') + ' \u2192 ' +
                ((chosen.arr && chosen.arr.airport) || '?') + '. A PNR exists only if Atlas confirms it. ' +
                'You can still change plans before you approve.')
@@ -2231,7 +2243,7 @@
         clear(container);
         if (items.length === 0) {
             var itinEmpty = el('div', 'trip-empty',
-                'Nothing planned yet \u2014 the itinerary appears after a confirmed booking.');
+                'Nothing planned yet \u2014 complete-trip suggestions appear before booking approval.');
             tid(itinEmpty, 'trip-itinerary-empty');
             container.appendChild(itinEmpty);
             return;
@@ -2266,11 +2278,14 @@
             issueCount ? 'warn' : 'good'));
         container.appendChild(summary);
 
-        // Honest grouping without fabricated dates: the booked flight is the
-        // travel day; researched items have no dates in the data, so they go
-        // under "During your stay" (never invented day numbers).
+        // Group by verified category without inventing calendar placement.
         var flightItems = items.filter(function (i) { return i.kind === 'flight'; });
-        var stayItems = items.filter(function (i) { return i.kind !== 'flight'; });
+        var hotelItems = items.filter(function (i) { return i.kind === 'hotel'; });
+        var activityItems = items.filter(function (i) { return i.kind === 'activity'; });
+        var transportItems = items.filter(function (i) { return i.kind === 'local_transport'; });
+        var otherItems = items.filter(function (i) {
+            return ['flight', 'hotel', 'activity', 'local_transport'].indexOf(i.kind) === -1;
+        });
         var shown = 0;
         var groupIdx = 0;
         function group(label, list) {
@@ -2285,7 +2300,10 @@
             }
         }
         group('Travel day', flightItems);
-        group('During your stay', stayItems);
+        group('Stay', hotelItems);
+        group('Things to do', activityItems);
+        group('Getting around', transportItems);
+        group('Other suggestions', otherItems);
         if (items.length > cap) {
             var more = el('button', 'aj-show-more',
                 'Show more (' + (items.length - cap) + ' more)');

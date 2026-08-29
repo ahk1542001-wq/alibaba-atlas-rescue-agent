@@ -20,14 +20,17 @@ Proves:
 
 import asyncio
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+import json
 import pytest
 
 from models.schemas import RequestedServices, TripGoal, TripIntent
 from routers.v1.profile import ProfileStore, set_profile_store
 from routers.v1.trip import TripOrchestrator, set_trip_orchestrator
 from services.skills.base import SkillError
+from services.skills.itinerary import ItinerarySkill
 from services.trip_graph import plan_trip
+from services.web_intel_client import WebIntelClient
 
 
 def _run(coro):
@@ -102,14 +105,16 @@ class MockAtlasClient:
         raise SkillError("provider_failure", "Unknown provider error", recoverable=True)
 
 
-class MockWebIntel:
-    async def fetch_visa_rules(self, origin, destination, passport_country):
-        return {
-            "visa_required": False,
-            "visa_blocked": False,
-            "freshness": "fresh",
-            "citations": [{"url": "https://example.org/entry-rules", "retrieved_date": "2026-08-29"}],
-        }
+def _fresh_fetcher():
+    async def fetch(_query):
+        return {"answers": [], "citations": [{
+            "url": "https://example.org/entry-rules",
+            "title": "Entry and transit requirements",
+            "retrieved_date": date.today().isoformat(),
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "snippet_max280": "current entry requirements",
+        }]}
+    return fetch
 
 
 def _setup_orch(tmp_path, atlas=None, passport_country="MM", home_city="Bangkok"):
@@ -121,6 +126,8 @@ def _setup_orch(tmp_path, atlas=None, passport_country="MM", home_city="Bangkok"
     orch = TripOrchestrator(
         profile_store=store,
         atlas=atlas_client,
+        web_intel=WebIntelClient(
+            ddg_fetcher=_fresh_fetcher(), tavily_api_key="", serper_api_key=""),
         llm_chat=lambda *args, **kwargs: None,
     )
     set_trip_orchestrator(orch)
@@ -435,9 +442,94 @@ def test_visa_blocked_route_does_not_reach_approval():
         local_transport="requested",
     )
     plan = plan_trip(TripIntent(intent_id="i_blk", raw_text="plan", goal=goal, requested_services=rs, scope_clarified=True))
-    
+
     # In plan, visa_check has an edge back to flight_search when visa_blocked is True
     vc_node = next(n for n in plan.nodes if n.name == "visa_check")
     blocked_edge = next((e for e in vc_node.edges if e.to == "flight_search"), None)
     assert blocked_edge is not None
     assert blocked_edge.when({"visa_blocked": True}, {}) is True
+
+
+def test_planned_usd_offer_is_not_counted_as_sgd_budget(tmp_path):
+    """Removing native-currency preservation must not relabel USD as SGD."""
+    skill = ItinerarySkill(hotels_path=tmp_path / "missing.json")
+    option = {
+        "id": "off-usd-1", "carrier": "SQ", "flight_no": "SQ905",
+        "dep": {"airport": "BKK", "time": "2026-09-29T09:30:00+07:00"},
+        "arr": {"airport": "SIN", "time": "2026-09-29T13:00:00+08:00"},
+        "price": {"amount": 210.0, "currency": "USD"},
+    }
+
+    result = _run(skill.run({
+        "options": [option],
+        "requested_domains": [],
+    }))
+
+    flight = next(item for item in result["items"] if item["kind"] == "flight")
+    assert flight["price_range_sgd"] is None
+    assert flight["details"]["price"] == {"amount": 210.0, "currency": "USD"}
+    assert result["budget"]["total_range_sgd"] == [0.0, 0.0]
+
+
+def test_itinerary_enrichment_respects_requested_leisure_domains(tmp_path):
+    """Removing domain filtering must not surface unrequested suggestions."""
+    fixture = tmp_path / "inventory.json"
+    fixture.write_text(json.dumps({"items": [
+        {"name": "Hotel A", "type": "hotel", "researched_as_of": "2026-08-29"},
+        {"name": "Hotel B", "type": "hotel", "researched_as_of": "2026-08-29"},
+        {"name": "Activity A", "type": "activity", "researched_as_of": "2026-08-29"},
+        {"name": "MRT A", "type": "local_transport", "researched_as_of": "2026-08-29"},
+    ]}), encoding="utf-8")
+    skill = ItinerarySkill(hotels_path=fixture)
+
+    result = _run(skill.run({"requested_domains": ["hotel"]}))
+
+    assert [item["kind"] for item in result["items"]] == ["hotel"]
+
+
+def test_default_complete_trip_inventory_covers_every_requested_leisure_domain():
+    """Dropping a category from the default demo inventory must be visible."""
+    option = {
+        "id": "off-complete-1", "carrier": "SQ", "flight_no": "SQ905",
+        "dep": {"airport": "BKK", "time": "2026-09-29T09:30:00+07:00"},
+        "arr": {"airport": "SIN", "time": "2026-09-29T13:00:00+08:00"},
+        "price": {"amount": 210.0, "currency": "USD"},
+    }
+
+    result = _run(ItinerarySkill().run({
+        "options": [option],
+        "requested_domains": ["hotel", "activities", "local_transport"],
+    }))
+
+    kinds = {item["kind"] for item in result["items"]}
+    assert {"flight", "hotel", "activity", "local_transport"} <= kinds
+
+
+def test_planned_flight_cannot_be_replaced_through_leisure_editor():
+    """Removing flight immutability must not desynchronise approval snapshots."""
+    items = [{
+        "item_id": "itin-flt-SQ905", "name": "SQ905 BKK→SIN",
+        "kind": "flight", "source": "atlas_sandbox", "booked": False,
+        "honesty_label": "planned flight — not booked", "details": {"pnr": None},
+    }]
+
+    result = ItinerarySkill.replace_section(items, "itin-flt-SQ905", {
+        "name": "Unrelated hotel", "kind": "hotel",
+    })
+
+    assert result["error"] == "flight_section_requires_selection"
+    assert items[0]["kind"] == "flight"
+
+
+def test_planned_flight_label_does_not_repeat_short_carrier_code():
+    item = ItinerarySkill._planned_flight_item({
+        "id": "atlas-offer-tr609",
+        "carrier": "TR",
+        "flight_no": "TR609",
+        "dep": {"airport": "BKK", "time": "2026-09-29T09:05:00"},
+        "arr": {"airport": "SIN", "time": "2026-09-29T12:25:00"},
+        "price": {"amount": 111.57, "currency": "USD"},
+    })
+
+    assert item is not None
+    assert item["name"] == "TR609 BKK→SIN"

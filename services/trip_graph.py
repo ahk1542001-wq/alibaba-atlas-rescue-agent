@@ -532,6 +532,12 @@ def _route_from_goal(ctx: Dict[str, Any]) -> List[str]:
     return [c for c in (goal.get("origin_city"), goal.get("dest_city")) if c]
 
 
+def _requested_leisure_domains(ctx: Dict[str, Any]) -> List[str]:
+    requested = ctx.get("requested_services") or {}
+    return [domain for domain in ("hotel", "activities", "local_transport")
+            if requested.get(domain) == "requested"]
+
+
 def plan_trip(intent: TripIntent) -> Plan:
     """Build the node list for one trip strictly from requested_services."""
     rs = intent.requested_services
@@ -605,6 +611,7 @@ def plan_trip(intent: TripIntent) -> Plan:
                               input_map={
                                   "booking": lambda ctx: (ctx.get("flight_book") or {}).get("booking"),
                                   "options": "flight_search.options",
+                                  "requested_domains": _requested_leisure_domains,
                               }))
 
     nodes.append(NodeSpec(
@@ -645,8 +652,6 @@ def _with_linear_continuation(nodes: List[NodeSpec]) -> List[NodeSpec]:
             node.edges = [NodeEdge(when=lambda out, ctx: True,
                                    to=nodes[i + 1].name)]
         elif node.name == "visa_check":
-            if not any(e.when({}, {}) is True for e in node.edges if e.to == nodes[i + 1].name):
-                node.edges.append(NodeEdge(when=lambda out, ctx: True,
-                                           to=nodes[i + 1].name))
+            node.edges.append(NodeEdge(when=lambda out, ctx: True,
+                                       to=nodes[i + 1].name))
     return nodes
-
