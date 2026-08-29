@@ -58,18 +58,6 @@ def test_opaque_ids_preserved_exactly():
 def test_mixed_currencies_grouped_or_not_falsely_equated():
     offers = [
         {
-            "offer_id": "off_usd",
-            "airline_code": "SQ",
-            "flight_number": "SQ1",
-            "origin": "BKK",
-            "destination": "SIN",
-            "departure_time": "2026-09-28 09:30",
-            "arrival_time": "2026-09-28 11:00",
-            "duration_minutes": 150,
-            "price_usd": 200.0,
-            "currency": "USD",
-        },
-        {
             "offer_id": "off_thb",
             "airline_code": "TG",
             "flight_number": "TG1",
@@ -81,15 +69,83 @@ def test_mixed_currencies_grouped_or_not_falsely_equated():
             "price_usd": 6800.0,
             "currency": "THB",
         },
+        {
+            "offer_id": "off_usd",
+            "airline_code": "SQ",
+            "flight_number": "SQ1",
+            "origin": "BKK",
+            "destination": "SIN",
+            "departure_time": "2026-09-28 09:30",
+            "arrival_time": "2026-09-28 11:00",
+            "duration_minutes": 150,
+            "price_usd": 200.0,
+            "currency": "USD",
+        },
     ]
     fake = FakeAtlasWithSearchVariants(multi_currency_offers=offers)
     skill = FlightSearchSkill(atlas=fake)
     res = asyncio.run(skill.run({"origin": "BKK", "destination": "SIN", "date": "2026-09-28"}))
     options = res["options"]
     assert len(options) == 2
-    # Ensure currency is preserved on each option
-    assert options[0]["price"]["currency"] in ("USD", "THB")
-    assert options[1]["price"]["currency"] in ("USD", "THB")
+    # Ensure currencies are preserved and grouped without numeric conflation
+    currencies = [opt["price"]["currency"] for opt in options]
+    assert "THB" in currencies and "USD" in currencies
+    for opt in options:
+        if opt["price"]["currency"] == "THB":
+            assert opt["price"]["amount"] == 6800.0
+        if opt["price"]["currency"] == "USD":
+            assert opt["price"]["amount"] == 200.0
+
+
+def test_multi_date_execution_queries_each_date():
+    fake = FakeAtlasWithSearchVariants()
+    skill = FlightSearchSkill(atlas=fake)
+    date_window = {"start": "2026-09-28", "end": "2026-09-30"}
+    res = asyncio.run(skill.run({
+        "origin": "BKK",
+        "destination": "SIN",
+        "date_window": date_window,
+    }))
+    assert len(fake.searched_dates) == 3
+    assert fake.searched_dates == ["2026-09-28", "2026-09-29", "2026-09-30"]
+    assert len(res["options"]) >= 1
+
+
+def test_multi_date_partial_failure_resilience():
+    class PartialFailAtlas(FakeAtlasWithSearchVariants):
+        async def search_flights(self, origin, destination, date, passengers=1, **kwargs):
+            self.searched_dates.append(date)
+            if date == "2026-09-29":
+                from services.atlas_client import AtlasProviderError
+                raise AtlasProviderError("sandbox timeout on single date")
+            return await super().search_flights(origin, destination, date, passengers, **kwargs)
+
+    fake = PartialFailAtlas()
+    skill = FlightSearchSkill(atlas=fake)
+    res = asyncio.run(skill.run({
+        "origin": "BKK",
+        "destination": "SIN",
+        "date_window": {"start": "2026-09-28", "end": "2026-09-30"},
+    }))
+    # Does not crash on single-date provider error; returns options from successful dates
+    assert len(res["options"]) >= 1
+    assert "2026-09-28" in fake.searched_dates
+    assert "2026-09-29" in fake.searched_dates
+    assert "2026-09-30" in fake.searched_dates
+
+
+def test_multi_date_bounded_range_safety_cap():
+    fake = FakeAtlasWithSearchVariants()
+    skill = FlightSearchSkill(atlas=fake)
+    # 30 day range provided
+    date_window = {"start": "2026-09-01", "end": "2026-09-30"}
+    res = asyncio.run(skill.run({
+        "origin": "BKK",
+        "destination": "SIN",
+        "date_window": date_window,
+    }))
+    # Capped at safety max (8 dates: day 0 to 7)
+    assert len(fake.searched_dates) <= 8
 
 
 def test_complete_passenger_totals_computed():

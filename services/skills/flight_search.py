@@ -7,11 +7,11 @@ Every result carries research provenance (retrieved_date) per owner
 correction (C).
 """
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 from models.schemas import FlightEndpoint, FlightOption, Money
-from services.atlas_client import AtlasClient, AtlasProviderError
+from services.atlas_client import AtlasClient, AtlasProviderError, AtlasSandboxUnavailableError
 from services.skills.base import SkillBase, SkillError
 
 
@@ -53,43 +53,92 @@ class FlightSearchSkill(SkillBase):
             raise SkillError("missing_route",
                              "flight search requires origin and destination",
                              recoverable=True)
-        travel_date = payload.get("date") or ""
-        if hasattr(travel_date, "isoformat"):
-            travel_date = travel_date.isoformat()
+        travel_date = payload.get("date") or payload.get("date_window") or ""
         passengers = int(payload.get("passengers") or 1)
 
-        try:
-            offers = await self._atlas.search_flights(
-                origin, destination, str(travel_date), passengers=passengers)
-        except AtlasProviderError as exc:
+        dates_to_query: List[str] = []
+        if isinstance(travel_date, dict):
+            start_str = travel_date.get("start")
+            end_str = travel_date.get("end")
+            if start_str and end_str:
+                try:
+                    s_dt = date.fromisoformat(str(start_str))
+                    e_dt = date.fromisoformat(str(end_str))
+                    delta = (e_dt - s_dt).days
+                    if delta < 0:
+                        s_dt, e_dt = e_dt, s_dt
+                        delta = -delta
+                    # Bounded range: cap at 7 days max for safety
+                    max_days = min(delta, 7)
+                    dates_to_query = [(s_dt + timedelta(days=i)).isoformat() for i in range(max_days + 1)]
+                except Exception:
+                    dates_to_query = [str(start_str)]
+            elif start_str:
+                dates_to_query = [str(start_str)]
+        elif isinstance(travel_date, (list, tuple)):
+            dates_to_query = [str(d) for d in travel_date[:7]]
+        elif travel_date:
+            dates_to_query = [travel_date.isoformat() if hasattr(travel_date, "isoformat") else str(travel_date)]
+        else:
+            dates_to_query = [""]
+
+        offers: List[Dict[str, Any]] = []
+        errors: List[Exception] = []
+        for d in dates_to_query:
+            try:
+                res = await self._atlas.search_flights(
+                    origin, destination, d, passengers=passengers)
+                if res and isinstance(res, list):
+                    offers.extend(res)
+            except AtlasProviderError as exc:
+                errors.append(exc)
+            except Exception as exc:
+                errors.append(exc)
+
+        if not offers and errors:
+            err = errors[0]
+            err_code = (
+                "atlas_sandbox_unavailable"
+                if isinstance(err, AtlasSandboxUnavailableError)
+                or getattr(err, "code", "") == "ATLAS_REQUEST_FAILED"
+                else "provider_failure"
+            )
             raise SkillError(
-                "atlas_sandbox_unavailable",
+                err_code,
                 "Atlas Sandbox flight search is temporarily unavailable; "
                 "retry the search without changing your trip details.",
                 recoverable=True,
-            ) from exc
+            ) from err
+
         options: List[Dict[str, Any]] = []
         filtered_mismatched_routes = 0
+        seen_ids = set()
         for offer in offers:
             option = normalize_offer(offer)
+            if option["id"] in seen_ids:
+                continue
+            seen_ids.add(option["id"])
             if (option["dep"]["airport"].strip().upper() != origin or
                     option["arr"]["airport"].strip().upper() != destination):
                 filtered_mismatched_routes += 1
                 continue
             options.append(option)
-        # rank: shortest duration first, price as tiebreaker (S4 procedure)
-        options.sort(key=lambda o: (o["duration_min"], o["price"]["amount"]))
+
+        # rank: shortest duration first, grouped by currency, then price as tiebreaker (S4 procedure)
+        # Prevents numeric cross-ranking of different currencies (e.g. 6800 THB vs 200 USD)
+        options.sort(key=lambda o: (o["duration_min"], o["price"]["currency"], o["price"]["amount"]))
+
         # Honesty (G4-DA-fix F5): report the requested date and LABEL any
         # near-term substitution — the sandbox clamps same-day/past windows,
         # and the returned options must never be presented silently as the
         # requested window.
-        requested_date = str(travel_date) or None
+        requested_date = str(travel_date.get("start") if isinstance(travel_date, dict) else travel_date) or None
         date_note = None
         if requested_date and options and all(
-                not str(o["dep"]["time"]).startswith(requested_date)
-                for o in options):
+                not str(o["dep"]["time"]).startswith(str(d))
+                for o in options for d in dates_to_query if d):
             returned = sorted({str(o["dep"]["time"])[:10]
-                               for o in options})
+                                for o in options})
             date_note = (
                 f"requested {requested_date}; the Atlas sandbox returned "
                 f"near-term dates ({', '.join(returned)}) — the sandbox "

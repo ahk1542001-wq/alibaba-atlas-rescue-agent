@@ -400,6 +400,12 @@ class ApprovalRequest(BaseModel):
     # (backward compatible); resolve_approval rejects expired approvals with
     # a recoverable approval_expired error.
     expires_at: Optional[str] = None
+    is_price_increase: Optional[bool] = None
+    old_price: Optional[Dict[str, Any]] = None
+    new_price: Optional[Dict[str, Any]] = None
+    offer_id: Optional[str] = None
+    verified_at: Optional[str] = None
+    consequence: Optional[str] = None
 
 
 from services.state_graph import GraphNodeState  # noqa: E402  (extends legacy model)
@@ -655,13 +661,12 @@ class ConversationTurn(BaseModel):
 
 
 class AtlasCapabilityBoundary(BaseModel):
-    search_available: bool = True
-    verification_available: bool = True
-    order_creation_available: bool = True
+    search_available: bool = False
+    verification_available: bool = False
+    order_creation_available: bool = False
     payment_available: bool = False
     ticketing_available: bool = False
-    blocker_code: Optional[str] = "TICKETING_ACTIVATION_REQUIRED"
-    activation_url: Optional[str] = "https://sandbox.atlas.alibabacloud.com/activate"
+    blocker_code: Optional[str] = None
+    activation_url: Optional[str] = None
     environment: str = "sandbox"
     provenance: str = "atlas_sandbox"
-

@@ -126,9 +126,9 @@ def _extract_origin_dest(text: str):
                 return origin, dest
     # 2) standalone origin markers ("from X", "out of X", "departing X")
     for pat in (
-        r"from\s+([A-Za-z .]{3,25}?)(?=,|\.|$|\s+on\b)",
-        r"out of\s+([A-Za-z .]{3,25}?)(?=,|\.|$|\s+on\b)",
-        r"departing\s+([A-Za-z .]{3,25}?)(?=,|\.|$)",
+        r"from\s+([A-Za-z .]{3,25}?)(?=,|\.|$|\s+on\b|\s+for\b|\s+to\b|\s+with\b|\s+by\b)",
+        r"out of\s+([A-Za-z .]{3,25}?)(?=,|\.|$|\s+on\b|\s+for\b|\s+to\b|\s+with\b|\s+by\b)",
+        r"departing\s+([A-Za-z .]{3,25}?)(?=,|\.|$|\s+on\b|\s+for\b|\s+to\b|\s+with\b|\s+by\b)",
     ):
         m = re.search(pat, text, flags=re.IGNORECASE)
         if m:
@@ -163,14 +163,21 @@ def _extract_origin_dest(text: str):
 
 
 def _extract_passengers_info(text: str) -> tuple[int, bool]:
-    m = re.search(r"(\d+)\s*(?:people|pax|passengers|persons|of us)", text,
+    m = re.search(r"(\d+)\s*(?:people|pax|passengers?|persons?|adults?|travelers?|travellers?|of us)", text,
                   flags=re.IGNORECASE)
     if m:
         return max(1, min(9, int(m.group(1)))), True
+    m_for = re.search(r"\bfor\s+(\d+)\b", text, flags=re.IGNORECASE)
+    if m_for:
+        return max(1, min(9, int(m_for.group(1)))), True
     for word, n in _WORD_NUMBERS.items():
-        if re.search(rf"\b{word}\s+(?:people|pax|passengers|persons)\b", text,
+        if re.search(rf"\b(?:for\s+)?{word}\s+(?:people|pax|passengers?|persons?|adults?|travelers?|travellers?)\b", text,
                      flags=re.IGNORECASE):
             return n, True
+        if re.search(rf"\bfor\s+{word}\b", text, flags=re.IGNORECASE):
+            return n, True
+    if re.search(r"\b(?:solo|just\s+me|for\s+myself|for\s+me)\b", text, flags=re.IGNORECASE):
+        return 1, True
     return 1, False
 
 

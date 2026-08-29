@@ -110,7 +110,7 @@ _SCOPE_LABELS = {
 # clarify fields that belong to the TRIP GOAL (not the profile). Confirming
 # them persists into the paused/failed trip's goal and resumes it
 # (G4-DA-fix F4 — previously the chip confirm was a silent no-op).
-_TRIP_GOAL_FIELDS = ("origin_city", "dest_city", "date_window")
+_TRIP_GOAL_FIELDS = ("origin_city", "dest_city", "date_window", "passengers")
 _PROFILE_CLARIFY_FIELDS = ("passport_country", "home_city")
 _AIRPORT_CONFIRM_FIELDS = (
     "confirmed_origin_airport", "confirmed_destination_airport")
@@ -1070,6 +1070,56 @@ class TripOrchestrator:
             await self.executor.resolve_approval(trip_id, approval_id, resolved)
         except GraphError as exc:
             raise self._graph_error(exc)
+
+        # Check if booking paused due to fare price increase — if so, create immutable reapproval request
+        latest_node = trip.trace[-1] if trip.trace else None
+        if latest_node and latest_node.status == "FAILED" and (latest_node.details or {}).get("error_code") == "fare_price_increased":
+            details = latest_node.details or {}
+            prev_price = details.get("previous_price")
+            new_price = details.get("current_price")
+            curr = details.get("currency", "USD")
+            oid = details.get("offer_id") or resolved.get("option_id")
+            verified_at = details.get("verified_at") or _now_iso()
+
+            selected_opt = deepcopy(approval.immutable_option or {})
+            if selected_opt:
+                selected_opt["price"] = {"amount": new_price, "currency": curr}
+                selected_opt["price_usd"] = new_price
+
+            new_app_id = f"{trip_id}:reapp_{len(trip.trace) + 1:03d}"
+            consequence = (
+                f"Fare increased from {curr} {prev_price} to {curr} {new_price}. "
+                "Approving will book the flight at the updated price."
+            )
+            new_approval = ApprovalRequest(
+                approval_id=new_app_id,
+                node_name="approve_booking",
+                options=[selected_opt] if selected_opt else approval.options,
+                created_at=_now_iso(),
+                trip_id=trip_id,
+                purpose="price_reapproval",
+                is_price_increase=True,
+                old_price={"amount": prev_price, "currency": curr},
+                new_price={"amount": new_price, "currency": curr},
+                offer_id=oid,
+                verified_at=verified_at,
+                consequence=consequence,
+                immutable_option=selected_opt,
+                price_snapshot={"options": [{"id": oid, "price": {"amount": new_price, "currency": curr}}]},
+                expires_at=(datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
+            )
+            async with trip.lock:
+                trip.pending_approvals.append(new_approval)
+                trip.status = "awaiting_approval"
+                trip.current = "approve_booking"
+            self._record(trip, "price_reapproval_gate", "approve_booking", "PAUSED", 0.0, {
+                "approval_id": new_app_id,
+                "purpose": "price_reapproval",
+                "old_price": prev_price,
+                "new_price": new_price,
+                "currency": curr,
+            })
+
         # On booking success, promote itinerary flight to confirmed booking
         fb = trip.context.get("flight_book") or {}
         if fb.get("booking") and trip.context.get("itinerary"):
@@ -1201,6 +1251,19 @@ class TripOrchestrator:
                             "the date answer could not be parsed into a window",
                             recoverable=True,
                             hint="e.g. Sep 29-30 or 2026-09-29 to 2026-09-30")
+                elif field == "passengers":
+                    try:
+                        int_val = int(str(raw or "").strip())
+                        if not (1 <= int_val <= 9):
+                            raise ValueError()
+                        normalized = int_val
+                    except Exception:
+                        raise TripApiError(
+                            422, "invalid_clarify_answer",
+                            "passenger count must be an integer between 1 and 9",
+                            recoverable=True,
+                            hint="enter a passenger count from 1 to 9",
+                        )
                 else:
                     text_value = str(raw or "").strip()
                     upper = text_value.upper()
@@ -1222,16 +1285,18 @@ class TripOrchestrator:
         return {"trip_id": trip_id, **self.confirmation_surface(trip_id)}
 
     def _remove_clarify_question(self, trip, field: str) -> None:
+        goal = (trip.context.get("goal_intake") or {}).get("goal") or {}
+        origin_known = bool(goal.get("origin_city"))
         clarify = trip.context.get("clarify_loop") or {}
         clarify["questions"] = [
             q for q in (clarify.get("questions") or [])
-            if q.get("field") != field]
+            if q.get("field") != field and not (origin_known and q.get("field") == "home_city")]
         seed = self._seeds.get(trip.trip_id) or {}
         seed_clarify = seed.get("clarify")
         if isinstance(seed_clarify, dict):
             seed_clarify["questions"] = [
                 q for q in (seed_clarify.get("questions") or [])
-                if q.get("field") != field]
+                if q.get("field") != field and not (origin_known and q.get("field") == "home_city")]
         self._sync_clarify_surface(trip)
 
     async def _replan_after_confirmation(self, trip, field: str) -> None:
@@ -1389,6 +1454,19 @@ class TripOrchestrator:
                     recoverable=True,
                     hint="e.g. 'Sep 29-30' or 2026-09-29 to 2026-09-30")
             normalized: Any = window
+        elif field == "passengers":
+            try:
+                int_val = int(raw)
+                if not (1 <= int_val <= 9):
+                    raise ValueError()
+                normalized = int_val
+            except Exception:
+                raise TripApiError(
+                    422, "invalid_clarify_answer",
+                    "passenger count must be an integer between 1 and 9",
+                    recoverable=True,
+                    hint="enter a passenger count from 1 to 9",
+                )
         else:
             upper = raw.upper()
             city = upper if _IATA_RE.fullmatch(upper) else _find_city(raw.lower())
@@ -1403,20 +1481,23 @@ class TripOrchestrator:
 
         goal = seed["goal"]
         goal[field] = normalized
+        if field == "passengers":
+            goal["passengers_explicit"] = True
         gi = trip.context.get("goal_intake") or {}
         gi["goal"] = goal
         trip.context["goal_intake"] = gi
 
         # the answered question disappears from the clarify surface
+        origin_known = bool(goal.get("origin_city"))
         clarify = trip.context.get("clarify_loop") or {}
         clarify["questions"] = [q for q in (clarify.get("questions") or [])
-                                if q.get("field") != field]
+                                if q.get("field") != field and not (origin_known and q.get("field") == "home_city")]
         trip.context["clarify_loop"] = clarify
         seed_clarify = seed.get("clarify")
         if isinstance(seed_clarify, dict):
             seed_clarify["questions"] = [
                 q for q in (seed_clarify.get("questions") or [])
-                if q.get("field") != field]
+                if q.get("field") != field and not (origin_known and q.get("field") == "home_city")]
         self._sync_clarify_surface(trip)
 
         resumed = False
@@ -1455,6 +1536,21 @@ class TripOrchestrator:
         trip = self._trip_or_404(trip_id)
         snapshot = self.executor.telemetry(trip_id)
         ctx = trip.context
+
+        # Supply latest failure details from trace if trip failed
+        failed = next((n for n in reversed(trip.trace) if n.status == "FAILED"), None)
+        if failed and snapshot.get("status") == "failed":
+            details = failed.details or {}
+            code = details.get("error_code", "node_failed")
+            snapshot["error"] = {
+                "code": code,
+                "message": details.get("message", "node execution failed"),
+                "recoverable": bool(details.get("recoverable", False)),
+                "hint": _HINTS.get(code) or details.get("message"),
+                "failed_node": failed.name,
+                "details": details,
+            }
+
         outputs: Dict[str, Any] = {}
         clarify = ctx.get("clarify_loop")
         if clarify:

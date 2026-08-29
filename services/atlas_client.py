@@ -62,15 +62,20 @@ class AtlasClient:
         self.last_cli_envelope: Optional[Dict[str, Any]] = None
 
     def get_capability_boundary(self) -> Dict[str, Any]:
-        """Return the 8-field provider capability boundary."""
+        """Return the 8-field provider capability boundary.
+        Defaults are conservative: activation_url=None, order/payment/ticketing unavailable
+        unless returned by normalized atlas-flight auth status envelope.
+        """
+        env = self.last_cli_envelope or {}
+        auth_data = env.get("auth") or env.get("capabilities") or {}
         return {
-            "search_available": True,
-            "verification_available": True,
-            "order_creation_available": True,
-            "payment_available": False,
-            "ticketing_available": False,
-            "blocker_code": "TICKETING_ACTIVATION_REQUIRED",
-            "activation_url": "https://sandbox.atlas.alibabacloud.com/activate",
+            "search_available": bool(auth_data.get("search_available", False)),
+            "verification_available": bool(auth_data.get("verification_available", False)),
+            "order_creation_available": bool(auth_data.get("order_creation_available", False)),
+            "payment_available": bool(auth_data.get("payment_available", False)),
+            "ticketing_available": bool(auth_data.get("ticketing_available", False)),
+            "blocker_code": auth_data.get("blocker_code") or None,
+            "activation_url": auth_data.get("activation_url") or None,
             "environment": "sandbox",
             "provenance": "atlas_sandbox",
         }

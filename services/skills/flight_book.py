@@ -166,15 +166,34 @@ class FlightBookSkill(SkillBase):
                     "again before approving a booking.",
                     recoverable=True,
                 ) from exc
-            if verification.get("price_change") == "increased" or verification.get("price_confirmation_required"):
-                new_price = verification.get("current_price") or verification.get("price_usd")
-                prev_price = verification.get("previous_price")
-                curr = verification.get("currency", "USD")
-                raise SkillError(
+            price_change = verification.get("price_change")
+            opt_dict = payload.get("option") or {}
+            opt_price = opt_dict.get("price")
+            opt_amt = opt_price.get("amount") if isinstance(opt_price, dict) else opt_dict.get("price_usd")
+            curr = verification.get("currency") or (opt_price.get("currency") if isinstance(opt_price, dict) else "USD")
+            new_price = verification.get("current_price") or verification.get("price_usd")
+            prev_price = verification.get("previous_price") or opt_amt
+
+            notice = None
+            if price_change == "decreased" or (prev_price and new_price and float(new_price) < float(prev_price)):
+                notice = f"Fare decreased from {curr} {prev_price} to {curr} {new_price}."
+
+            if price_change == "increased" or verification.get("price_confirmation_required") or (prev_price and new_price and float(new_price) > float(prev_price)):
+                err = SkillError(
                     "fare_price_increased",
                     f"Fare for option '{option_id}' increased from {curr} {prev_price} to {curr} {new_price}; re-approval required before booking.",
                     recoverable=True,
                 )
+                err.details = {
+                    "price_change": "increased",
+                    "previous_price": prev_price,
+                    "current_price": new_price,
+                    "currency": curr,
+                    "offer_id": option_id,
+                    "verified_at": verification.get("verified_at") or datetime.now(timezone.utc).isoformat(),
+                }
+                raise err
+
             if not verification.get("verified"):
                 raise SkillError("fare_unverified",
                                  f"fare '{option_id}' failed re-verification; "
@@ -240,6 +259,7 @@ class FlightBookSkill(SkillBase):
                 "status": order.get("status", "CONFIRMED"),
                 "booking": record.model_dump(mode="json") if record else None,
                 "fare_verified_at": verification.get("verified_at"),
+                "notice": notice,
                 "monitor_armed": True,
                 "idempotent_replay": False,
                 "provenance": "sandbox",

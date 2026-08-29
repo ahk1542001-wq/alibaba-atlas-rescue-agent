@@ -194,21 +194,56 @@ def test_controller_complete_plan_review():
 def test_controller_recovery_approval():
     state = {
         "status": "awaiting_approval",
-        "current_state": "recovery_approval",
+        "current_state": "recovery_booking",
         "pending_approvals": [
             {
                 "approval_id": "rec_app_789",
-                "node_name": "recovery_approval",
+                "node_name": "recovery_booking",
+                "purpose": "recovery_booking",
                 "prompt": "Approve disruption rescue package",
+                "options": [{"id": "opt_rec_1", "carrier": "SQ", "price": {"amount": 230.0, "currency": "USD"}}],
             }
         ],
         "outputs": {
             "recovery": {"status": "PROPOSED"},
+            "recovery_booking": {"status": "PROPOSED"},
         },
     }
     turn = project_conversation_turn(state)
     assert turn.phase == "recovery_approval"
     assert any(a.action_id == "approve" for a in turn.actions)
+
+
+def test_controller_returns_trip_fact_question_before_scope_choice():
+    # If both missing fact questions and scope_clarification are present,
+    # controller must prioritize asking the missing trip fact first.
+    state = {
+        "status": "awaiting_approval",
+        "current_state": "clarify_loop",
+        "pending_approvals": [
+            {
+                "approval_id": "app_scope_1",
+                "node_name": "scope_clarification",
+                "choices": ["flight_only", "flight_plus_booking", "complete_trip"],
+            }
+        ],
+        "outputs": {
+            "clarify": {
+                "questions": [
+                    {"field": "origin_city", "prompt": "Where will you be departing from?"},
+                    {"field": "date_window", "prompt": "When are you travelling?"},
+                ],
+                "scope_clarification": {
+                    "choices": ["flight_only", "flight_plus_booking", "complete_trip"],
+                },
+                "complete": False,
+            }
+        },
+    }
+    turn = project_conversation_turn(state)
+    assert turn.phase == "clarification"
+    assert turn.question is not None
+    assert turn.question.field == "origin_city"
 
 
 def test_controller_passport_country_includes_reason():

@@ -302,8 +302,9 @@ def test_s2_empty_profile_asks_every_missing_required_value(store):
         "requested_services": RequestedServices().model_dump(),
     }))
     fields = {q["field"] for q in out["questions"]}
-    # empty profile -> identity facts asked; goal facts already known -> not asked
-    assert {"passport_country", "home_city"} <= fields
+    # empty profile -> passport country asked; origin is known -> home_city not asked
+    assert "passport_country" in fields
+    assert "home_city" not in fields
     assert not {"origin_city", "dest_city", "date_window"} & fields
 
 

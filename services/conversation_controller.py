@@ -79,7 +79,7 @@ def project_conversation_turn(
         )
 
     # 2. PRIORITY: Disruption Recovery Approval
-    rec_approval = next((a for a in pending_approvals if a.get("node_name") in ("recovery_approval", "recovery_plan")), None)
+    rec_approval = next((a for a in pending_approvals if a.get("node_name") in ("recovery_booking", "recovery_plan") or a.get("purpose") in ("recovery_booking", "recovery_plan")), None)
     if rec_approval:
         prompt = rec_approval.get("prompt") or "A disruption has been detected on your flight. A safety-checked rescue package is available."
         return ConversationTurn(
@@ -107,12 +107,16 @@ def project_conversation_turn(
         )
 
     # 3. PRIORITY: Price Increase Reapproval
-    price_inc_approval = next((a for a in pending_approvals if a.get("is_price_increase") or "price_reapproval" in str(a.get("node_name", ""))), None)
+    price_inc_approval = next((a for a in pending_approvals if a.get("is_price_increase") or a.get("purpose") == "price_reapproval" or "price_reapproval" in str(a.get("node_name", ""))), None)
     if price_inc_approval:
         old_price = price_inc_approval.get("old_price") or {}
         new_price = price_inc_approval.get("new_price") or {}
-        old_amt = f"{old_price.get('currency', '$')}{float(old_price.get('amount', 0)):.2f}"
-        new_amt = f"{new_price.get('currency', '$')}{float(new_price.get('amount', 0)):.2f}"
+        old_val = float(old_price.get("amount") or 0.0) if old_price.get("amount") is not None else 0.0
+        new_val = float(new_price.get("amount") or 0.0) if new_price.get("amount") is not None else 0.0
+        old_curr = old_price.get("currency", "USD")
+        new_curr = new_price.get("currency", "USD")
+        old_amt = f"{old_curr} {old_val:.2f}"
+        new_amt = f"{new_curr} {new_val:.2f}"
         consequence_msg = price_inc_approval.get("consequence") or f"The verified fare has updated from {old_amt} to {new_amt}."
         return ConversationTurn(
             phase="price_reapproval",
@@ -169,7 +173,13 @@ def project_conversation_turn(
 
     # 5. PRIORITY: Ticketing Unavailable / Error State
     err_code = error.get("code") or ""
-    if status == "failed" and (err_code in ("ticketing_activation_required", "atlas_ticketing_unavailable", "atlas_booking_unavailable") or "ticketing" in err_code):
+    if not err_code and status == "failed":
+        nodes = state.get("nodes") or []
+        failed_node = next((n for n in reversed(nodes) if n.get("status") == "FAILED"), None)
+        if failed_node:
+            err_code = (failed_node.get("details") or {}).get("error_code") or ""
+
+    if status == "failed" and (err_code in ("ticketing_activation_required", "atlas_ticketing_unavailable", "atlas_booking_unavailable", "TICKETING_ACTIVATION_REQUIRED") or "ticketing" in err_code.lower() or (error.get("details") or {}).get("ticketing_blocker") == "TICKETING_ACTIVATION_REQUIRED"):
         return ConversationTurn(
             phase="ticketing_unavailable",
             assistant_message="Your plan is safe. Atlas Sandbox ticketing is not enabled for this account, so no booking or ticket was created.",
@@ -185,7 +195,7 @@ def project_conversation_turn(
             consequence="Your complete plan is preserved. You can review all details or search other routes.",
             provenance_label="Atlas Sandbox",
             recoverable=True,
-            error_code=err_code,
+            error_code=err_code or "atlas_ticketing_unavailable",
         )
 
     if status == "failed":
@@ -209,12 +219,40 @@ def project_conversation_turn(
             error_code=err_code or "trip_error",
         )
 
-    # 6. PRIORITY: Clarification Questions (Exactly ONE question at a time)
+    # 6. PRIORITY: Clarification Questions (First required trip fact BEFORE scope clarification)
     clarify = outputs.get("clarify") or ctx.get("clarify_loop") or {}
     questions = clarify.get("questions") or []
     scope_clarification = clarify.get("scope_clarification")
 
-    # Scope choice if ambiguous
+    # Ask the first unanswered required question before asking scope
+    for q in questions:
+        field = q.get("field", "")
+        if not field or field in FORBIDDEN_PII_FIELDS:
+            continue
+        prompt = q.get("prompt") or q.get("question") or f"Please provide your {field}."
+        input_kind = "choice" if q.get("choices") else ("number" if field == "passengers" else "text")
+        choices = q.get("choices") or []
+        reason = q.get("reason") or QUESTION_REASONS.get(field)
+        q_obj = ConversationQuestion(
+            field=field,
+            prompt=prompt,
+            input_kind=input_kind,
+            choices=choices,
+            optional=bool(q.get("optional", False)),
+            reason=reason,
+        )
+        return ConversationTurn(
+            phase="clarification",
+            assistant_message=prompt,
+            question=q_obj,
+            actions=[],
+            requires_user_input=True,
+            consequence=None,
+            provenance_label="TravelCare AI",
+            recoverable=True,
+        )
+
+    # Scope choice if ambiguous and all required route/date/passenger facts are known
     if scope_clarification and isinstance(scope_clarification, dict):
         raw_choices = scope_clarification.get("choices") or [
             "flight_only", "flight_plus_booking", "complete_trip"
@@ -235,33 +273,6 @@ def project_conversation_turn(
         return ConversationTurn(
             phase="scope_choice",
             assistant_message="To tailor your experience, please choose how you would like to proceed:",
-            question=q_obj,
-            actions=[],
-            requires_user_input=True,
-            consequence=None,
-            provenance_label="TravelCare AI",
-            recoverable=True,
-        )
-
-    for q in questions:
-        field = q.get("field", "")
-        if not field or field in FORBIDDEN_PII_FIELDS:
-            continue
-        prompt = q.get("prompt") or f"Please provide your {field}."
-        input_kind = "choice" if q.get("choices") else ("number" if field == "passengers" else "text")
-        choices = q.get("choices") or []
-        reason = q.get("reason") or QUESTION_REASONS.get(field)
-        q_obj = ConversationQuestion(
-            field=field,
-            prompt=prompt,
-            input_kind=input_kind,
-            choices=choices,
-            optional=bool(q.get("optional", False)),
-            reason=reason,
-        )
-        return ConversationTurn(
-            phase="clarification",
-            assistant_message=prompt,
             question=q_obj,
             actions=[],
             requires_user_input=True,
@@ -331,7 +342,7 @@ def project_conversation_turn(
                 )
             ],
             requires_user_input=False,
-            provenance_label="Atlas Sandbox Real Booking",
+            provenance_label="Atlas Sandbox Confirmed Booking",
             recoverable=True,
         )
 

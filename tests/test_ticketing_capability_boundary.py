@@ -23,8 +23,17 @@ def test_capability_boundary_object_has_eight_fields():
     }
     assert required_fields.issubset(set(boundary.keys()))
     assert boundary["ticketing_available"] is False
-    assert boundary["blocker_code"] == "TICKETING_ACTIVATION_REQUIRED"
+    assert boundary["payment_available"] is False
+    assert boundary["activation_url"] is None
     assert boundary["environment"] == "sandbox"
+
+    # Schema model test
+    schema = AtlasCapabilityBoundary()
+    assert schema.activation_url is None
+    assert schema.blocker_code is None
+    assert schema.ticketing_available is False
+    assert schema.payment_available is False
+    assert schema.order_creation_available is False
 
 
 def test_production_environment_can_never_be_selected():

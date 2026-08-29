@@ -36,7 +36,7 @@
     // One-question-at-a-time card order + static allow-list (§4: question
     // cards key off this map; hostile field names fall back to generic).
     var FIELD_ORDER = ['origin_city', 'confirmed_origin_airport', 'dest_city',
-                       'confirmed_destination_airport', 'date_window',
+                       'confirmed_destination_airport', 'date_window', 'passengers',
                        'passport_country', 'home_city', 'expiry'];
     var FIELD_WHY = {
         origin_city: 'Needed to search flights from the right airport.',
@@ -44,6 +44,7 @@
         dest_city: 'Needed to find flights to the right place.',
         confirmed_destination_airport: 'Needed so we arrive at the airport you choose.',
         date_window: 'Needed to check flights on the right days.',
+        passengers: 'Needed to search fares and seats for everyone traveling.',
         passport_country: 'Needed to check entry requirements for you.',
         home_city: 'Helps us plan trips that start from your home.',
         expiry: 'Needed to make sure your passport is valid for travel.'
@@ -54,6 +55,7 @@
         dest_city: 'To',
         confirmed_destination_airport: 'Arrival airport',
         date_window: 'Dates',
+        passengers: 'Passengers',
         passport_country: 'Passport country',
         home_city: 'Home city',
         expiry: 'Passport expiry'

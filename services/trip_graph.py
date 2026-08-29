@@ -393,11 +393,14 @@ class TripGraphExecutor:
             output = await skill.run(payload, trip.context)
         except SkillError as exc:
             latency = (time.perf_counter() - started) * 1000
-            self._record(trip, spec, "FAILED", latency, {
+            err_details = {
                 "error_code": exc.code,
                 "message": exc.message,
                 "recoverable": exc.recoverable,
-            })
+            }
+            if hasattr(exc, "details") and isinstance(exc.details, dict):
+                err_details.update(exc.details)
+            self._record(trip, spec, "FAILED", latency, err_details)
             trip.status = "failed"
             if exc.recoverable:
                 return "failed"

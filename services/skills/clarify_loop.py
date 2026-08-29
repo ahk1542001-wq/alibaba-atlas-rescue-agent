@@ -49,7 +49,7 @@ class ClarifyLoopSkill(SkillBase):
             rs = resolve_scope_choice(rs, scope_choice)
 
         questions: List[Dict[str, str]] = []
-        # goal facts first — never re-ask what the goal already answers
+        # 1. Route and date facts first — never re-ask what the goal already answers
         if not goal.get("origin_city"):
             questions.append({"field": "origin_city",
                               "question": "Where does the trip start "
@@ -62,15 +62,31 @@ class ClarifyLoopSkill(SkillBase):
                               "question": "Which dates (start and end) work "
                                           "for you?"})
 
-        # profile facts — ask only what the (empty-by-default) profile lacks
+        # 2. Passenger count: ask when not explicitly supplied in goal or profile
+        if not goal.get("passengers_explicit"):
+            questions.append({"field": "passengers",
+                              "question": "How many passengers are traveling?"})
+
+        # 3. Scope and identity facts
+        is_flight_only = (
+            rs.flight_search == "requested" and
+            rs.flight_booking == "not_requested" and
+            rs.visa_check == "not_requested" and
+            rs.hotel == "not_requested" and
+            rs.activities == "not_requested" and
+            rs.local_transport == "not_requested"
+        )
+
         profile = self._store.get_or_create(user_id) if user_id else None
         if profile is not None:
-            if not profile.identity.passport_country:
+            # Passport country: do NOT ask for flight-only; ask ONLY when booking/visa/complete-trip
+            if not is_flight_only and not profile.identity.passport_country:
                 questions.append({"field": "passport_country",
                                   "question": "Which country issued your "
-                                              "passport? (needed for visa "
-                                              "checks)"})
-            if not profile.identity.home_city:
+                                              "passport? (Needed to check entry "
+                                              "and transit requirements.)"})
+            # Home city: do NOT ask when origin is already known
+            if not goal.get("origin_city") and not profile.identity.home_city:
                 questions.append({"field": "home_city",
                                   "question": "Which city do you live in?"})
 

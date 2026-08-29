@@ -106,6 +106,57 @@ def test_passport_country_reason_in_conversation_controller():
     assert "entry and transit" in turn.question.reason
 
 
+def test_clarify_loop_asks_passengers_when_not_explicit(tmp_path):
+    store = ProfileStore(root=tmp_path)
+    skill = ClarifyLoopSkill(profile_store=store)
+    goal = TripGoal(
+        goal_id="g1", raw_text="BKK to SIN on Sep 29", origin_city="BKK", dest_city="SIN",
+        date_window={"start": "2026-09-29", "end": "2026-09-29"},
+        passengers=1,
+        passengers_explicit=False,
+    ).model_dump(mode="json")
+    rs = RequestedServices().model_dump()
+    import asyncio
+    out = asyncio.run(skill.run({"goal": goal, "user_id": "victor", "requested_services": rs}))
+    fields = [q["field"] for q in out["questions"]]
+    assert "passengers" in fields
+
+
+def test_clarify_loop_does_not_ask_passport_for_flight_only(tmp_path):
+    store = ProfileStore(root=tmp_path)
+    skill = ClarifyLoopSkill(profile_store=store)
+    goal = TripGoal(
+        goal_id="g1", raw_text="Find flights from BKK to SIN", origin_city="BKK", dest_city="SIN",
+        date_window={"start": "2026-09-29", "end": "2026-09-29"},
+        passengers=1,
+        passengers_explicit=True,
+    ).model_dump(mode="json")
+    # Scope: flight-only
+    rs = RequestedServices(flight_search="requested", flight_booking="not_requested",
+                           visa_check="not_requested", hotel="not_requested",
+                           activities="not_requested", local_transport="not_requested").model_dump()
+    import asyncio
+    out = asyncio.run(skill.run({"goal": goal, "user_id": "victor", "requested_services": rs}))
+    fields = [q["field"] for q in out["questions"]]
+    assert "passport_country" not in fields
+
+
+def test_clarify_loop_does_not_ask_home_city_when_origin_known(tmp_path):
+    store = ProfileStore(root=tmp_path)
+    skill = ClarifyLoopSkill(profile_store=store)
+    goal = TripGoal(
+        goal_id="g1", raw_text="BKK to SIN", origin_city="BKK", dest_city="SIN",
+        date_window={"start": "2026-09-29", "end": "2026-09-29"},
+        passengers=1,
+        passengers_explicit=True,
+    ).model_dump(mode="json")
+    rs = RequestedServices().model_dump()
+    import asyncio
+    out = asyncio.run(skill.run({"goal": goal, "user_id": "victor", "requested_services": rs}))
+    fields = [q["field"] for q in out["questions"]]
+    assert "home_city" not in fields
+
+
 def test_clarify_loop_asks_empty_profile_identity(tmp_path):
     store = ProfileStore(root=tmp_path)
     skill = ClarifyLoopSkill(profile_store=store)

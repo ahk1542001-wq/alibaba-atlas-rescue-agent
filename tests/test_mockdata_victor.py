@@ -232,7 +232,7 @@ def victor_server(tmp_path):
 _FONT_NOISE = re.compile(r"fonts\.(googleapis|gstatic)\.com")
 _CLARIFY_DEFAULTS = {"date_window": "Sep 29-30", "passport_country": "MM",
                      "origin_city": "Bangkok", "dest_city": "Singapore",
-                     "home_city": "Bangkok"}
+                     "home_city": "Bangkok", "passengers": "1"}
 
 
 def _browser_goal_to_options(profile_data: dict, goal_data: dict, store) -> None:

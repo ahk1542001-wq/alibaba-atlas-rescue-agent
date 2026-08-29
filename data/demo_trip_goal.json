@@ -10,6 +10,7 @@
   "venue": "Marina Bay Sands",
   "date_window": {"start": "2026-09-28", "end": "2026-09-30"},
   "passengers": 1,
+  "passengers_explicit": true,
   "budget_hint": "THB 15000-30000",
   "purpose": "Attend WiT Singapore",
   "missing_fields": []

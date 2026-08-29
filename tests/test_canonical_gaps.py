@@ -53,7 +53,7 @@ def test_gap1_api_confirmations_and_plan(harness):
         async with _client() as client:
             user_id = "user_canonical"
             res = await client.post("/api/trips", json={
-                "goal_text": "Find flights only to Singapore on 2026-12-01",
+                "goal_text": "Book flight to Singapore on 2026-12-01 for 1 passenger",
                 "user_id": user_id,
             })
             assert res.status_code == 200
