@@ -162,16 +162,20 @@ def _extract_origin_dest(text: str):
     return origin, dest
 
 
-def _extract_passengers(text: str) -> int:
+def _extract_passengers_info(text: str) -> tuple[int, bool]:
     m = re.search(r"(\d+)\s*(?:people|pax|passengers|persons|of us)", text,
                   flags=re.IGNORECASE)
     if m:
-        return max(1, min(9, int(m.group(1))))
+        return max(1, min(9, int(m.group(1)))), True
     for word, n in _WORD_NUMBERS.items():
         if re.search(rf"\b{word}\s+(?:people|pax|passengers|persons)\b", text,
                      flags=re.IGNORECASE):
-            return n
-    return 1
+            return n, True
+    return 1, False
+
+
+def _extract_passengers(text: str) -> int:
+    return _extract_passengers_info(text)[0]
 
 
 def _infer_services(text: str) -> Dict[str, str]:
@@ -221,11 +225,13 @@ def deterministic_extract(free_text: str) -> Dict[str, Any]:
     m = re.search(r"budget\s*(?:of|:)?\s*(\d+)\s*([A-Za-z]{3})?", low)
     if m:
         budget = f"{m.group(1)} {m.group(2) or 'USD'}".strip()
+    pax_count, pax_explicit = _extract_passengers_info(low) if text else (1, False)
     return {
         "origin_city": origin,
         "dest_city": dest,
         "date_window": dates,
-        "passengers": _extract_passengers(low) if text else 1,
+        "passengers": pax_count,
+        "passengers_explicit": pax_explicit,
         "budget_hint": budget,
         "purpose": purpose,
     }
@@ -274,6 +280,9 @@ class GoalIntakeSkill(SkillBase):
                 free_text, origin)
             destination_candidates, confirmed_destination = _airport_resolution(
                 free_text, destination)
+            pax_explicit = bool(extracted.get("passengers_explicit", False))
+            if not pax_explicit:
+                _, pax_explicit = _extract_passengers_info(free_text)
             return TripGoal(
                 goal_id=f"goal_{uuid.uuid4().hex[:8]}",
                 raw_text=free_text,
@@ -285,6 +294,7 @@ class GoalIntakeSkill(SkillBase):
                 confirmed_destination_airport=confirmed_destination,
                 date_window=extracted.get("date_window") or None,
                 passengers=int(extracted.get("passengers") or 1),
+                passengers_explicit=pax_explicit,
                 budget_hint=extracted.get("budget_hint") or None,
                 purpose=extracted.get("purpose") or None,
             )

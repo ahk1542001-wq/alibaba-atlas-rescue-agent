@@ -200,6 +200,7 @@ class TripGoal(BaseModel):
     venue: Optional[str] = None
     date_window: Optional[DateWindow] = None
     passengers: int = Field(1, ge=1)
+    passengers_explicit: bool = False
     budget_hint: Optional[str] = None
     purpose: Optional[str] = None
     missing_fields: List[str] = Field(default_factory=list)
@@ -620,3 +621,47 @@ class SafetyChangeEvent(BaseModel):
     new_evidence: Dict[str, Any] = {}
     proposed_action: str = "review"  # review | partial_replan_proposal
     approval_required: bool = True
+
+
+# --- Conversation Controller contracts (Gate G2) ------------------------------
+
+class ConversationQuestion(BaseModel):
+    field: str
+    prompt: str
+    input_kind: str = "text"
+    choices: List[Any] = Field(default_factory=list)
+    optional: bool = False
+    reason: Optional[str] = None
+
+
+class ConversationAction(BaseModel):
+    action_id: str
+    label: str
+    kind: str = "primary"
+    requires_confirmation: bool = False
+    consequence: Optional[str] = None
+
+
+class ConversationTurn(BaseModel):
+    phase: str
+    assistant_message: str
+    question: Optional[ConversationQuestion] = None
+    actions: List[ConversationAction] = Field(default_factory=list)
+    requires_user_input: bool = False
+    consequence: Optional[str] = None
+    provenance_label: Optional[str] = None
+    recoverable: bool = True
+    error_code: Optional[str] = None
+
+
+class AtlasCapabilityBoundary(BaseModel):
+    search_available: bool = True
+    verification_available: bool = True
+    order_creation_available: bool = True
+    payment_available: bool = False
+    ticketing_available: bool = False
+    blocker_code: Optional[str] = "TICKETING_ACTIVATION_REQUIRED"
+    activation_url: Optional[str] = "https://sandbox.atlas.alibabacloud.com/activate"
+    environment: str = "sandbox"
+    provenance: str = "atlas_sandbox"
+

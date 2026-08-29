@@ -166,6 +166,15 @@ class FlightBookSkill(SkillBase):
                     "again before approving a booking.",
                     recoverable=True,
                 ) from exc
+            if verification.get("price_change") == "increased" or verification.get("price_confirmation_required"):
+                new_price = verification.get("current_price") or verification.get("price_usd")
+                prev_price = verification.get("previous_price")
+                curr = verification.get("currency", "USD")
+                raise SkillError(
+                    "fare_price_increased",
+                    f"Fare for option '{option_id}' increased from {curr} {prev_price} to {curr} {new_price}; re-approval required before booking.",
+                    recoverable=True,
+                )
             if not verification.get("verified"):
                 raise SkillError("fare_unverified",
                                  f"fare '{option_id}' failed re-verification; "

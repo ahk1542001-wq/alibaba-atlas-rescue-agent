@@ -55,8 +55,25 @@ class AtlasClient:
         "EUR": "€"
     }
 
-    def __init__(self):
+    def __init__(self, environment: str = "sandbox"):
+        if environment != "sandbox":
+            raise ValueError(f"AtlasClient only supports 'sandbox' environment (attempted: {environment!r})")
+        self.environment = "sandbox"
         self.last_cli_envelope: Optional[Dict[str, Any]] = None
+
+    def get_capability_boundary(self) -> Dict[str, Any]:
+        """Return the 8-field provider capability boundary."""
+        return {
+            "search_available": True,
+            "verification_available": True,
+            "order_creation_available": True,
+            "payment_available": False,
+            "ticketing_available": False,
+            "blocker_code": "TICKETING_ACTIVATION_REQUIRED",
+            "activation_url": "https://sandbox.atlas.alibabacloud.com/activate",
+            "environment": "sandbox",
+            "provenance": "atlas_sandbox",
+        }
 
     # ------------------------------------------------------------------
     # Official atlas-flight CLI bridge (real Atlas Sandbox)

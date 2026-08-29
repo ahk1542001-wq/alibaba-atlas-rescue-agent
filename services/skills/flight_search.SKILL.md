@@ -1,15 +1,17 @@
 ---
 name: flight_search
-description: Searches the Atlas sandbox for flights and returns ranked option cards. Use when the TripGoal carries route and dates.
+description: Searches the Atlas Sandbox for flights and returns ranked option cards. Use when the TripGoal carries route and dates.
 allowed-tools: atlas_call, network_read
 ---
 
 # Procedure
 
 1. Call atlas_client.search() with origin/destination/date window/passengers.
-2. Normalize responses into FlightOption objects (sandbox_provenance=true).
-3. Rank options by duration/price pareto for the OptionsCard.
-4. Never serve canned arrays — results must carry live-sandbox provenance.
+2. Preserve opaque identifiers (search_id, offer_id) exactly as returned by provider.
+3. Preserve provider currency and compute complete passenger totals for comparison.
+4. Distinguish reference prices from verified offer prices (price status).
+5. For flexible dates, execute each bounded date search completely without silent sampling.
+6. Rank options honestly without relabeling currencies.
 
 # Input-Output
 
@@ -18,5 +20,4 @@ allowed-tools: atlas_call, network_read
 
 # Verification
 
-- §8 integration suite hits the live sandbox; response provenance flagged
-  sandbox; UI copy says "Atlas Sandbox data" (F3).
+- §8 integration suite hits the live sandbox; opaque IDs preserved; complete passenger totals used; response provenance flagged sandbox; UI copy says "Atlas Sandbox data".

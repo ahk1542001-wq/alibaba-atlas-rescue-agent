@@ -20,9 +20,7 @@ Flight cancellations strand travelers for hours while the compensation they are 
 
 **TravelCare AI** is an agentic travel assistant that searches the official Atlas Sandbox, ranks visa-aware options for passport-constrained travelers, and runs a Claims Autopilot that detects which air-passenger-rights regime actually applies to *your* route — then computes an honest entitlement and drafts regulation-cited claim/appeal letters.
 
-**Core flow:** traveler describes a trip → Atlas Sandbox offers are searched and filtered to the exact airports → visa-safe options are ranked → traveler explicitly approves a booking attempt → the app verifies the selected provider offer → ticketing either creates a real Sandbox order or fails closed without a PNR → Claims Autopilot resolves jurisdiction (EU261 / UK261 / Turkey SHY / US DOT / none).
-
-The agent is honest by design: on routes where no mandatory scheme exists (e.g. BKK→RGN), it says so and registers the duty-of-care/refund route instead of inventing cash.
+**Core flow:** traveler plans a trip naturally through conversation → pure deterministic Conversation Controller projects state into beginner-friendly turns → deterministic TripGraph executes provider calls, safety checks, and research → traveler reviews their complete reversible travel plan (flights, lodging, activities, transit, and entry requirements) before booking → fare is re-verified immediately before booking → traveler explicitly approves Atlas Sandbox booking attempt → ticketing either creates a real Sandbox order or fails closed with `TICKETING_ACTIVATION_REQUIRED` without fabricating PNRs → Claims Autopilot resolves jurisdiction (EU261 / UK261 / Turkey SHY / US DOT / none).
 
 ## Data Authenticity
 
@@ -30,8 +28,9 @@ Atlas organizers confirmed (2026-08): *"We did not prepare a separate 'Hackathon
 
 | Layer | State |
 |---|---|
+| Conversation Controller | Pure deterministic projection (`services/conversation_controller.py`); at most one active question; safety and approval gates take priority; no PII collected |
 | Flight search & fares | Official Atlas Sandbox through the authenticated `atlas-flight` CLI; exact-airport results only, with provider `price_status` and `bookable` truth preserved |
-| Booking | Fail-closed Sandbox order path. This account currently reports `TICKETING_ACTIVATION_REQUIRED`; no PNR or ticket is fabricated |
+| Booking & Ticketing | Fail-closed Sandbox order path with 8-field capability boundary. This account reports `TICKETING_ACTIVATION_REQUIRED`; no PNR or ticket is fabricated |
 | LLM reasoning | Configured ModelScope-compatible model via `LLM_BASE_URL` + `ALIBABA_MODEL_API_KEY`; deterministic fallback when no model is configured |
 | Rights engine | Deterministic rule tables grounded in published regulations |
 | Visa rules | Conservative curated table (2026-08), flags RISK over CLEAR |

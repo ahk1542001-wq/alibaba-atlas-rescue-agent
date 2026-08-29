@@ -2353,3 +2353,13 @@ def test_ui_ticketing_activation_required_shows_calm_safe_plan_and_back_button(t
     # Step 3 must be open and complete itinerary still visible
     expect(page.locator("#aj-step-3-itinerary-slot #trip-itinerary-block")).to_be_visible()
     expect(page.locator("#trip-itinerary .trip-itin-hotel").first).to_be_visible()
+
+
+def test_ui_conversation_card_rendered_and_interactive(tracked_page, install_orch):
+    page = tracked_page
+    goto_trip(page)
+    start_goal(page, HAPPY_GOAL)
+    expect(page.locator('[data-testid="aj-conversation-card"]')).to_be_visible(timeout=15000)
+    expect(page.locator('[data-testid="aj-conversation-message"]')).to_be_visible()
+    expect(page.locator('[data-testid="aj-conversation-provenance"]')).to_be_visible()
+

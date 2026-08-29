@@ -291,6 +291,7 @@ def _complete_goal():
     return TripGoal(
         goal_id="g1", raw_text="BKK SIN", origin_city="BKK", dest_city="SIN",
         date_window={"start": "2026-09-28", "end": "2026-09-30"}, passengers=1,
+        passengers_explicit=True,
     ).model_dump(mode="json")
 
 

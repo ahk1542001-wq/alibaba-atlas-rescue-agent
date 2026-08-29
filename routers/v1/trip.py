@@ -68,6 +68,7 @@ from services.skills.recovery_plan import RecoveryPlanSkill
 from services.skills.rights_check import RightsCheckSkill
 from services.skills.safety_monitor import SafetyMonitorSkill
 from services.skills.safety_research import SafetyResearchSkill
+from services.conversation_controller import project_conversation_turn
 from services.skills.visa_check import VisaCheckSkill
 from services.trip_graph import (
     SCOPE_CHOICES,
@@ -1505,6 +1506,8 @@ class TripOrchestrator:
             outputs["safety_events"] = safety_events
         snapshot["outputs"] = outputs
         snapshot.update(self.confirmation_surface(trip_id))
+        turn = project_conversation_turn(snapshot, context=ctx)
+        snapshot["conversation"] = turn.model_dump(mode="json")
         return snapshot
 
     def resume_result(self, trip_id: str) -> Dict[str, Any]:

@@ -585,6 +585,7 @@
         clearStateBox();
         Trip.lastState = s;
         renderStatusStrip(s);
+        renderConversationTurn(s);
         renderDag(s);
         renderServices(s);
         renderQuestionCards(s);
@@ -808,6 +809,101 @@
             return qq;
         }
         return null;
+    }
+
+    function handleConversationAction(actionId, s) {
+        if (actionId === 'continue_to_booking' || actionId === 'select_option') {
+            Trip.forceStep = 4;
+            editStep(4);
+        } else if (actionId === 'back_to_review' || actionId === 'edit_plan' || actionId === 'review_alternatives') {
+            Trip.forceStep = 3;
+            switchDestination('plan');
+            editStep(3);
+        } else if (actionId === 'check_again') {
+            if (typeof postSafetyRecheck === 'function') {
+                postSafetyRecheck();
+            }
+        } else if (actionId === 'approve') {
+            var openBtn = document.querySelector('[data-testid="approval-open"]');
+            if (openBtn) {
+                openBtn.click();
+            }
+        } else if (actionId === 'retry') {
+            Trip.terminal = false;
+            startWatching();
+        } else if (actionId === 'view_trip') {
+            switchDestination('mytrip');
+        }
+    }
+
+    function renderConversationTurn(s) {
+        var host = byId('aj-dest-plan') || byId('aj-questions-slot') || byId('aj-step-1-body');
+        if (!host) return;
+        var slot = byId('aj-conversation-slot');
+        if (!slot) {
+            slot = el('div', 'aj-conversation-slot');
+            slot.id = 'aj-conversation-slot';
+            slot.setAttribute('role', 'region');
+            slot.setAttribute('aria-label', 'Trip Assistant Conversation');
+            var steps = host.querySelector('.aj-steps');
+            if (steps) {
+                host.insertBefore(slot, steps);
+            } else {
+                host.appendChild(slot);
+            }
+        }
+        slot.textContent = ''; // safe DOM clearing
+
+        var conv = s.conversation;
+        if (!conv) return;
+
+        var card = el('div', 'aj-conversation-card');
+        card.setAttribute('data-testid', 'aj-conversation-card');
+        card.setAttribute('data-phase', conv.phase || 'in_progress');
+
+        // Message
+        var msgWrap = el('div', 'aj-conv-msg-wrap');
+        var badge = el('span', 'aj-conv-badge');
+        badge.textContent = 'TravelCare Assistant';
+        msgWrap.appendChild(badge);
+
+        var msg = el('p', 'aj-conv-msg');
+        msg.setAttribute('data-testid', 'aj-conversation-message');
+        msg.textContent = conv.assistant_message || '';
+        msgWrap.appendChild(msg);
+
+        if (conv.provenance_label) {
+            var prov = el('span', 'aj-conv-provenance');
+            prov.setAttribute('data-testid', 'aj-conversation-provenance');
+            prov.textContent = 'Source: ' + conv.provenance_label;
+            msgWrap.appendChild(prov);
+        }
+        card.appendChild(msgWrap);
+
+        // Actions
+        if (conv.actions && conv.actions.length > 0) {
+            var actionsRow = el('div', 'aj-conv-actions-row');
+            conv.actions.forEach(function (act) {
+                var btn = el('button', 'aj-btn aj-btn-' + (act.kind || 'primary') + ' aj-conv-action-btn');
+                btn.type = 'button';
+                btn.style.minHeight = '44px';
+                btn.textContent = act.label;
+                btn.setAttribute('data-testid', 'aj-conv-action-' + act.action_id);
+                btn.addEventListener('click', function () {
+                    handleConversationAction(act.action_id, s);
+                });
+                actionsRow.appendChild(btn);
+            });
+            card.appendChild(actionsRow);
+        }
+
+        if (conv.consequence) {
+            var consq = el('div', 'aj-conv-consequence');
+            consq.textContent = conv.consequence;
+            card.appendChild(consq);
+        }
+
+        slot.appendChild(card);
     }
 
     function renderQuestionCards(s) {
