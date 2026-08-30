@@ -50,7 +50,12 @@ async def chat_concierge(req: ConciergeQuery):
                     trip_ctx["pending_approvals"] = [a.model_dump(mode="json") for a in target_trip.pending_approvals]
                     trip_ctx["nodes"] = [n.model_dump(mode="json") for n in target_trip.trace]
 
-        res = await rescue_engine.answer_concierge(req.query, context=trip_ctx)
+        from services.brain import is_qwen_brain
+        if is_qwen_brain():
+            from services.qwen_brain.concierge import run_qwen_concierge_turn
+            res = await run_qwen_concierge_turn(req.query, context=trip_ctx, engine=rescue_engine)
+        else:
+            res = await rescue_engine.answer_concierge(req.query, context=trip_ctx)
 
         # Back-and-forth structured proposals on active trip
         if target_trip_id and orch is not None:

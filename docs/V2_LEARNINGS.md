@@ -38,3 +38,22 @@
 - **Learnings**:
   - When wrapping skills into Qwen-Agent tools, always pass orchestrator context (`ctx`) and shared store references (e.g. `ProfileStore`) into tool constructors and invocations to preserve mock mode, test fixtures, and shared state across test suites.
 
+## Phase 3 (P3) - Skills Migration Wave 1 (Flight, Visa, Rights, Safety, Concierge)
+- **Implemented**:
+  - `services/qwen_brain/tools/flight.py`: `FlightSearchTool` wrapping `AtlasClient.search_flights` with sandbox provenance and exception shielding.
+  - `services/qwen_brain/tools/visa.py`: `VisaCheckTool` wrapping `visa_guard` rules and `assess_offer`.
+  - `services/qwen_brain/tools/rights.py`: `RightsCheckTool` wrapping `rights_engine` distance calculation, jurisdiction detection, and entitlement computation.
+  - `services/qwen_brain/tools/safety.py`: `SafetyCheckTool` wrapping `SafetyResearchSkill` and `SafetyPolicyEngine`.
+  - `services/qwen_brain/concierge.py`: `run_qwen_concierge_turn` integrating assistant with trip context and tool execution.
+  - `routers/v1/concierge.py`: Seam delegating `/api/chat/concierge` to `run_qwen_concierge_turn` under `is_qwen_brain()` while preserving error sanitization and passenger count proposal logic.
+  - `tests/test_v2_tools_wave1.py`: 9 hermetic tests covering happy paths, resilience on malformed inputs, NONE regimes, and concierge endpoints under both brain modes.
+- **Evidence**:
+  - Wave 1 test suite: 9/9 PASSED in 15.52s.
+  - Full test suite under `TRAVELCARE_BRAIN=legacy`: 561 passed in 208s.
+  - Full test suite under `TRAVELCARE_BRAIN=qwen_agent`: 561 passed in 279s.
+  - Dual browser canary (`tests/e2e_full_journey.py`): 14/14 PASSED on `legacy` and 14/14 PASSED on `qwen_agent`.
+  - Security check (`scripts/security_check.sh`): ALL SECTIONS PASS.
+- **Learnings**:
+  - Injected router dependencies (e.g. monkeypatched `rescue_engine` in tests) must be accepted by high-level dispatchers to maintain contract parity with error sanitization test suites.
+
+
