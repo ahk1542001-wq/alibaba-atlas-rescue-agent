@@ -721,6 +721,12 @@ class TripOrchestrator:
                 goal_intake_skill=self.skills.get("goal_intake"),
                 clarify_loop_skill=self.skills.get("clarify_loop"),
             )
+            # missing_fields derivation (below) and the UI question stepper
+            # consume the FULL legacy question list; §13.3's single next
+            # question stays on the tool contract for the LLM conversation
+            # surface. Restore the full list carried by the tool.
+            if clarify_out.get("questions_all"):
+                clarify_out["questions"] = clarify_out["questions_all"]
             t1 = time.perf_counter()
             t2 = t1
         else:

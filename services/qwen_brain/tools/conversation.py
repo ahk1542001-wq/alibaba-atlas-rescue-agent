@@ -196,9 +196,15 @@ class ClarifyLoopTool(BaseTool):
             if args.get("profile") is not None:
                 skill_ctx.setdefault("profile", args.get("profile"))
             result = _run_coro_sync(self._skill.run(payload, skill_ctx or None))
-            # §13.3/§8: the qwen path emits at most ONE next question.
+            # §13.3/§8: the qwen CONTRACT surface emits at most ONE next
+            # question (questions:[ONE]). The full legacy question list is
+            # preserved under questions_all because the deterministic UI
+            # question stepper and the missing_fields derivation consume it
+            # exactly as legacy does (the UI shows one card at a time).
+            full_questions = list(result.get("questions") or [])
             result = dict(result)
-            result["questions"] = _single_next_question(result.get("questions") or [])
+            result["questions"] = _single_next_question(full_questions)
+            result["questions_all"] = full_questions
             return json.dumps({
                 "status": "success",
                 "clarify": result,
