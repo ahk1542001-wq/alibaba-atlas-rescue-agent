@@ -227,3 +227,15 @@ alibaba-atlas-rescue-agent/
 MIT License.
 
 Deeper reading: [FINAL_REPORT.md](FINAL_REPORT.md) · [docs/MASTER_BUILD_PACKAGE.md](docs/MASTER_BUILD_PACKAGE.md)
+
+---
+
+## V2 — Qwen-Agent Brain Swap (in progress)
+
+> **Branch:** `v2/qwen-agent-migration` · **Flag:** `TRAVELCARE_BRAIN=qwen_agent` · **Status:** feature-complete, pending owner review
+
+The V2 migration replaces the monolithic conversation controller with a **Qwen-Agent `Assistant`** backed by 17 registered tools — each wrapping an existing deterministic skill or engine (strangler-fig pattern). Both `legacy` and `qwen_agent` brains coexist behind the `TRAVELCARE_BRAIN` environment variable; the legacy path remains fully functional and is the default.
+
+**Key additions:** dual-provider fallback (ModelScope → OpenRouter), full tool registry covering all 13 public skills + 4 internal engines, 574 hermetic tests green on both flags, and a dual browser canary (14/14) on both flags.
+
+See [`docs/V2_STATUS.md`](docs/V2_STATUS.md) for the full evidence table and [`docs/V2_LEARNINGS.md`](docs/V2_LEARNINGS.md) for the engineering log.

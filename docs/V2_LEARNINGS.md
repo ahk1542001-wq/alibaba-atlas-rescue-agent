@@ -82,3 +82,17 @@
   - Approval-gated tools (`FlightBookTool`) must reject at the tool boundary, never delegating to the underlying skill when `approval_state` is missing or not `"approved"`. This ensures the agent loop cannot accidentally trigger irreversible side effects.
   - `SAFE_PROFILE_FIELDS` validation lives in `models/schemas.py` and is enforced by `ProfileStore` at the boundary — tool wrappers delegate to the skill which in turn delegates to the store, preserving the single validation point.
   - `RescueRadar.scan` is an async method; the wave-2 tool wrapper uses `asyncio.run()` when no event loop is active (hermetic tests) and `asyncio.to_thread` from the FastAPI event loop context.
+
+## Phase 5 (P5) - Integrity & Close
+- **Evidence**:
+  - Dual-flag full suite: `TRAVELCARE_BRAIN=legacy` 574 passed (220s), `TRAVELCARE_BRAIN=qwen_agent` 574 passed (361s).
+  - Dual browser canary: legacy 14/14, qwen_agent 14/14.
+  - Security gate: ALL SECTIONS PASS (6/6: secret scan, forbidden files, pre-commit hook, XSS audit, privacy suite 33/33, pip-audit clean).
+  - Secrets sweep: `git grep -nE -f scripts/banned_secret_patterns.txt` → zero hits; no `.env` files tracked; no key values in learnings.
+  - Honesty-label spot check (3 calls under qwen_agent):
+    - Flight search: `bookable: false`, `price_status: reference` — sandbox labeled.
+    - Disruption: `allow_sim=true` simulated mode — simulation labeled.
+    - Concierge: `NO_ACTIVE_SESSION` deterministic fallback — degraded labeled.
+  - Static freeze: `git diff main -- static/` → empty.
+  - `main` untouched at `c6e7a4e`.
+- **Final state**: Migration feature-complete. 5 commits on `v2/qwen-agent-migration` (G0 → P5). Nothing pushed, nothing merged, no deployment.
