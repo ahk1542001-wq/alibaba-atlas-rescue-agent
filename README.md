@@ -11,11 +11,6 @@
 
 ![TravelCare AI — Trip view](screenshots/aj_probe_07_mytrip_desktop.png)
 
-> **Hackathon:** Alibaba Cloud x Atlas Agentic AI Hackathon 2026 — Flights & Aviation Autonomous Agents
-> **Participant / Lead Architect:** Aung Hein Kyaw (Victor Job)
-> **Team Mailbox:** `aihackathon048@aihackathon.atriptech.com`
-> **Demo Submission Deadline:** August 30, 2026
-
 ---
 
 ## The Problem
@@ -229,8 +224,6 @@ alibaba-atlas-rescue-agent/
 
 ## License & Contact
 
-MIT License. Built for the Alibaba Cloud x Atlas Agentic AI Hackathon 2026.
-
-**Contact:** Aung Hein Kyaw (Victor Job) — `aihackathon048@aihackathon.atriptech.com`
+MIT License.
 
 Deeper reading: [FINAL_REPORT.md](FINAL_REPORT.md) · [docs/MASTER_BUILD_PACKAGE.md](docs/MASTER_BUILD_PACKAGE.md)
