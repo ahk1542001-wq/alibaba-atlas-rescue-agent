@@ -50,8 +50,6 @@ from models.schemas import (
 )
 from routers.v1.profile import TripApiError, get_profile_store
 from services.atlas_client import AtlasClient
-
-logger = logging.getLogger("trip")
 from services.research_coordinator import ResearchCoordinator
 from services.rights_engine import airports_to_countries
 from services.safety.policy import normalize_country
@@ -85,6 +83,8 @@ from services.trip_graph import (
 )
 from services.web_intel_client import WebIntelClient
 from services import llm as llm_service
+
+logger = logging.getLogger("trip")
 
 router = APIRouter(prefix="/api/trip", tags=["Trip"])
 trips_router = APIRouter(prefix="/api/trips", tags=["Trips"])
