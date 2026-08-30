@@ -102,15 +102,22 @@ NOT rewritten.**
 
 | Flag | Tests | Duration | Result |
 |------|-------|----------|--------|
-| `TRAVELCARE_BRAIN=legacy` | 574 passed | 220s | ✅ GREEN |
-| `TRAVELCARE_BRAIN=qwen_agent` | 574 passed | 361s | ✅ GREEN |
+| `TRAVELCARE_BRAIN=legacy` | 661 passed | 223s | ✅ GREEN |
+| `TRAVELCARE_BRAIN=qwen_agent` | 661 passed | 231s | ✅ GREEN |
 
-### Browser Canary (dual-flag)
+(Refreshed at the audit fix-round closeout, 2026-08-31; supersedes the
+earlier 574-test rows. The fix round added ~87 gate tests and fixed one
+late regression: §13.3 single-question enforcement initially collapsed
+`missing_fields`/the UI stepper under the qwen flag — resolved in commit
+4d4d42d by keeping the contract `questions:[ONE]` while preserving the
+full legacy list under `questions_all`.)
+
+### Browser Canary (dual-flag, dual-viewport: 1440×900 desktop + 375×812 mobile)
 
 | Flag | Checks | Result |
 |------|--------|--------|
-| `TRAVELCARE_BRAIN=legacy` | 14/14 | ✅ PASS |
-| `TRAVELCARE_BRAIN=qwen_agent` | 14/14 | ✅ PASS |
+| `TRAVELCARE_BRAIN=legacy` | 15/15 | ✅ PASS |
+| `TRAVELCARE_BRAIN=qwen_agent` | 15/15 | ✅ PASS |
 
 ### Security Gate
 
@@ -222,3 +229,21 @@ The migration implements a **strangler-fig pattern**: both `legacy` and `qwen_ag
 | N13 | No walkthrough doc from §14 report | `docs/V2_WALKTHROUGH.md` committed; doc-commit scope deviations noted below | see walkthrough commit |
 | N14 | brain.py per-call env re-read undocumented | Documented as intentional (dual-brain test matrix flips flag per-request in one process) | commit cf11d0a |
 | N15 | Commit-count inconsistency in docs | Corrected to 6 (G0 + P1–P5) in V2_LEARNINGS | commit e9666a0-era correction |
+| M5b | Late regression from M5: `missing_fields` collapsed to one field and the UI question stepper stalled under the qwen flag (9 suite failures) | `ClarifyLoopTool` keeps contract `questions:[ONE]` and preserves the full legacy list under `questions_all`; trip.py qwen branch restores it for the UI-driven flow | commit 4d4d42d; full dual-flag suite 661/661 green again |
+
+### Closeout re-verification (2026-08-31)
+
+| Gate | Command | Result |
+|------|---------|--------|
+| Full suite, legacy | `TZ=UTC TRAVELCARE_BRAIN=legacy .venv/bin/python -m pytest -q` | ✅ `661 passed` (223s) |
+| Full suite, qwen | `TZ=UTC TRAVELCARE_BRAIN=qwen_agent .venv/bin/python -m pytest -q` | ✅ `661 passed` (231s) |
+| Browser canary, legacy | `tests/e2e_full_journey.py` vs `main.py` (legacy) | ✅ `15/15 passed` (desktop 1440×900 + mobile 375×812) |
+| Browser canary, qwen | same vs `main.py` (qwen_agent) | ✅ `15/15 passed` |
+| Security gate | `bash scripts/security_check.sh` | ✅ `G5 security check: ALL SECTIONS PASS` (secrets sweep incl.) |
+| Static freeze | `git diff main -- static/` | ✅ empty |
+| Branch discipline | `git log --oneline -1 main` | ✅ `main` still at `c6e7a4e`; nothing pushed/merged/deployed |
+
+All 15 audit findings (C1a–C2, M3–M10, N11–N15) closed; no finding left
+open. New commits this round: 62c7a59, aad5247, 9c65bf3, 16a64fd, 7d1ea8c,
+e9666a0, fb86022, f7a4cec, 58083b9, 847d22b, 53abe77, a1e531b, fa66698,
+cf11d0a, 2f3af41, 83e7740, 4d4d42d (+ this docs commit).

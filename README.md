@@ -6,7 +6,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
 [![LLM](https://img.shields.io/badge/LLM-Qwen3--235B--A22B--Instruct--2507%20via%20ModelScope-FF6A00.svg)](https://www.modelscope.cn/)
 [![Atlas](https://img.shields.io/badge/Atlas%20Travel-Sandbox%20(atlas--flight%20CLI)-0F766E.svg)](https://sandbox.atriptech.com)
-[![Tests](https://img.shields.io/badge/pytest-535%20tests-success.svg)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-661%20tests-success.svg)](tests/)
 [![Qoder](https://img.shields.io/badge/built%20with-Qoder-8A2BE2.svg)](https://qoder.com)
 
 ![TravelCare AI — Trip view](screenshots/aj_probe_07_mytrip_desktop.png)
@@ -77,11 +77,11 @@ Deterministic engines (rights engine, visa guard, radar) run the consequential d
 |---|---|---|
 | **Atlas Travel Sandbox (official `atlas-flight` CLI)** | The only flight-data source. Live search, offer verification, and the fail-closed booking path run through the authenticated CLI bridge — never cached or product-coded offers. Ticketing honestly reports `TICKETING_ACTIVATION_REQUIRED`. | `services/atlas_client.py`, `services/skills/flight_search.py`, `services/skills/flight_book.py` |
 | **Qwen3-235B-A22B-Instruct-2507 via ModelScope API-Inference** | Parses the traveler's goal into structured intent, drives one-question-at-a-time clarification, powers the Concierge, and classifies disruption causes for Claims Autopilot. Deterministic fallback when no model is configured. | `services/llm.py`, `services/conversation_controller.py`, `routers/v1/concierge.py` |
-| **Qoder platform** | The agentic development platform used to build and orchestrate the project: iterative agent-driven implementation, test-first cycles, and multi-step build orchestration across the 535-test suite. | Whole repository; build history in `docs/MASTER_BUILD_PACKAGE.md` |
+| **Qoder platform** | The agentic development platform used to build and orchestrate the project: iterative agent-driven implementation, test-first cycles, and multi-step build orchestration across the 661-test suite. | Whole repository; build history in `docs/MASTER_BUILD_PACKAGE.md` |
 | **Safety adapters (UK FCDO, US State, SmartTraveller, WHO, GDACS)** | Five fail-closed adapters compose the destination safety card in every completed plan; an unreachable source degrades the card honestly instead of being silently dropped. | `services/safety/adapters.py`, `services/safety/policy.py` |
 | **Rights engine (EU261 / UK261 / US_DOT / TURKEY_SHY)** | Deterministic jurisdiction resolution from the actual route, distance-band entitlement computation, and regulation-cited claim/appeal letter drafting. | `services/rights_engine.py`, `services/skills/rights_check.py` |
 | **Visa guard (14 passports)** | Conservative curated visa table ranks and filters rescue options so no rebooking creates a visa problem; flags RISK over CLEAR. | `services/visa_guard.py`, `services/skills/visa_check.py` |
-| **Playwright + pytest** | 535 hermetic tests: provider-boundary truth, privacy, claims truth, UI journeys, and Playwright browser canaries — all with test doubles, no external calls. | `tests/` |
+| **Playwright + pytest** | 661 tests: provider-boundary truth, privacy, claims truth, UI journeys, V2 parity gates, and Playwright browser canaries — hermetic test doubles by default; with LLM keys present the qwen-brain suites exercise the live provider, and without keys they exercise the deterministic fallback. | `tests/` |
 | **Telegram Guardian** | Proactive disruption push; live delivery requires token + chat ID + explicit live-test opt-in, otherwise returns a redacted simulated preview. | `services/guardian.py`, `services/skills/guardian_push.py` |
 
 ## Demo
@@ -120,7 +120,7 @@ atlas-flight auth login         # one-time Atlas Sandbox authentication
 .venv/bin/python main.py        # → http://localhost:8050
 
 # 3. Verify
-.venv/bin/python -m pytest -q   # 535 tests
+.venv/bin/python -m pytest -q   # 661 tests
 ```
 
 > **V2 (Qwen-Agent brain, experimental):** the strangler-fig Qwen-Agent
@@ -138,7 +138,7 @@ atlas-flight auth login         # one-time Atlas Sandbox authentication
 
 ## Verification & Testing
 
-**535 pytest tests**, fully hermetic — external boundaries are replaced by test doubles, so the suite never touches Atlas, ModelScope, or Telegram.
+**661 pytest tests** (green under BOTH `TRAVELCARE_BRAIN=legacy` and `TRAVELCARE_BRAIN=qwen_agent`) — external boundaries are replaced by test doubles by default, so the suite never touches Atlas, ModelScope, or Telegram; with LLM provider keys in the environment the qwen-brain suites additionally exercise the live provider.
 
 | Suite | Proves | Key files |
 |---|---|---|
