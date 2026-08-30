@@ -69,6 +69,7 @@ from services.skills.rights_check import RightsCheckSkill
 from services.skills.safety_monitor import SafetyMonitorSkill
 from services.skills.safety_research import SafetyResearchSkill
 from services.conversation_controller import project_conversation_turn
+from services.readiness import assess_readiness
 from services.skills.visa_check import VisaCheckSkill
 from services.trip_graph import (
     SCOPE_CHOICES,
@@ -317,7 +318,9 @@ class TripOrchestrator:
 
     def __init__(self, profile_store=None, atlas=None, web_intel=None,
                  llm_chat=None, safety_service: Optional[Any] = None,
-                 safety_ttl_seconds: float = 24 * 3600) -> None:
+                 safety_ttl_seconds: float = 24 * 3600,
+                 allow_mock_fallback: bool = False,
+                 itinerary_skill: Optional[ItinerarySkill] = None) -> None:
         self.store = profile_store or get_profile_store()
         # G4.6-DA fix F3: a cached assessment older than this TTL never
         # gates a safety-critical booking decision — the precheck forces a
@@ -380,7 +383,7 @@ class TripOrchestrator:
         ex.register_skill("flight_book", FlightBookSkill(atlas=atlas_client))
         ex.register_skill("disruption_monitor",
                           DisruptionMonitorSkill(trip_registry=ex))
-        ex.register_skill("itinerary", ItinerarySkill())
+        ex.register_skill("itinerary", itinerary_skill or ItinerarySkill(allow_mock_fallback=allow_mock_fallback))
         ex.register_skill("location_resolve", LocationResolveSkill())
         ex.register_skill("recovery_plan", RecoveryPlanSkill(atlas=atlas_client))
         ex.register_skill("rights_check", RightsCheckSkill())
@@ -739,6 +742,17 @@ class TripOrchestrator:
                           "choices": list(scope["choices"])})
             return trip_id
 
+        # Phase 2: Authoritative readiness assessment
+        readiness = assess_readiness(
+            goal=goal_out["goal"],
+            profile=profile,
+            requested_services=clarify_out["requested_services"],
+            clarify_data=clarify_out,
+        )
+        if not readiness.ready_for_search:
+            trip.status = "clarifying" if (clarify_out.get("questions") or not clarify_out.get("complete")) else "in_progress"
+            return trip_id
+
         rs = RequestedServices(**clarify_out["requested_services"])
         trip.context["requested_services"] = rs.model_dump()
         rest = self._build_plan_rest(seed, rs)
@@ -768,10 +782,32 @@ class TripOrchestrator:
             approval.resolved_value = {"choice": choice}
             self._record(trip, "scope_clarification", "scope_clarification",
                          "COMPLETED", 0.0, {"resolved_value": {"choice": choice}})
+
+            # Re-evaluate clarify loop with updated scope
+            clarify_out = await self.skills["clarify_loop"].run(
+                {"goal": seed["goal"], "user_id": trip.context.get("user_id", ""),
+                 "requested_services": rs.model_dump(), "scope_choice": choice}, trip.context)
+            trip.context["clarify_loop"] = clarify_out
+            seed["clarify"] = clarify_out
+
+            profile = self.store.get_or_create(str(trip.context.get("user_id") or ""))
+            readiness = assess_readiness(
+                goal=seed["goal"],
+                profile=profile,
+                requested_services=rs.model_dump(),
+                clarify_data=clarify_out,
+            )
+
             rest = self._build_plan_rest(seed, rs)
             trip.nodes = rest
             trip.nodes_by_name = {n.name: n for n in rest}
             trip.context["requested_services"] = rs.model_dump()
+
+            if not readiness.ready_for_search:
+                trip.status = "clarifying" if clarify_out.get("questions") else "in_progress"
+                trip.current = None
+                return
+
             trip.status = "pending"
             trip.current = None
         if rest:
@@ -1353,6 +1389,18 @@ class TripOrchestrator:
         seed = self._seeds.get(trip.trip_id)
         if not seed:
             return
+        clarify = trip.context.get("clarify_loop") or {}
+        profile = self.store.get_or_create(str(trip.context.get("user_id") or ""))
+        readiness = assess_readiness(
+            goal=seed["goal"],
+            profile=profile,
+            requested_services=seed["requested_services"],
+            clarify_data=clarify,
+        )
+        if not readiness.ready_for_search:
+            trip.status = "clarifying" if (clarify.get("questions") or not clarify.get("complete")) else "in_progress"
+            return
+
         rs = RequestedServices(**seed["requested_services"])
         rest = self._build_plan_rest(seed, rs)
         async with trip.lock:
@@ -1535,30 +1583,31 @@ class TripOrchestrator:
                 if q.get("field") != field and not (origin_known and q.get("field") == "home_city")]
         self._sync_clarify_surface(trip)
 
+        # Phase 2: Authoritative readiness check
+        profile = self.store.get_or_create(str(trip.context.get("user_id") or ""))
+        readiness = assess_readiness(
+            goal=goal,
+            profile=profile,
+            requested_services=seed["requested_services"],
+            clarify_data=clarify,
+        )
+
         resumed = False
-        if trip.status == "failed":
-            failed = next((n for n in reversed(trip.trace)
-                           if n.status == "FAILED"), None)
-            code = (failed.details or {}).get("error_code") if failed else None
-            required_trip_facts_complete = (
-                goal.get("origin_city")
-                and goal.get("dest_city")
-                and goal.get("date_window")
-            )
-            if code in _RESUMABLE_ROUTE_ERRORS \
-                    and required_trip_facts_complete:
-                rs = RequestedServices(**seed["requested_services"])
-                async with trip.lock:
-                    rest = self._build_plan_rest(seed, rs)
-                    trip.nodes = rest
-                    trip.nodes_by_name = {n.name: n for n in rest}
-                    trip.status = "pending"
-                    trip.current = None
-                resumed = True
-                if rest:
-                    await self._run_guarded(trip_id)
-                else:
-                    trip.status = "completed"
+        if readiness.ready_for_search and not trip.pending_approvals:
+            rs = RequestedServices(**seed["requested_services"])
+            async with trip.lock:
+                rest = self._build_plan_rest(seed, rs)
+                trip.nodes = rest
+                trip.nodes_by_name = {n.name: n for n in rest}
+                trip.status = "pending"
+                trip.current = None
+            resumed = True
+            if rest:
+                await self._run_guarded(trip_id)
+            else:
+                trip.status = "completed"
+        elif not readiness.ready_for_search:
+            trip.status = "clarifying" if (clarify.get("questions") or not clarify.get("complete")) else "in_progress"
 
         result = self.resume_result(trip_id)
         result["clarify"] = {"field": field, "value": normalized,

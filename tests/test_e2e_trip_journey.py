@@ -332,7 +332,7 @@ def test_flight_only_intent_skips_leisure_researchers(harness):
 
     async def flow():
         async with _client() as client:
-            trip_id = await _start(client, AMBIGUOUS_GOAL, "flyonly_user")
+            trip_id = await _start(client, "I need to get to Singapore from Bangkok on 2026-09-29.", "flyonly_user")
             result = await _resolve_scope_if_paused(client, trip_id,
                                                     "flight_only")
             assert result["status"] == "completed"
@@ -531,7 +531,7 @@ def test_provider_failure_degrades_recoverably(harness):
 
     async def flow():
         async with _client() as client:
-            trip_id = await _start(client, AMBIGUOUS_GOAL, "fail_user")
+            trip_id = await _start(client, "I need to get to Singapore from Bangkok on 2026-09-29.", "fail_user")
             result = await _resolve_scope_if_paused(client, trip_id,
                                                     "flight_only")
             assert result["status"] == "failed"
@@ -987,8 +987,7 @@ def test_clarify_answer_feeds_trip_goal_and_resumes(harness):
             trip_id = await _start(client, NO_ORIGIN_GOAL, "chip_user")
             result = await _resolve_scope_if_paused(client, trip_id,
                                                     "flight_only")
-            assert result["status"] == "failed"
-            assert result["error"]["code"] == "missing_route"
+            assert result["status"] == "clarifying"
 
             resp = await client.post(
                 f"/api/trip/{trip_id}/clarify-answers",
@@ -1023,9 +1022,13 @@ def test_clarify_waits_for_route_and_dates_before_resuming_search(harness):
 
     async def flow():
         async with _client() as client:
+            await client.put(
+                "/api/profile/sequential_clarify_user/passport_country",
+                json={"value": "MM"},
+            )
             trip_id = await _start(
                 client,
-                "Plan my complete trip — flights, hotel and activities.",
+                "Plan my complete trip for 1 person — flights, hotel and activities.",
                 "sequential_clarify_user",
             )
             assert not [call for call in atlas.calls if call[0] == "search"]

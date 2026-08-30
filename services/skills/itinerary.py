@@ -67,10 +67,12 @@ class ItinerarySkill(SkillBase):
     def __init__(self, hotels_path: Optional[Path] = None,
                  organizer: Optional[Callable[[], Awaitable[List[Dict[str, Any]]]]] = None,
                  amadeus: Optional[Callable[[], Awaitable[List[Dict[str, Any]]]]] = None,
-                 osm: Optional[Callable[[], Awaitable[List[Dict[str, Any]]]]] = None) -> None:
+                 osm: Optional[Callable[[], Awaitable[List[Dict[str, Any]]]]] = None,
+                 allow_mock_fallback: bool = False) -> None:
         self._hotels_path = Path(hotels_path) if hotels_path else _DEFAULT_HOTELS_PATH
         self._providers = [("organizer", organizer), ("amadeus", amadeus),
                            ("osm", osm)]
+        self._allow_mock_fallback = allow_mock_fallback or (hotels_path is not None)
 
     # -- flight items (atlas_real when booked, atlas_sandbox when planned) -------
 
@@ -280,7 +282,8 @@ class ItinerarySkill(SkillBase):
         return selected
 
     async def _enrich(self, providers_tried: List[str],
-                      requested_domains: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+                      requested_domains: Optional[List[str]] = None,
+                      context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         allowed_kinds = None
         if requested_domains is not None:
             allowed_kinds = {
@@ -316,12 +319,19 @@ class ItinerarySkill(SkillBase):
                                    "researched_as_of": None, "degraded": False},
                 } for e in valid]
 
-        # researched-mock fallback — always attempted when nothing live won
-        providers_tried.append("researched_mock")
-        mock = self._read_researched_mock()
-        selected = self._select_plan_entries(
-            [e for e in mock["entries"] if requested(e)])
-        return [self._mock_item(e) for e in selected]
+        # In runtime path: no mock fallback. Return empty list if no live/verified provider data won.
+        allow_mock = (
+            self._allow_mock_fallback
+            or (context and (context.get("allow_mock_fallback") or context.get("is_simulation")))
+        )
+        if allow_mock:
+            providers_tried.append("researched_mock")
+            mock = self._read_researched_mock()
+            selected = self._select_plan_entries(
+                [e for e in mock["entries"] if requested(e)])
+            if selected:
+                return [self._mock_item(e) for e in selected]
+        return []
 
     async def run(self, payload: Dict[str, Any],
                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -354,7 +364,7 @@ class ItinerarySkill(SkillBase):
         if requested_domains is not None and not isinstance(requested_domains, list):
             requested_domains = []
         providers_tried: List[str] = []
-        items.extend(await self._enrich(providers_tried, requested_domains))
+        items.extend(await self._enrich(providers_tried, requested_domains, context=context))
 
         # Assign stable item_ids to all items
         for i, item in enumerate(items):

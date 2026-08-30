@@ -168,11 +168,11 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label>Origin</label>
-                            <input type="text" id="search-origin" data-testid="search-origin" placeholder="BKK">
+                            <input type="text" id="search-origin" data-testid="search-origin" placeholder="e.g. BKK (Bangkok)">
                         </div>
                         <div class="form-group">
                             <label>Destination</label>
-                            <input type="text" id="search-destination" data-testid="search-destination" placeholder="RGN">
+                            <input type="text" id="search-destination" data-testid="search-destination" placeholder="e.g. SIN (Singapore)">
                         </div>
                         <div class="form-group">
                             <label>Date</label>
@@ -436,18 +436,6 @@
                     </div>
                 </section>
 
-                <!-- AJ profile drawer (opened from the top bar) -->
-                <aside class="aj-drawer" id="aj-profile-drawer" data-testid="aj-profile-drawer" data-aj role="dialog" aria-modal="true" aria-labelledby="aj-drawer-title" hidden>
-                    <div class="aj-drawer-head">
-                        <h3 class="aj-drawer-title" id="aj-drawer-title">Your details</h3>
-                        <button type="button" class="aj-drawer-close" id="aj-profile-close" data-testid="aj-profile-close">Close</button>
-                    </div>
-                    <p class="aj-consent-note" id="aj-profile-consent-note" data-testid="aj-profile-consent-note">Only save details I give you. You can delete anything at any time.</p>
-                    <div class="aj-consent-row" id="aj-consent-slot"><!-- trip-consent label transplanted here --></div>
-                    <div class="aj-drawer-rows" id="aj-drawer-rows"><!-- trip-profile-rows transplanted here --></div>
-                    <p class="aj-privacy-note" id="aj-profile-privacy-note" data-testid="aj-profile-privacy-note">Passport number, payment details, and legal identity are not stored by this demo. Only safe preferences (passport country, home city, cabin, budget, and similar) are kept — with your consent.</p>
-                </aside>
-
                 <div class="trip-shell">
                     <section class="trip-main">
                         <header class="trip-hero">
@@ -536,6 +524,18 @@
             </div>
         </div>
     </div>
+
+    <!-- AJ PROFILE DRAWER (GLOBAL) -->
+    <aside class="aj-drawer" id="aj-profile-drawer" data-testid="aj-profile-drawer" data-aj role="dialog" aria-modal="true" aria-labelledby="aj-drawer-title" hidden>
+        <div class="aj-drawer-head">
+            <h3 class="aj-drawer-title" id="aj-drawer-title">Your details</h3>
+            <button type="button" class="aj-drawer-close" id="aj-profile-close" data-testid="aj-profile-close">Close</button>
+        </div>
+        <p class="aj-consent-note" id="aj-profile-consent-note" data-testid="aj-profile-consent-note">Only save details I give you. You can delete anything at any time.</p>
+        <div class="aj-consent-row" id="aj-consent-slot"><!-- trip-consent label transplanted here --></div>
+        <div class="aj-drawer-rows" id="aj-drawer-rows"><!-- trip-profile-rows transplanted here --></div>
+        <p class="aj-privacy-note" id="aj-profile-privacy-note" data-testid="aj-profile-privacy-note">Passport number, payment details, and legal identity are not stored by this demo. Only safe preferences (passport country, home city, cabin, budget, and similar) are kept — with your consent.</p>
+    </aside>
 
     <!-- TRIP APPROVAL MODAL (G4) -->
     <div class="trip-overlay" id="trip-approval-overlay" data-testid="trip-approval-overlay" hidden>

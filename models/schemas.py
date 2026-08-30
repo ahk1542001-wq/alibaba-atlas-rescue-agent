@@ -146,6 +146,8 @@ class CompensationClaim(BaseModel):
 class ConciergeQuery(BaseModel):
     query: str
     session_id: Optional[str] = None
+    trip_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 class ConciergeResponse(BaseModel):
     reply: str

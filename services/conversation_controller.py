@@ -143,92 +143,23 @@ def project_conversation_turn(
             error_code="fare_price_increase",
         )
 
-    # 4. PRIORITY: Booking Approval (Step 4)
-    booking_approval = next((a for a in pending_approvals if a.get("node_name") in ("approve_booking", "flight_book")), None)
-    if booking_approval:
-        prompt = booking_approval.get("prompt") or "Your complete plan is ready. Review and approve to request your Sandbox booking."
-        return ConversationTurn(
-            phase="booking_approval",
-            assistant_message=f"{prompt}",
-            question=None,
-            actions=[
-                ConversationAction(
-                    action_id="approve",
-                    label="Approve Sandbox booking",
-                    kind="primary",
-                    requires_confirmation=True,
-                    consequence="Approving requests an Atlas Sandbox booking. A PNR exists only if Atlas confirms it.",
-                ),
-                ConversationAction(
-                    action_id="back_to_review",
-                    label="Back to plan review",
-                    kind="secondary",
-                ),
-            ],
-            requires_user_input=False,
-            consequence="Approving requests an Atlas Sandbox booking. A PNR exists only if Atlas confirms it.",
-            provenance_label="Atlas Sandbox",
-            recoverable=True,
-        )
-
-    # 5. PRIORITY: Ticketing Unavailable / Error State
-    err_code = error.get("code") or ""
-    if not err_code and status == "failed":
-        nodes = state.get("nodes") or []
-        failed_node = next((n for n in reversed(nodes) if n.get("status") == "FAILED"), None)
-        if failed_node:
-            err_code = (failed_node.get("details") or {}).get("error_code") or ""
-
-    if status == "failed" and (err_code in ("ticketing_activation_required", "atlas_ticketing_unavailable", "atlas_booking_unavailable", "TICKETING_ACTIVATION_REQUIRED") or "ticketing" in err_code.lower() or (error.get("details") or {}).get("ticketing_blocker") == "TICKETING_ACTIVATION_REQUIRED"):
-        return ConversationTurn(
-            phase="ticketing_unavailable",
-            assistant_message="Your plan is safe. Atlas Sandbox ticketing is not enabled for this account, so no booking or ticket was created.",
-            question=None,
-            actions=[
-                ConversationAction(
-                    action_id="back_to_review",
-                    label="Back to review",
-                    kind="primary",
-                )
-            ],
-            requires_user_input=False,
-            consequence="Your complete plan is preserved. You can review all details or search other routes.",
-            provenance_label="Atlas Sandbox",
-            recoverable=True,
-            error_code=err_code or "atlas_ticketing_unavailable",
-        )
-
-    if status == "failed":
-        msg = error.get("message") or "We hit a snag while planning your trip."
-        hint = error.get("hint")
-        if hint:
-            msg = f"{msg} {hint}"
-        return ConversationTurn(
-            phase="error",
-            assistant_message=msg,
-            question=None,
-            actions=[
-                ConversationAction(
-                    action_id="retry",
-                    label="Try again",
-                    kind="primary",
-                )
-            ],
-            requires_user_input=False,
-            recoverable=bool(error.get("recoverable", True)),
-            error_code=err_code or "trip_error",
-        )
-
-    # 6. PRIORITY: Clarification Questions (First required trip fact BEFORE scope clarification)
+    # 4. PRIORITY: Clarification Questions (First required trip fact BEFORE scope clarification)
     clarify = outputs.get("clarify") or ctx.get("clarify_loop") or {}
     questions = clarify.get("questions") or []
     scope_clarification = clarify.get("scope_clarification")
+    booking_approval = next((a for a in pending_approvals if a.get("node_name") in ("approve_booking", "flight_book")), None)
 
-    # Ask the first unanswered required question before asking scope
-    for q in questions:
+    required_questions = [
+        q for q in questions
+        if q.get("field") and q.get("field") not in FORBIDDEN_PII_FIELDS and (
+            not q.get("optional") or clarify.get("complete") is False
+        )
+    ]
+
+    # Ask the first unanswered required question before asking scope or booking approval
+    if required_questions and (not booking_approval or clarify.get("complete") is False):
+        q = required_questions[0]
         field = q.get("field", "")
-        if not field or field in FORBIDDEN_PII_FIELDS:
-            continue
         prompt = q.get("prompt") or q.get("question") or f"Please provide your {field}."
         input_kind = "choice" if q.get("choices") else ("number" if field == "passengers" else "text")
         choices = q.get("choices") or []
@@ -279,6 +210,82 @@ def project_conversation_turn(
             consequence=None,
             provenance_label="TravelCare AI",
             recoverable=True,
+        )
+
+    # 5. PRIORITY: Booking Approval (Step 4) - only when clarification is fully complete
+    booking_approval = next((a for a in pending_approvals if a.get("node_name") in ("approve_booking", "flight_book")), None)
+    if booking_approval:
+        prompt = booking_approval.get("prompt") or "Your complete plan is ready. Review and approve to request your Sandbox booking."
+        return ConversationTurn(
+            phase="booking_approval",
+            assistant_message=f"{prompt}",
+            question=None,
+            actions=[
+                ConversationAction(
+                    action_id="approve",
+                    label="Approve Sandbox booking",
+                    kind="primary",
+                    requires_confirmation=True,
+                    consequence="Approving requests an Atlas Sandbox booking. A PNR exists only if Atlas confirms it.",
+                ),
+                ConversationAction(
+                    action_id="back_to_review",
+                    label="Back to plan review",
+                    kind="secondary",
+                ),
+            ],
+            requires_user_input=False,
+            consequence="Approving requests an Atlas Sandbox booking. A PNR exists only if Atlas confirms it.",
+            provenance_label="Atlas Sandbox",
+            recoverable=True,
+        )
+
+    # 6. PRIORITY: Ticketing Unavailable / Error State
+    err_code = error.get("code") or ""
+    if not err_code and status == "failed":
+        nodes = state.get("nodes") or []
+        failed_node = next((n for n in reversed(nodes) if n.get("status") == "FAILED"), None)
+        if failed_node:
+            err_code = (failed_node.get("details") or {}).get("error_code") or ""
+
+    if status == "failed" and (err_code in ("ticketing_activation_required", "atlas_ticketing_unavailable", "atlas_booking_unavailable", "TICKETING_ACTIVATION_REQUIRED") or "ticketing" in err_code.lower() or (error.get("details") or {}).get("ticketing_blocker") == "TICKETING_ACTIVATION_REQUIRED"):
+        return ConversationTurn(
+            phase="ticketing_unavailable",
+            assistant_message="Your plan is safe. Atlas Sandbox ticketing is not enabled for this account, so no booking or ticket was created.",
+            question=None,
+            actions=[
+                ConversationAction(
+                    action_id="back_to_review",
+                    label="Back to review",
+                    kind="primary",
+                )
+            ],
+            requires_user_input=False,
+            consequence="Your complete plan is preserved. You can review all details or search other routes.",
+            provenance_label="Atlas Sandbox",
+            recoverable=True,
+            error_code=err_code or "atlas_ticketing_unavailable",
+        )
+
+    if status == "failed":
+        msg = error.get("message") or "We hit a snag while planning your trip."
+        hint = error.get("hint")
+        if hint:
+            msg = f"{msg} {hint}"
+        return ConversationTurn(
+            phase="error",
+            assistant_message=msg,
+            question=None,
+            actions=[
+                ConversationAction(
+                    action_id="retry",
+                    label="Try again",
+                    kind="primary",
+                )
+            ],
+            requires_user_input=False,
+            recoverable=bool(error.get("recoverable", True)),
+            error_code=err_code or "trip_error",
         )
 
     # 7. PRIORITY: Full Plan Review (Step 3)

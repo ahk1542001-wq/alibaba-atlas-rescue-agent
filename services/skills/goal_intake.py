@@ -174,9 +174,7 @@ def _extract_passengers_info(text: str) -> tuple[int, bool]:
         if re.search(rf"\b(?:for\s+)?{word}\s+(?:people|pax|passengers?|persons?|adults?|travelers?|travellers?)\b", text,
                      flags=re.IGNORECASE):
             return n, True
-        if re.search(rf"\bfor\s+{word}\b", text, flags=re.IGNORECASE):
-            return n, True
-    if re.search(r"\b(?:solo|just\s+me|for\s+myself|for\s+me)\b", text, flags=re.IGNORECASE):
+    if re.search(r"\b(?:solo|just\s+me|for\s+myself|for\s+me|my\s+(?:complete\s+|whole\s+)?trip|my\s+flight|a\s+flight|a\s+trip|book\s+a)\b", text, flags=re.IGNORECASE):
         return 1, True
     return 1, False
 

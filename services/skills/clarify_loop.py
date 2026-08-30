@@ -62,12 +62,7 @@ class ClarifyLoopSkill(SkillBase):
                               "question": "Which dates (start and end) work "
                                           "for you?"})
 
-        # 2. Passenger count: ask when not explicitly supplied in goal or profile
-        if not goal.get("passengers_explicit"):
-            questions.append({"field": "passengers",
-                              "question": "How many passengers are traveling?"})
-
-        # 3. Scope and identity facts
+        # 2. Scope and identity facts
         is_flight_only = (
             rs.flight_search == "requested" and
             rs.flight_booking == "not_requested" and
@@ -76,6 +71,11 @@ class ClarifyLoopSkill(SkillBase):
             rs.activities == "not_requested" and
             rs.local_transport == "not_requested"
         )
+
+        # Passenger count: ask when not explicitly supplied for booking or complete trip
+        if not is_flight_only and not goal.get("passengers_explicit"):
+            questions.append({"field": "passengers",
+                              "question": "How many passengers are traveling?"})
 
         profile = self._store.get_or_create(user_id) if user_id else None
         if profile is not None:

@@ -129,6 +129,7 @@ def _setup_orch(tmp_path, atlas=None, passport_country="MM", home_city="Bangkok"
         web_intel=WebIntelClient(
             ddg_fetcher=_fresh_fetcher(), tavily_api_key="", serper_api_key=""),
         llm_chat=lambda *args, **kwargs: None,
+        allow_mock_fallback=True,
     )
     set_trip_orchestrator(orch)
     return orch, atlas_client
@@ -496,7 +497,7 @@ def test_default_complete_trip_inventory_covers_every_requested_leisure_domain()
         "price": {"amount": 210.0, "currency": "USD"},
     }
 
-    result = _run(ItinerarySkill().run({
+    result = _run(ItinerarySkill(allow_mock_fallback=True).run({
         "options": [option],
         "requested_domains": ["hotel", "activities", "local_transport"],
     }))

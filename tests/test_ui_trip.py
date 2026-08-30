@@ -171,7 +171,8 @@ def app_server(tmp_path_factory):
         profile_store=store, atlas=FakeAtlas(),
         web_intel=WebIntelClient(ddg_fetcher=_fresh_fetcher(),
                                  tavily_api_key="", serper_api_key=""),
-        llm_chat=_no_llm))
+        llm_chat=_no_llm,
+        allow_mock_fallback=True))
     config = uvicorn.Config(app, host="127.0.0.1", port=8050,
                             log_level="error")
     server = uvicorn.Server(config)
@@ -204,7 +205,8 @@ def install_orch(tmp_path):
             atlas=atlas or FakeAtlas(),
             web_intel=WebIntelClient(ddg_fetcher=fetcher or _fresh_fetcher(),
                                      tavily_api_key="", serper_api_key=""),
-            llm_chat=_no_llm)
+            llm_chat=_no_llm,
+            allow_mock_fallback=True)
         set_trip_orchestrator(orch)
         return orch
 
@@ -427,12 +429,7 @@ def test_b1_goal_chat_clarify_chips_confirm(tracked_page, install_orch):
 
 
 def test_failed_trip_state_renders_without_calling_missing_trip_method(tracked_page):
-    """A recoverable failed snapshot must render instead of crashing the UI.
-
-    The real clarification flow produces failed snapshots while route/date
-    facts are still being collected, so this is a normal runtime state rather
-    than an exceptional test-only shape.
-    """
+    """A recoverable failed provider snapshot must render gracefully without crashing the UI."""
     page = tracked_page
     goto_trip(page)
 
@@ -2062,7 +2059,8 @@ def install_safety_orch(tmp_path):
             llm_chat=_no_llm,
             safety_service=SafetyService(
                 research=SafetyResearchSkill(fetch=_ui_safety_fetch(summary)),
-                monitor=SafetyMonitorSkill(min_interval_seconds=0)))
+                monitor=SafetyMonitorSkill(min_interval_seconds=0)),
+            allow_mock_fallback=True)
         set_trip_orchestrator(orch)
         return orch
 
@@ -2362,6 +2360,7 @@ def test_ui_ticketing_activation_required_shows_calm_safe_plan_and_back_button(t
         web_intel=WebIntelClient(ddg_fetcher=_fresh_fetcher(),
                                  tavily_api_key="", serper_api_key=""),
         llm_chat=_no_llm,
+        allow_mock_fallback=True,
     )
     set_trip_orchestrator(orch)
 

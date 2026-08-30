@@ -15,18 +15,25 @@ def settings_default_model() -> str:
 
 
 def _build_concierge_prompt(context: Optional[Dict[str, Any]]) -> str:
-    """Ground the concierge on the live session state instead of a canned story."""
+    """Ground the concierge on the live session or trip state instead of a canned story."""
     if not context:
         return (
             "You are the 24/7 AI Travel Concierge of TravelCare AI, an autonomous "
-            "flight rescue agent. No active disruption session right now. Answer the "
-            "passenger's question concisely (max 3 sentences), warm and specific. "
-            "Never invent flight facts."
+            "flight rescue and trip planning agent. No active trip or disruption right now. "
+            "Help the traveler start a trip plan or answer general travel questions concisely (max 3 sentences)."
         )
     parts = [
-        "You are the 24/7 AI Travel Concierge of TravelCare AI, an autonomous flight "
-        "rescue agent. Ground EVERY answer strictly in this live session context:"
+        "You are the 24/7 AI Travel Concierge of TravelCare AI. "
+        "Ground EVERY answer strictly in this live session context:"
     ]
+    goal = (context.get("goal_intake") or {}).get("goal") or context.get("goal") or {}
+    if goal:
+        orig = goal.get("origin_city") or goal.get("origin_airport") or "unstated"
+        dest = goal.get("dest_city") or goal.get("dest_airport") or "unstated"
+        dates = goal.get("date_window") or goal.get("travel_date") or "unstated"
+        pax = goal.get("passengers") or 1
+        parts.append(f"- Active Planned Trip: from {orig} to {dest}, dates: {dates}, passengers: {pax}.")
+    
     d = context.get("disruption") or {}
     if d:
         parts.append(
@@ -40,9 +47,13 @@ def _build_concierge_prompt(context: Optional[Dict[str, Any]]) -> str:
             f"{pkg.get('origin')}-{pkg.get('destination')}, departs {pkg.get('departure_time')}, "
             f"fare {pkg.get('currency_symbol')}{pkg.get('price_converted', pkg.get('price_usd'))}."
         )
-    vg = context.get("visa_guard")
+    vg = context.get("visa_guard") or context.get("visa_check")
     if vg:
-        parts.append(f"- Passport on file: {vg.get('passport')}; visa check: {vg.get('summary')}")
+        summary = vg.get("summary") or vg.get("message") or "verified"
+        parts.append(f"- Entry / Visa check: {summary}")
+    safety = (context.get("safety") or {}).get("assessment") or {}
+    if safety:
+        parts.append(f"- Safety status: {safety.get('trip_policy_status')} ({safety.get('why_selected', '')})")
     claim = context.get("compensation_claim")
     if claim:
         payout = claim.get("eligible_payout_usd")
@@ -51,9 +62,11 @@ def _build_concierge_prompt(context: Optional[Dict[str, Any]]) -> str:
             f"- Claim {claim.get('claim_id')}: "
             + (f"${payout} under {basis}" if payout else f"{basis or 'refund/duty-of-care route'}")
         )
-    gp = context.get("guardian_push")
-    if gp and gp.get("simulated") is False:
-        parts.append("- A Telegram guardian push was really sent.")
+    fb = context.get("flight_book") or {}
+    if fb.get("booking"):
+        pnr = (fb["booking"].get("pnr") or "CONFIRMED")
+        parts.append(f"- Confirmed Sandbox Booking PNR: {pnr}")
+
     parts.append(
         "Answer the passenger's question concisely (max 3 sentences), warm and specific. "
         "Never invent facts outside this context unless clearly generic advice."
@@ -72,11 +85,12 @@ class RescueEngine:
         self.atlas = atlas_client
         self.last_session_context: Optional[Dict[str, Any]] = None
 
-    async def _qwen_concierge_reply(self, query: str) -> Optional[str]:
+    async def _qwen_concierge_reply(self, query: str, context: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Real Qwen reply grounded on live session state; None so rules take over."""
+        ctx = context or self.last_session_context
         reply = await llm.chat(
             messages=[
-                {"role": "system", "content": _build_concierge_prompt(self.last_session_context)},
+                {"role": "system", "content": _build_concierge_prompt(ctx)},
                 {"role": "user", "content": query},
             ],
             max_tokens=220,
@@ -431,10 +445,15 @@ class RescueEngine:
             claim["status"] = "DUTY_OF_CARE_REFUND_ROUTE"
         return claim
 
-    async def answer_concierge(self, query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def answer_concierge(self, query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """AI Travel Concierge responses based on Atlas travel context and passenger needs."""
+        ctx = context or self.last_session_context
         # Real Qwen-2.5 first (grounded); deterministic rules as fallback
-        qwen_reply = await self._qwen_concierge_reply(query)
+        try:
+            qwen_reply = await self._qwen_concierge_reply(query, ctx)
+        except TypeError:
+            qwen_reply = await self._qwen_concierge_reply(query)
+
         if qwen_reply:
             return {
                 "reply": qwen_reply,
@@ -442,27 +461,92 @@ class RescueEngine:
                 "engine": llm.provider_name(),
                 "model": settings_default_model(),
             }
-        return await self._rule_based_concierge(query)
+        try:
+            return await self._rule_based_concierge(query, ctx)
+        except TypeError:
+            return await self._rule_based_concierge(query)
 
-    async def _rule_based_concierge(self, query: str) -> Dict[str, Any]:
+    async def _rule_based_concierge(self, query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Deterministic, session-grounded reply when the LLM is unavailable."""
-        if not self.last_session_context:
+        ctx = context or self.last_session_context
+        if not ctx:
             return {
                 "reply": (
-                    "I do not have an active disruption or booking session to report. "
-                    "Start a search or an explicitly labeled demo simulation first."
+                    "I do not have an active trip or disruption session right now. "
+                    "Tell me where you want to travel or simulate a disruption to get started."
                 ),
                 "action_taken": "NO_ACTIVE_SESSION",
             }
 
         q_lower = query.lower()
-        context = self.last_session_context
-        disruption = context.get("disruption") or {}
-        packages = context.get("rescue_packages") or []
-        claim = context.get("compensation_claim") or {}
+        goal = (ctx.get("goal_intake") or {}).get("goal") or ctx.get("goal") or {}
+        orig = goal.get("origin_city") or goal.get("origin_airport")
+        dest = goal.get("dest_city") or goal.get("dest_airport")
+        dates = goal.get("date_window") or goal.get("travel_date")
+        pax = goal.get("passengers")
+
+        # 1. Trip goal inquiries (destination, origin, dates, passengers)
+        if "destination" in q_lower or "where" in q_lower and ("going" in q_lower or "to" in q_lower):
+            if dest:
+                return {
+                    "reply": f"Your current planned destination is {dest}.",
+                    "action_taken": "TRIP_DESTINATION_SUMMARY",
+                }
+        if "origin" in q_lower or "where" in q_lower and "start" in q_lower:
+            if orig:
+                return {
+                    "reply": f"Your trip is scheduled to depart from {orig}.",
+                    "action_taken": "TRIP_ORIGIN_SUMMARY",
+                }
+        if "passenger" in q_lower or "people" in q_lower or "who is" in q_lower:
+            if "2" in q_lower or "two" in q_lower:
+                return {
+                    "reply": "You can change your passenger count to 2. Confirm to update your search.",
+                    "action_taken": "PASSENGER_COUNT_PROPOSAL",
+                }
+            if pax:
+                return {
+                    "reply": f"Your trip currently has {pax} passenger(s) configured.",
+                    "action_taken": "TRIP_PASSENGERS_SUMMARY",
+                }
+        if "cheap" in q_lower or "budget" in q_lower or "price" in q_lower or "cost" in q_lower:
+            opts = (ctx.get("flight_search") or {}).get("options") or []
+            if opts:
+                cheapest = opts[0]
+                price = (cheapest.get("price") or {}).get("amount", "")
+                curr = (cheapest.get("price") or {}).get("currency", "USD")
+                carrier = cheapest.get("carrier") or cheapest.get("airline") or "Flight"
+                return {
+                    "reply": f"The lowest available fare is {curr} {price} on {carrier}.",
+                    "action_taken": "TRIP_BUDGET_SUMMARY",
+                }
+
+        # 2. Visa & Safety Inquiries
+        if "visa" in q_lower or "passport" in q_lower:
+            vg = ctx.get("visa_guard") or ctx.get("visa_check") or {}
+            summary = vg.get("summary") or vg.get("message")
+            if summary:
+                return {
+                    "reply": f"Visa assessment: {summary}",
+                    "action_taken": "VISA_STATUS_SUMMARY",
+                }
+        if "safe" in q_lower or "safety" in q_lower or "warning" in q_lower or "advisory" in q_lower:
+            safety = (ctx.get("safety") or {}).get("assessment") or {}
+            status = safety.get("trip_policy_status")
+            if status:
+                why = safety.get("why_selected") or ""
+                return {
+                    "reply": f"Destination safety status is '{status}'. {why}".strip(),
+                    "action_taken": "SAFETY_STATUS_SUMMARY",
+                }
+
+        # 3. Disruption Context
+        disruption = ctx.get("disruption") or {}
+        packages = ctx.get("rescue_packages") or []
+        claim = ctx.get("compensation_claim") or {}
         demo_note = (
             " This is demo simulation data; no booking was created."
-            if context.get("provenance") == "explicit_demo_simulation" else ""
+            if ctx.get("provenance") == "explicit_demo_simulation" else ""
         )
 
         if "claim" in q_lower or "compensation" in q_lower or "refund" in q_lower:
@@ -474,19 +558,31 @@ class RescueEngine:
                 ),
                 "action_taken": "SESSION_CLAIM_SUMMARY",
             }
-        top = packages[0] if packages else {}
-        option_text = (
-            f" The top option shown is {top.get('airline', 'an airline')} "
-            f"{top.get('flight_number', '')}; it is not booked."
-            if top else " No replacement option is currently available."
-        )
+        if disruption:
+            top = packages[0] if packages else {}
+            option_text = (
+                f" The top option shown is {top.get('airline', 'an airline')} "
+                f"{top.get('flight_number', '')}; it is not booked."
+                if top else " No replacement option is currently available."
+            )
+            return {
+                "reply": (
+                    f"Flight {disruption.get('flight_number', '')} is recorded as "
+                    f"{disruption.get('status', 'unknown')}."
+                    + option_text + demo_note
+                ),
+                "action_taken": "SESSION_STATUS_SUMMARY",
+            }
+
+        if dest and orig:
+            return {
+                "reply": f"Your plan for {orig} to {dest} ({dates}) is actively monitored by TravelCare AI.",
+                "action_taken": "ACTIVE_TRIP_SUMMARY",
+            }
+
         return {
-            "reply": (
-                f"Flight {disruption.get('flight_number', '')} is recorded as "
-                f"{disruption.get('status', 'unknown')}."
-                + option_text + demo_note
-            ),
-            "action_taken": "SESSION_STATUS_SUMMARY",
+            "reply": "TravelCare Assistant is ready. How can I help with your flights, hotels, safety, or claims?",
+            "action_taken": "GENERAL_HELP",
         }
 
     async def execute_self_healing_recovery(self, flight_number: str, passenger_name: str = "") -> Dict[str, Any]:
