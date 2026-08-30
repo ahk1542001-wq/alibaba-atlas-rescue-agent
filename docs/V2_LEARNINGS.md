@@ -20,3 +20,21 @@
   - 10 new hermetic tests in `tests/test_v2_brain_flag.py` and `tests/test_v2_providers.py` PASSED.
   - Full suite: 545 passed in 217s.
   - Smoke boots on both `TRAVELCARE_BRAIN=legacy` and `qwen_agent` returned HTTP 200 on `/api/health`.
+
+## Phase 2 (P2) - Conversation Layer Swap (Goal Intake + Clarification)
+- **Implemented**:
+  - `services/qwen_brain/`: package scaffolding with `__init__.py`.
+  - `services/qwen_brain/tools/conversation.py`: `GoalIntakeTool` and `ClarifyLoopTool` Qwen-Agent tool implementations registered via `@register_tool`. Tools wrap `GoalIntakeSkill` and `ClarifyLoopSkill` with resilient exception containment returning JSON error payloads on bad input.
+  - `services/qwen_brain/agent.py`: `build_travelcare_agent` constructing `Assistant` with resolved dual-provider LLM config and async executor `run_qwen_conversation` using `asyncio.to_thread`.
+  - `services/qwen_brain/conversation.py`: `run_qwen_goal_intake` and `run_qwen_trip_turn` executing goal intake and conversation turns while propagating orchestrator context (`mock_mode`, `flight_corpus`, `user_id`) and profile store references.
+  - `routers/v1/trip.py`: Seam in `TripOrchestrator.start` branching to `run_qwen_goal_intake` when `is_qwen_brain()` is True.
+  - `tests/test_v2_conversation_parity.py`: 7 hermetic parity tests covering Assistant factory, GoalIntakeTool extraction, ClarifyLoopTool questions, JSON fault resilience, and full `/api/trip/start` state parity across flags.
+- **Evidence**:
+  - Parity suite: 7/7 PASSED in 2.26s.
+  - Full test suite under `TRAVELCARE_BRAIN=legacy`: 552 passed in 195s.
+  - Full test suite under `TRAVELCARE_BRAIN=qwen_agent`: 552 passed in 194s.
+  - Dual browser canary (`tests/e2e_full_journey.py`): 14/14 PASSED on `legacy` and 14/14 PASSED on `qwen_agent`.
+  - Security check (`scripts/security_check.sh`): ALL SECTIONS PASS.
+- **Learnings**:
+  - When wrapping skills into Qwen-Agent tools, always pass orchestrator context (`ctx`) and shared store references (e.g. `ProfileStore`) into tool constructors and invocations to preserve mock mode, test fixtures, and shared state across test suites.
+

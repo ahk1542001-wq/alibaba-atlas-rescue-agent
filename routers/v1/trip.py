@@ -69,6 +69,7 @@ from services.skills.rights_check import RightsCheckSkill
 from services.skills.safety_monitor import SafetyMonitorSkill
 from services.skills.safety_research import SafetyResearchSkill
 from services.conversation_controller import project_conversation_turn
+from services.brain import is_qwen_brain
 from services.readiness import assess_readiness
 from services.skills.visa_check import VisaCheckSkill
 from services.trip_graph import (
@@ -697,13 +698,23 @@ class TripOrchestrator:
         self._enforce_stage1_capabilities("goal_intake")
         self._enforce_stage1_capabilities("clarify_loop")
         t0 = time.perf_counter()
-        goal_out = await self.skills["goal_intake"].run(
-            {"free_text": goal_text}, ctx)
-        t1 = time.perf_counter()
-        clarify_out = await self.skills["clarify_loop"].run(
-            {"goal": goal_out["goal"], "user_id": user_id,
-             "requested_services": goal_out["requested_services"]}, ctx)
-        t2 = time.perf_counter()
+        if is_qwen_brain():
+            from services.qwen_brain.conversation import run_qwen_goal_intake
+            goal_out, clarify_out = await run_qwen_goal_intake(
+                goal_text, user_id, ctx,
+                goal_intake_skill=self.skills.get("goal_intake"),
+                clarify_loop_skill=self.skills.get("clarify_loop"),
+            )
+            t1 = time.perf_counter()
+            t2 = t1
+        else:
+            goal_out = await self.skills["goal_intake"].run(
+                {"free_text": goal_text}, ctx)
+            t1 = time.perf_counter()
+            clarify_out = await self.skills["clarify_loop"].run(
+                {"goal": goal_out["goal"], "user_id": user_id,
+                 "requested_services": goal_out["requested_services"]}, ctx)
+            t2 = time.perf_counter()
 
         if search_confirmed:
             goal_out["goal"]["search_confirmed"] = True
