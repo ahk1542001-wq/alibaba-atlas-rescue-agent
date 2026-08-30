@@ -91,16 +91,39 @@ with sync_playwright() as p:
     check("compensation card visible", lambda: expect(
         page.locator("#compensation-card")).to_be_visible())
 
-    # ---------- claims autopilot panel (honest provider limitation) ----------
-    def rights_panel():
+    # ---------- claims autopilot panel (labeled simulation flow, exact outcome) ----------
+    # AUDIT FIX (2026-08-31): this case was loosened in G0 (e45668b). The flow
+    # was re-run to determine the ACTUAL outcome: under the labeled demo
+    # simulation (allow_sim=true) /api/claims/assess returns HTTP 200 with
+    # best=null and the honest no-mandatory-regime verdict; the strict 422
+    # fail-closed provider-route path applies WITHOUT allow_sim and is asserted
+    # separately below. Both assertions are exact.
+    def rights_panel_allow_sim():
         panel = page.locator("#rights-panel")
         expect(panel).to_be_visible(timeout=45000)  # waits for /assess incl Qwen
         sub = page.locator("#rights-sub").inner_text()
-        assert ("Unable to verify rights" in sub or "No mandatory" in sub), \
-            f"missing provider route must fail closed, got: {sub!r}"
+        assert "No mandatory air-passenger-rights regime detected for BKK\u2192RGN" in sub, \
+            f"labeled sim flow must render the exact no-regime verdict, got: {sub!r}"
+        assert "Duty-of-care still applies" in sub, \
+            f"no-regime verdict must keep the duty-of-care note, got: {sub!r}"
         badge = page.locator("#rights-regime-badge")
         assert badge.inner_text().strip() == "", "no regime badge may be shown on BKK-RGN"
-    check("Claims Autopilot panel: missing provider route fails closed", rights_panel)
+    check("Claims Autopilot panel (allow_sim BKK-RGN): exact no-mandatory-regime verdict", rights_panel_allow_sim)
+
+    # ---------- strict fail-closed provider-route path (422, no allow_sim) ----------
+    def rights_fail_closed_no_allow_sim():
+        response = httpx.post(
+            f"{BASE}/api/claims/assess",
+            json={"flight_number": "TG303", "date": FLIGHT_DATE,
+                  "passenger_name": "E2E Tester",
+                  "origin_airport": "BKK", "destination_airport": "RGN"},
+            timeout=90.0,
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"] == \
+            "Cannot determine true flight route from status."
+        assert "EU261" not in response.text
+    check("Claims API without allow_sim fails closed (422) on BKK-RGN", rights_fail_closed_no_allow_sim)
 
     # ---------- provider-truth case via API (client hints are not truth) ----------
     def claims_provider_truth():
