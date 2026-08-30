@@ -8,12 +8,13 @@ from typing import Any, Dict, List, Optional
 from qwen_agent.agents import Assistant
 from services import llm_providers
 
-# Register all Wave 1 tools
+# Register all Wave 1 and Wave 2 tools
 import services.qwen_brain.tools.conversation
 import services.qwen_brain.tools.flight
 import services.qwen_brain.tools.visa
 import services.qwen_brain.tools.rights
 import services.qwen_brain.tools.safety
+import services.qwen_brain.tools.wave2
 
 logger = logging.getLogger("qwen_brain.agent")
 
@@ -24,6 +25,26 @@ WAVE1_TOOLS = [
     "visa_check",
     "rights_check",
     "safety_check",
+]
+
+ALL_V2_TOOLS = [
+    "goal_intake",
+    "clarify_loop",
+    "flight_search",
+    "visa_check",
+    "rights_check",
+    "safety_check",
+    "location_resolve",
+    "itinerary",
+    "flight_book",
+    "recovery_plan",
+    "disruption_monitor",
+    "guardian_push",
+    "profile_capture",
+    "profile_edit",
+    "web_intel",
+    "radar_scan",
+    "research_brief",
 ]
 
 DEFAULT_SYSTEM_MESSAGE = (
@@ -48,7 +69,7 @@ def build_travelcare_agent(
 
     today = datetime.date.today().isoformat()
     sys_msg = (system_message or DEFAULT_SYSTEM_MESSAGE) + f" Today's date is {today}."
-    fn_list = tools if tools is not None else list(WAVE1_TOOLS)
+    fn_list = tools if tools is not None else list(ALL_V2_TOOLS)
 
     try:
         bot = Assistant(

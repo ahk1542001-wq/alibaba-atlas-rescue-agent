@@ -56,4 +56,29 @@
 - **Learnings**:
   - Injected router dependencies (e.g. monkeypatched `rescue_engine` in tests) must be accepted by high-level dispatchers to maintain contract parity with error sanitization test suites.
 
-
+## Phase 4 (P4) - Skills Migration Wave 2 (All Remaining Skills + Engines)
+- **Implemented**:
+  - `services/qwen_brain/tools/wave2.py`: 11 tool wrappers covering all remaining skills and engines:
+    - `LocationResolveTool` — wraps `LocationResolveSkill`, returning candidate codes with ambiguity flag.
+    - `ItineraryTool` — wraps `ItinerarySkill` for structured itinerary assembly.
+    - `FlightBookTool` — wraps `FlightBookSkill` with **mandatory approval gating** (refuses booking unless `approval_state == "approved"`).
+    - `RecoveryPlanTool` — wraps `RecoveryPlanSkill` for disruption recovery plan generation.
+    - `DisruptionMonitorTool` — wraps `DisruptionMonitorSkill` for live disruption status polling.
+    - `GuardianPushTool` — wraps `GuardianPushSkill` for push notification dispatch (simulated mode).
+    - `ProfileCaptureTool` — wraps `ProfileCaptureSkill` with confirmation flow enforcement.
+    - `ProfileEditTool` — wraps `ProfileEditSkill` with `SAFE_PROFILE_FIELDS` boundary enforcement.
+    - `WebIntelTool` — wraps `WebIntelSkill` for web intelligence queries.
+    - `RadarScanTool` — wraps `RescueRadar.scan` for watchlist scanning.
+    - `ResearchBriefTool` — wraps `ResearchCoordinator` for multi-source research briefs.
+  - `services/qwen_brain/agent.py`: Extended `ALL_V2_TOOLS` registry to 17 total tools (6 from waves 0-1 + 11 from wave 2) and updated `build_travelcare_agent` constructor to register all tools.
+  - `tests/test_v2_tools_wave2.py`: 13 hermetic tests covering tool registry completeness, approval gating on `FlightBookTool`, ambiguous/unambiguous resolution, and functional parity for all 11 wave-2 tools.
+- **Evidence**:
+  - Wave 2 test suite: 13/13 PASSED in 16.30s.
+  - Full test suite under `TRAVELCARE_BRAIN=legacy`: 574 passed in 220s.
+  - Full test suite under `TRAVELCARE_BRAIN=qwen_agent`: 574 passed in 361s.
+  - Dual browser canary (`tests/e2e_full_journey.py`): 14/14 PASSED on `legacy` and 14/14 PASSED on `qwen_agent`.
+  - Security check (`scripts/security_check.sh`): ALL SECTIONS PASS.
+- **Learnings**:
+  - Approval-gated tools (`FlightBookTool`) must reject at the tool boundary, never delegating to the underlying skill when `approval_state` is missing or not `"approved"`. This ensures the agent loop cannot accidentally trigger irreversible side effects.
+  - `SAFE_PROFILE_FIELDS` validation lives in `models/schemas.py` and is enforced by `ProfileStore` at the boundary — tool wrappers delegate to the skill which in turn delegates to the store, preserving the single validation point.
+  - `RescueRadar.scan` is an async method; the wave-2 tool wrapper uses `asyncio.run()` when no event loop is active (hermetic tests) and `asyncio.to_thread` from the FastAPI event loop context.
