@@ -330,3 +330,87 @@ def test_research_brief_tool():
     res = json.loads(tool.call(json.dumps({"trip_goal": {"dest_city": "SIN"}})))
     assert "brief" in res
     assert "provenance" in res
+
+
+# ============================================================================
+# §10.2 wave-2 gates (audit finding #6): radar_scan output EQUAL to a direct
+# RescueRadar.scan call; wave-2 registry derived PROGRAMMATICALLY from the
+# services/skills/ manifest registry (never a hardcoded list).
+# ============================================================================
+
+import asyncio as _asyncio
+
+from services.atlas_client import AtlasClient as _AtlasClient
+from services.radar import RescueRadar as _RescueRadar
+from services.rescue_engine import RescueEngine as _RescueEngine
+
+
+def _run_sync(coro):
+    loop = _asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+_CANNED_STATUS = {
+    "TG303": {"flight_number": "TG303", "status": "ON_TIME", "carrier": "TG"},
+    "PG920": {"flight_number": "PG920", "status": "ON_TIME", "carrier": "PG"},
+    "FD251": {"flight_number": "FD251", "status": "ON_TIME", "carrier": "FD"},
+    "SQ970": {"flight_number": "SQ970", "status": "ON_TIME", "carrier": "SQ"},
+}
+
+
+def test_radar_scan_output_equals_direct_engine_scan(monkeypatch):
+    async def canned_status(*args):
+        flight_number = args[-2]
+        return dict(_CANNED_STATUS.get(flight_number,
+                                       {"flight_number": flight_number,
+                                        "status": "UNKNOWN"}))
+    monkeypatch.setattr(_AtlasClient, "get_flight_status", canned_status)
+
+    # legacy path: the deterministic radar engine itself
+    direct = _run_sync(
+        _RescueRadar(_AtlasClient(), _RescueEngine(_AtlasClient())).scan())
+    # qwen tool path
+    res = json.loads(RadarScanTool(radar=_RescueRadar(
+        _AtlasClient(), _RescueEngine(_AtlasClient()))).call(json.dumps({})))
+
+    assert res["status"] == "success"
+    assert res["engine"] == "deterministic_radar"
+    expected = direct["flights"]
+    assert res["scanned_count"] == len(expected), \
+        "radar_scan must surface every flight the direct engine scanned"
+    # all deterministic fields equal; scanned_at is a volatile timestamp
+    got = [{k: v for k, v in row.items() if k != "scanned_at"}
+           for row in res["scans"]]
+    want = [{k: v for k, v in row.items() if k != "scanned_at"}
+            for row in expected]
+    assert got == want, "radar_scan must not mutate the engine scan output"
+
+
+def test_wave2_registry_derived_programmatically_from_skill_manifests():
+    """The wave-2 function list is asserted against the manifest registry on
+    disk — NOT a hardcoded list. Every PUBLIC skill in services/skills/ must
+    have a registered qwen-agent tool; anything extra must be a declared
+    engine-wrapper tool."""
+    from qwen_agent.tools.base import TOOL_REGISTRY
+    from services.qwen_brain.agent import ALL_V2_TOOLS
+    from services.skills import load_skill_registry
+
+    public_skills = {entry["name"] for entry in load_skill_registry()}
+    assert len(public_skills) == 13, \
+        "the public skill registry shape changed — update this gate consciously"
+    # every public skill is exposed as a qwen-agent tool (names map 1:1)
+    missing = public_skills - set(TOOL_REGISTRY)
+    assert not missing, f"public skills missing qwen tools: {sorted(missing)}"
+    missing_in_list = public_skills - set(ALL_V2_TOOLS)
+    assert not missing_in_list, \
+        f"public skills missing from ALL_V2_TOOLS: {sorted(missing_in_list)}"
+    # every declared v2 tool is actually registered
+    assert set(ALL_V2_TOOLS) <= set(TOOL_REGISTRY)
+    # the only extras beyond the public skill set are engine wrappers
+    extras = set(ALL_V2_TOOLS) - public_skills
+    assert extras == {"clarify_loop", "safety_check", "radar_scan",
+                      "research_brief"}, \
+        f"unexpected extra qwen tools: {sorted(extras)}"

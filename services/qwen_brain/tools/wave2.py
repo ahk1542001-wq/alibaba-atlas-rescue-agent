@@ -404,8 +404,10 @@ class RadarScanTool(BaseTool):
             return json.dumps({
                 "status": "success",
                 "engine": "deterministic_radar",
-                "scans": scan_res if isinstance(scan_res, list) else scan_res.get("results", []),
-                "scanned_count": len(scan_res) if isinstance(scan_res, list) else len(scan_res.get("results", [])),
+                # RescueRadar.scan() returns {"flights": [...], "new_alerts": [...]} —
+                # §10.2 gate: tool output must equal the direct engine scan.
+                "scans": scan_res if isinstance(scan_res, list) else scan_res.get("flights", []),
+                "scanned_count": len(scan_res) if isinstance(scan_res, list) else len(scan_res.get("flights", [])),
             }, ensure_ascii=False)
         except Exception as exc:
             return json.dumps({"status": "failed", "error": f"{type(exc).__name__}: {exc}", "tool": "radar_scan"})
