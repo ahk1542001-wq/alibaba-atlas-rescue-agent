@@ -250,7 +250,7 @@
             const flightNum = document.getElementById('input-flight-number').value.trim().toUpperCase();
             const flightDate = document.getElementById('input-flight-date').value || defaultSearchDate();
             const passenger = document.getElementById('input-passenger-name').value.trim();
-            if (!flightNum) return;
+            if (!flightNum) { showToast('Enter a flight number to monitor.'); return; }
 
             monitoredFlights.push({ flight_number: flightNum, date: flightDate, passenger_name: passenger });
             const currencySelect = document.getElementById('input-currency');
@@ -463,7 +463,8 @@
             const panel = document.getElementById('rights-panel');
             panel.classList.add('visible');
             try {
-                const res = await fetch('/api/claims/assess', {
+                const simFlag = (rescueData && rescueData.provenance === 'explicit_demo_simulation') ? '?allow_sim=true' : '';
+                const res = await fetch('/api/claims/assess' + simFlag, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -471,7 +472,9 @@
                         date: activeFlightDate(),
                         passenger_name: rescueData.passenger ? rescueData.passenger.name : '',
                         origin_airport: rescueData.disruption.origin,
-                        destination_airport: rescueData.disruption.destination
+                        destination_airport: rescueData.disruption.destination,
+                        reason: rescueData.disruption.reason || '',
+                        disruption_type: rescueData.disruption.status || ''
                     })
                 });
                 const rights = await res.json();

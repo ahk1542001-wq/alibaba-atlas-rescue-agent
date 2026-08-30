@@ -32,10 +32,12 @@ class ClaimAssessRequest(BaseModel):
     passenger_name: Optional[str] = None
     origin_airport: Optional[str] = None
     destination_airport: Optional[str] = None
+    reason: Optional[str] = None
+    disruption_type: Optional[str] = None
 
 
 @router.post("/assess")
-async def assess_claim(req: ClaimAssessRequest):
+async def assess_claim(req: ClaimAssessRequest, allow_sim: bool = False):
     """Claim Autopilot: detect regime, compute entitlement, classify cause.
 
     Jurisdictions are derived server-side from the real itinerary (airports +
@@ -44,13 +46,27 @@ async def assess_claim(req: ClaimAssessRequest):
     try:
         date = req.date or datetime.date.today().strftime("%Y-%m-%d")
         status = await atlas_client.get_flight_status(req.flight_number, date)
-        reason = str(status.get("reason", ""))
+        reason = str(status.get("reason", "") or "")
         disruption_type = str(status.get("status", "disruption"))
 
         origin_airport = (status.get("origin") or "").upper()
         dest_airport = (status.get("destination") or "").upper()
+        # Explicit-simulation fallback (mirrors /api/disruption/analyze?allow_sim=
+        # true): when the Atlas Sandbox CLI exposes no status route for a demo
+        # fixture flight, accept the route already established server-side by
+        # the labeled demo simulation (the UI forwards it verbatim from that
+        # analyze response — never free-typed country hints). Jurisdictions
+        # are still computed server-side from these airport codes. Without
+        # allow_sim=true, client hints are ignored and the request fails closed.
+        if allow_sim and (not origin_airport or not dest_airport):
+            origin_airport = (req.origin_airport or "").upper()
+            dest_airport = (req.destination_airport or "").upper()
         if not origin_airport or not dest_airport:
             raise HTTPException(422, "Cannot determine true flight route from status.")
+        if allow_sim and (not reason or "not available" in reason.lower()):
+            reason = req.reason or reason
+        if allow_sim and req.disruption_type:
+            disruption_type = req.disruption_type
         airline_code = req.flight_number[:2]
         o_c, d_c, c_c = airports_to_countries(origin_airport, dest_airport, airline_code)
         distance_km = route_distance_km(origin_airport, dest_airport)
@@ -107,9 +123,14 @@ async def assess_claim(req: ClaimAssessRequest):
         }
         evidence = build_evidence_pack(claim)
 
+        cash = entitlement.get("fixed_cash_compensation") or {}
+        cash_text = (
+            f"{cash.get('currency', '')} {cash.get('amount', '')} fixed cash compensation."
+            if cash.get("amount") is not None else ""
+        )
         verdict = (
             f"Strong claim: {best['name']} applies and the stated cause is "
-            f"compensable. {entitlement.get('fixed_cash_compensation') or ''}"
+            f"compensable. {cash_text}"
             if compensable
             else f"Likely extraordinary circumstance under {best['name']} — cash "
                  "compensation unlikely, but duty of care (meals/hotel/refund) "
