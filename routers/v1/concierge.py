@@ -50,12 +50,23 @@ async def chat_concierge(req: ConciergeQuery):
                     trip_ctx["pending_approvals"] = [a.model_dump(mode="json") for a in target_trip.pending_approvals]
                     trip_ctx["nodes"] = [n.model_dump(mode="json") for n in target_trip.trace]
 
-        from services.brain import is_qwen_brain
+        from services.brain import is_qwen_brain, qwen_brain_available
+        brain_fallback = None
         if is_qwen_brain():
-            from services.qwen_brain.concierge import run_qwen_concierge_turn
-            res = await run_qwen_concierge_turn(req.query, context=trip_ctx, engine=rescue_engine)
+            if qwen_brain_available():
+                from services.qwen_brain.concierge import run_qwen_concierge_turn
+                res = await run_qwen_concierge_turn(req.query, context=trip_ctx, engine=rescue_engine)
+            else:
+                # Audit #9: labeled legacy fallback, never a raw 500.
+                brain_fallback = "legacy_fallback"
+                logger.warning(
+                    "TRAVELCARE_BRAIN=qwen_agent but the qwen-agent package is "
+                    "absent; serving labeled legacy fallback")
+                res = await rescue_engine.answer_concierge(req.query, context=trip_ctx)
         else:
             res = await rescue_engine.answer_concierge(req.query, context=trip_ctx)
+        if brain_fallback:
+            res["brain_fallback"] = brain_fallback
 
         # Back-and-forth structured proposals on active trip
         if target_trip_id and orch is not None:

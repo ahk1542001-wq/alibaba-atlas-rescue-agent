@@ -23,6 +23,7 @@ optional approval-expiry code) instead of by exception type only.
 
 import asyncio
 import json
+import logging
 import re
 import time
 import uuid
@@ -49,6 +50,8 @@ from models.schemas import (
 )
 from routers.v1.profile import TripApiError, get_profile_store
 from services.atlas_client import AtlasClient
+
+logger = logging.getLogger("trip")
 from services.research_coordinator import ResearchCoordinator
 from services.rights_engine import airports_to_countries
 from services.safety.policy import normalize_country
@@ -697,8 +700,21 @@ class TripOrchestrator:
         # but capability enforcement still applies (G3-DA fix F5)
         self._enforce_stage1_capabilities("goal_intake")
         self._enforce_stage1_capabilities("clarify_loop")
+        # Audit #9: honor the flag only if the qwen-agent package is really
+        # importable; otherwise serve a LABELED legacy fallback (never a 500).
+        use_qwen = is_qwen_brain()
+        brain_fallback = None
+        if use_qwen:
+            from services.brain import qwen_brain_available
+            if not qwen_brain_available():
+                use_qwen = False
+                brain_fallback = "legacy_fallback"
+                logger.warning(
+                    "TRAVELCARE_BRAIN=qwen_agent but the qwen-agent package is "
+                    "absent; serving labeled legacy fallback")
+
         t0 = time.perf_counter()
-        if is_qwen_brain():
+        if use_qwen:
             from services.qwen_brain.conversation import run_qwen_goal_intake
             goal_out, clarify_out = await run_qwen_goal_intake(
                 goal_text, user_id, ctx,
@@ -732,8 +748,11 @@ class TripOrchestrator:
         trip = self.executor.start_trip(trip_id, [], ctx)
         trip.context["goal_intake"] = goal_out
         trip.context["clarify_loop"] = clarify_out
+        goal_intake_details = {"degraded": goal_out.get("degraded")}
+        if brain_fallback:
+            goal_intake_details["brain"] = brain_fallback
         self._record(trip, "goal_intake", "goal_intake", "COMPLETED",
-                     (t1 - t0) * 1000, {"degraded": goal_out.get("degraded")})
+                     (t1 - t0) * 1000, goal_intake_details)
         self._record(trip, "clarify_loop", "clarify_loop", "COMPLETED",
                      (t2 - t1) * 1000,
                      {"questions": len(clarify_out.get("questions") or []),

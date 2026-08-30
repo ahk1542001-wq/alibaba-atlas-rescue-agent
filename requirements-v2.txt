@@ -1,0 +1,17 @@
+# V2 (Qwen-Agent brain) dependency set — audit finding #9.
+# Pin everything the qwen brain imports; install ON TOP of requirements.txt:
+#   pip install -r requirements.txt -r requirements-v2.txt
+#
+# The agent framework itself:
+qwen-agent==0.0.34
+
+# Runtime dependencies of qwen-agent / qwen_brain that requirements.txt did
+# not declare (previously undeclared imports):
+json5==0.15.0
+jsonlines==4.0.0
+jsonschema==4.26.0
+openai==3.6.0
+tiktoken==0.14.0
+dashscope==1.27.2
+eval_type_backport==0.4.0
+pillow==12.3.0

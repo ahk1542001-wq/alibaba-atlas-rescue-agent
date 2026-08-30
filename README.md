@@ -123,6 +123,19 @@ atlas-flight auth login         # one-time Atlas Sandbox authentication
 .venv/bin/python -m pytest -q   # 535 tests
 ```
 
+> **V2 (Qwen-Agent brain, experimental):** the strangler-fig Qwen-Agent
+> brain lives behind the `TRAVELCARE_BRAIN` flag (default `legacy`) and has
+> its own pinned dependency set — install it ON TOP of the base set:
+>
+> ```bash
+> .venv/bin/pip install -r requirements.txt -r requirements-v2.txt
+> ```
+>
+> `requirements-v2.txt` pins `qwen-agent==0.0.34` plus every runtime
+> dependency the qwen brain imports. If the package is absent while
+> `TRAVELCARE_BRAIN=qwen_agent`, the app serves a labeled legacy fallback
+> instead of erroring. Details: `docs/V2_STATUS.md`.
+
 ## Verification & Testing
 
 **535 pytest tests**, fully hermetic — external boundaries are replaced by test doubles, so the suite never touches Atlas, ModelScope, or Telegram.
