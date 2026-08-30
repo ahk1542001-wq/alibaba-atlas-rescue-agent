@@ -9,6 +9,9 @@
 - **Baseline Evidence (G0)**:
   - Branch: `v2/qwen-agent-migration` (created from `main` @ `c6e7a4e`)
   - Pytest baseline: `535 passed` (`TZ=UTC .venv/bin/python -m pytest -q`)
+    - CORRECTION (audit fix round): this G0-era claim was FALSE. Re-run on a
+      detached worktree of `c6e7a4e` yielded `1 failed, 534 passed`; see
+      docs/V2_STATUS.md 'Corrected baseline claim'.
   - Browser E2E canary: `14/14 passed` (`.venv/bin/python tests/e2e_full_journey.py`)
   - Security check: `ALL SECTIONS PASS` (`bash scripts/security_check.sh`)
 
@@ -99,6 +102,15 @@
 
 ## 2026-08-31 — Audit Fix Round: Baseline Honesty Repair
 - **G0 smuggled changes disclosed**: the independent 3-reviewer audit found commit `e45668b` contained three undisclosed changes (app.js pin re-pin, legacy concierge UX strings, canary loosening). All three are disclosed in `docs/V2_STATUS.md` "G0 Baseline Honesty Repair" and repaired via labeled forward-fixup commits; history was NOT rewritten.
-- **Baseline honesty**: the "535 passed at c6e7a4e" claim was FALSE — the `test_AJ13_legacy_canary` pin assertion was red at `c6e7a4e` because `c21ec1e` changed `static/app.js` without updating the pin. Correct statement: the baseline required the disclosed pin repair; after it, `535 passed`.
+- **Baseline honesty**: the "535 passed at c6e7a4e" claim was FALSE. Re-run
+  (2026-08-31, detached worktree of `c6e7a4e`) found TWO red defects:
+  (1) the `test_AJ13_legacy_canary` pin assertion — `c21ec1e` changed
+  `static/app.js` without updating the pin; (2)
+  `test_AJ03c_concierge_uses_the_active_trip_session` — it expects the
+  friendly name "Singapore" but the legacy engine at `c6e7a4e` replies
+  "SIN", so the undisclosed G0 UX string was also a silent test repair.
+  Result at `c6e7a4e` + pin repair only: `1 failed, 534 passed`. Correct
+  statement: the baseline required BOTH disclosed repairs (pin + UX
+  string); after them, `535 passed`.
 - **BKK-RGN allow_sim actual outcome**: the labeled simulation flow returns HTTP 200 with `best=null` and the no-mandatory-regime verdict; the 422 fail-closed provider-route path applies only without `allow_sim`. The canary now asserts exactly the observed outcome as two explicit cases.
 - **Commit count correction**: the v2 migration is 6 commits (G0 + P1-P5), not 5 as previously written in the P5 close entry above.
