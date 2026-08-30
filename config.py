@@ -23,5 +23,20 @@ class Settings(BaseModel):
     tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
     serper_api_key: str = os.getenv("SERPER_API_KEY", "")
     amadeus_api_key: str = os.getenv("AMADEUS_API_KEY", "")
+    # Brain architecture flag: legacy | qwen_agent
+    travelcare_brain: str = os.getenv("TRAVELCARE_BRAIN", "legacy").strip().lower()
+
+    def __init__(self, **data):
+        if "travelcare_brain" not in data:
+            data["travelcare_brain"] = os.getenv("TRAVELCARE_BRAIN", "legacy").strip().lower()
+        super().__init__(**data)
+        valid_brains = {"legacy", "qwen_agent"}
+        if self.travelcare_brain not in valid_brains:
+            import logging
+            logging.getLogger("config").warning(
+                f"Unknown TRAVELCARE_BRAIN={self.travelcare_brain!r}; coercing to 'legacy'"
+            )
+            self.travelcare_brain = "legacy"
 
 settings = Settings()
+

@@ -11,3 +11,12 @@
   - Pytest baseline: `535 passed` (`TZ=UTC .venv/bin/python -m pytest -q`)
   - Browser E2E canary: `14/14 passed` (`.venv/bin/python tests/e2e_full_journey.py`)
   - Security check: `ALL SECTIONS PASS` (`bash scripts/security_check.sh`)
+
+
+## 2026-08-31 — P1 Provider Fallback & Scaffolding
+- **Dual-Provider Verification**: Live ModelScope probe returned HTTP 429 quota exhaustion; fallback chain gracefully caught the error, logged structured warning without key exposure, and routed request to OpenRouter (`qwen/qwen3-235b-a22b-2507`), successfully returning live completion.
+- **TRAVELCARE_BRAIN Feature Flag**: Flag cleanly toggles between legacy brain and Qwen-Agent brain with fail-safe coercion of invalid values to "legacy".
+- **Test Evidence (P1)**:
+  - 10 new hermetic tests in `tests/test_v2_brain_flag.py` and `tests/test_v2_providers.py` PASSED.
+  - Full suite: 545 passed in 217s.
+  - Smoke boots on both `TRAVELCARE_BRAIN=legacy` and `qwen_agent` returned HTTP 200 on `/api/health`.

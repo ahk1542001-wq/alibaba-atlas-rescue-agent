@@ -1,4 +1,5 @@
 """Qwen-2.5 LLM client via OpenAI-compatible endpoints.
+(Legacy brain raw LLM client — v2 uses services/llm_providers.py).
 
 Provider auto-detection from environment:
   - LLM_BASE_URL + ALIBABA_MODEL_API_KEY  -> custom endpoint (Model Studio / ModelScope / OpenRouter)
