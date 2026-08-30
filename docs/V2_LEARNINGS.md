@@ -114,3 +114,83 @@
   string); after them, `535 passed`.
 - **BKK-RGN allow_sim actual outcome**: the labeled simulation flow returns HTTP 200 with `best=null` and the no-mandatory-regime verdict; the 422 fail-closed provider-route path applies only without `allow_sim`. The canary now asserts exactly the observed outcome as two explicit cases.
 - **Commit count correction**: the v2 migration is 6 commits (G0 + P1-P5), not 5 as previously written in the P5 close entry above.
+
+## 2026-08-31 — Audit fix round: re-run live-smoke excerpts (P1–P4)
+
+Bounded live model calls per the audit plan. Provider: OpenRouter
+(`https://openrouter.ai/api/v1`), model `qwen/qwen3-235b-a22b-2507`.
+ModelScope key authenticates but every probe/completion returns HTTP 429
+(free quota exhausted) — recorded honestly by the new health cache. All
+API keys redacted; no key value appears in this document.
+
+### P1 — provider resolution & fallback (audit #8 code path)
+
+```
+P1 resolve: ('qwen/qwen3-235b-a22b-2507', 'https://openrouter.ai/api/v1',
+             'key:<redacted 73 chars>')
+P1 active_provider: openrouter          # recorded name, no URL guessing
+Provider modelscope returned HTTP 429   # health probe, classified unhealthy
+P1 chat served_by=openrouter latency=1.8s content='TRAVELCARE-P1-OK'
+P1 outcome: {'primary': 'skipped', 'fallback': 'ok', 'served_by': 'openrouter'}
+```
+
+### P2 — conversation layer: goal_intake via live Assistant
+
+```
+user: I want to fly from Bangkok to Singapore on 2026-09-28. Two of us,
+      Myanmar passports. Use the goal_intake tool.
+[assistant] call goal_intake({...})
+[function/goal_intake] {"status": "success", "trip_goal": {"goal_id":
+  "goal_c3a15b0f", "raw_text": "I want to fly from Bangkok to Singapore on
+  2026-09-28. Two of us, Myanmar passports.", "origin_city": "BKK", ...}}
+latency=31.2s  (one transient HTTPStatusError retried internally by the
+LLM base layer; turn completed)
+```
+
+§13.3 contract shape (`text` param → `{status, trip_goal, missing_fields}`)
+held under a live model round.
+
+### P3 — wave-1 tool selection (flight_search + visa_check)
+
+```
+[assistant] call flight_search({"origin": "BKK", "destination": "SIN",
+                                "date": "2026-10-05"})
+[assistant] call visa_check({"passport": "MM", "origin": "BKK",
+                             "destination": "SIN"})
+[function/flight_search] {"source": "atlas_sandbox",
+  "provenance": "atlas_sandbox", "note": "Live Atlas Sandbox inventory via
+  authenticated atlas-flight CLI (sandbox, not bookable).", ...}
+[function/visa_check] {"status": "success", "passport": "MM",
+  "passport_name": "Myanmar", "destination_rule": {"status":
+  "TRANSIT_VISA_REQUIRED", ...}}
+[assistant] Here are the available flights from BKK to SIN on 2026-10-05:
+  1. Scoot TR609 — Depart 09:05, Arrive 12:25, 140 min nonstop, $137.49 ...
+latency=22.1s
+```
+
+Provenance labels (`atlas_sandbox`, "sandbox, not bookable") survived the
+live model round unchanged — the tool output is surfaced verbatim.
+
+### P4 — wave-2 radar_scan (post-fix)
+
+```
+[assistant] call radar_scan({})
+[function/radar_scan] {"status": "success", "engine": "deterministic_radar",
+  "scans": [{"flight_number": "TG303", "date": "2026-09-01", "status":
+  "UNKNOWN", ...}, ...]}
+[assistant] Radar scan completed for 4 flights on 2026-09-01 (TG303, PG920,
+  FD251, SQ970). All flight statuses are currently listed as UNKNOWN due to
+  unavailability in the Atlas Sandbox CLI. No disruptions detected.
+latency=19.3s
+```
+
+This live round was run AFTER the audit #6 fix: before it, `radar_scan`
+read the wrong engine key and always returned `scans: []` — the model
+would have reported an empty watchlist.
+
+**Learnings**: (1) ModelScope 429 is account-quota, not transient — the
+5-min TTL health cache correctly re-probes but keeps falling back to
+OpenRouter; (2) qwen-agent's base layer retries transient HTTPStatusError
+once internally — first-attempt failures in logs are not turn failures;
+(3) live latencies 1.8–31.2s confirm why audit #7 moved agent construction
+and tool calls off the FastAPI event loop.
