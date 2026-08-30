@@ -2,10 +2,21 @@
 
 Chain: ModelScope primary (Qwen3-235B-A22B-Instruct-2507) -> OpenRouter fallback (qwen/qwen3-235b-a22b-2507).
 Never logs, prints, or exposes API key values.
+
+Audit finding #8 semantics:
+- Health cache entries carry a monotonic timestamp and expire after
+  HEALTH_TTL_SECONDS (5 min), after which the provider is re-probed.
+- The unhealthy classification is IDENTICAL in the resolve path and in
+  chat_with_fallback: HTTP 429, 401, any 5xx, or timeout (408) -> unhealthy.
+- Successful calls refresh the cache entry consistently.
+- active_provider() returns the provider name recorded at the last
+  successful resolve_llm_cfg() — it never re-probes and never guesses from
+  URL substrings.
 """
 
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("llm_providers")
@@ -16,8 +27,12 @@ MODELSCOPE_MODEL = "Qwen/Qwen3-235B-A22B-Instruct-2507"
 OPENROUTER_DEFAULT_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "qwen/qwen3-235b-a22b-2507"
 
-# Process-lifetime health cache for providers
-_PROVIDER_HEALTH: Dict[str, bool] = {}
+# Health cache: provider name -> (is_healthy, monotonic_probed_at).
+# Entries older than HEALTH_TTL_SECONDS are treated as expired and re-probed.
+HEALTH_TTL_SECONDS: float = 300.0
+_PROVIDER_HEALTH: Dict[str, Tuple[bool, float]] = {}
+# Provider name recorded by the last successful resolve_llm_cfg().
+_RESOLVED_PROVIDER: Optional[str] = None
 _LAST_OUTCOME: Dict[str, Any] = {
     "primary": "unprobed",
     "fallback": "unprobed",
@@ -29,6 +44,35 @@ class ProviderError(Exception):
     def __init__(self, message: str, status_code: Optional[int] = None):
         super().__init__(message)
         self.status_code = status_code
+
+
+def _record_health(name: str, healthy: bool) -> None:
+    _PROVIDER_HEALTH[name] = (bool(healthy), time.monotonic())
+
+
+def _cached_health(name: str) -> Optional[bool]:
+    """Return the cached health flag if fresh, else None (expired/absent)."""
+    entry = _PROVIDER_HEALTH.get(name)
+    if entry is None:
+        return None
+    healthy, probed_at = entry
+    if time.monotonic() - probed_at > HEALTH_TTL_SECONDS:
+        return None
+    return healthy
+
+
+def _is_unhealthy_error(pe: ProviderError) -> bool:
+    """Single source of truth for unhealthy classification (audit #8).
+
+    429 (rate limit), 401 (auth), any 5xx (server), and timeout (mapped to
+    408 upstream) all mark the provider unhealthy. Errors without a status
+    code (network failures) are also treated as unhealthy. Client errors
+    like 400 do NOT demote provider health.
+    """
+    code = pe.status_code
+    if code is None:
+        return True
+    return code in (401, 408, 429) or code >= 500
 
 
 def _is_valid_key(key: Optional[str]) -> bool:
@@ -65,13 +109,13 @@ def _get_provider_info(name: str) -> Optional[Dict[str, str]]:
 
 def _probe_provider_health(name: str) -> bool:
     """Perform a single cheap health check for a provider or return cached health."""
-    global _PROVIDER_HEALTH
-    if name in _PROVIDER_HEALTH:
-        return _PROVIDER_HEALTH[name]
+    cached = _cached_health(name)
+    if cached is not None:
+        return cached
 
     info = _get_provider_info(name)
     if not info:
-        _PROVIDER_HEALTH[name] = False
+        _record_health(name, False)
         return False
 
     # Perform a minimal 1-token call via raw request
@@ -85,12 +129,14 @@ def _probe_provider_health(name: str) -> bool:
         is_healthy = bool(reply)
     except ProviderError as pe:
         logger.warning(f"Health probe for provider {name} failed: {pe.status_code or pe}")
+        # Any probe failure is conservatively recorded as unhealthy; the TTL
+        # ensures the provider gets another chance within 5 minutes.
         is_healthy = False
     except Exception as e:
         logger.warning(f"Health probe for provider {name} encountered error: {type(e).__name__}")
         is_healthy = False
 
-    _PROVIDER_HEALTH[name] = is_healthy
+    _record_health(name, is_healthy)
     return is_healthy
 
 
@@ -146,12 +192,17 @@ def _call_provider_raw(
 
 
 def resolve_llm_cfg() -> Optional[Dict[str, Any]]:
-    """Resolve the first healthy provider into a Qwen-Agent llm_cfg dictionary."""
+    """Resolve the first healthy provider into a Qwen-Agent llm_cfg dictionary.
+
+    On success, records the chosen provider name for active_provider().
+    """
+    global _RESOLVED_PROVIDER
     for provider_name in ("modelscope", "openrouter"):
         info = _get_provider_info(provider_name)
         if not info:
             continue
         if _probe_provider_health(provider_name):
+            _RESOLVED_PROVIDER = provider_name
             return {
                 "model": info["model"],
                 "model_server": info["base_url"],
@@ -161,19 +212,19 @@ def resolve_llm_cfg() -> Optional[Dict[str, Any]]:
                     "extra_body": {"enable_thinking": False},
                 },
             }
+    # No provider could be resolved: clear the recorded name so
+    # active_provider() reports the true current state (audit #8).
+    _RESOLVED_PROVIDER = None
     return None
 
 
 def active_provider() -> str:
-    """Return the name of the currently active/selected provider for telemetry."""
-    cfg = resolve_llm_cfg()
-    if not cfg:
-        return "none"
-    if "modelscope" in cfg.get("model_server", "").lower():
-        return "modelscope"
-    if "openrouter" in cfg.get("model_server", "").lower():
-        return "openrouter"
-    return "unknown"
+    """Return the provider name recorded at the last successful resolution.
+
+    Never probes and never guesses from URL substrings (audit #8). Returns
+    "none" if no provider has been resolved in this process yet.
+    """
+    return _RESOLVED_PROVIDER or "none"
 
 
 def last_provider_outcome() -> Dict[str, Any]:
@@ -190,7 +241,8 @@ def chat_with_fallback(
     """Execute chat completion with primary (ModelScope) -> fallback (OpenRouter).
 
     Returns (content, provider_name) on success, or (None, None) on total failure.
-    Never raises; never logs secret keys.
+    Never raises; never logs secret keys. Unhealthy classification is the same
+    as in the resolve path: 429/401/5xx/timeout (audit #8).
     """
     global _LAST_OUTCOME
     _LAST_OUTCOME = {
@@ -212,16 +264,17 @@ def chat_with_fallback(
             )
             _LAST_OUTCOME["primary"] = "ok"
             _LAST_OUTCOME["served_by"] = "modelscope"
-            _PROVIDER_HEALTH["modelscope"] = True
+            _record_health("modelscope", True)
             return content, "modelscope"
         except ProviderError as pe:
             code_str = f"http_{pe.status_code}" if pe.status_code else "error"
             _LAST_OUTCOME["primary"] = code_str
-            if pe.status_code == 429:
-                _PROVIDER_HEALTH["modelscope"] = False
+            if _is_unhealthy_error(pe):
+                _record_health("modelscope", False)
             logger.warning(f"Primary provider (ModelScope) failed with {code_str}; attempting fallback")
         except Exception:
             _LAST_OUTCOME["primary"] = "exception"
+            _record_health("modelscope", False)
             logger.warning("Primary provider (ModelScope) threw unexpected exception; attempting fallback")
 
     # 2. Try fallback (OpenRouter)
@@ -237,14 +290,17 @@ def chat_with_fallback(
             )
             _LAST_OUTCOME["fallback"] = "ok"
             _LAST_OUTCOME["served_by"] = "openrouter"
-            _PROVIDER_HEALTH["openrouter"] = True
+            _record_health("openrouter", True)
             return content, "openrouter"
         except ProviderError as pe:
             code_str = f"http_{pe.status_code}" if pe.status_code else "error"
             _LAST_OUTCOME["fallback"] = code_str
+            if _is_unhealthy_error(pe):
+                _record_health("openrouter", False)
             logger.warning(f"Fallback provider (OpenRouter) failed with {code_str}")
         except Exception:
             _LAST_OUTCOME["fallback"] = "exception"
+            _record_health("openrouter", False)
             logger.warning("Fallback provider (OpenRouter) threw unexpected exception")
 
     return None, None
