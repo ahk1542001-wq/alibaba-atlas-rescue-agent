@@ -95,4 +95,10 @@
     - Concierge: `NO_ACTIVE_SESSION` deterministic fallback — degraded labeled.
   - Static freeze: `git diff main -- static/` → empty.
   - `main` untouched at `c6e7a4e`.
-- **Final state**: Migration feature-complete. 5 commits on `v2/qwen-agent-migration` (G0 → P5). Nothing pushed, nothing merged, no deployment.
+- **Final state**: Migration feature-complete. 6 commits on `v2/qwen-agent-migration` (G0 + P1-P5). Nothing pushed, nothing merged, no deployment.
+
+## 2026-08-31 — Audit Fix Round: Baseline Honesty Repair
+- **G0 smuggled changes disclosed**: the independent 3-reviewer audit found commit `e45668b` contained three undisclosed changes (app.js pin re-pin, legacy concierge UX strings, canary loosening). All three are disclosed in `docs/V2_STATUS.md` "G0 Baseline Honesty Repair" and repaired via labeled forward-fixup commits; history was NOT rewritten.
+- **Baseline honesty**: the "535 passed at c6e7a4e" claim was FALSE — the `test_AJ13_legacy_canary` pin assertion was red at `c6e7a4e` because `c21ec1e` changed `static/app.js` without updating the pin. Correct statement: the baseline required the disclosed pin repair; after it, `535 passed`.
+- **BKK-RGN allow_sim actual outcome**: the labeled simulation flow returns HTTP 200 with `best=null` and the no-mandatory-regime verdict; the 422 fail-closed provider-route path applies only without `allow_sim`. The canary now asserts exactly the observed outcome as two explicit cases.
+- **Commit count correction**: the v2 migration is 6 commits (G0 + P1-P5), not 5 as previously written in the P5 close entry above.

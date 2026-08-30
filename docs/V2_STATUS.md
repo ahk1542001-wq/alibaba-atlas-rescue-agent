@@ -6,6 +6,66 @@
 
 ---
 
+## G0 Baseline Honesty Repair (audit fix round, 2026-08-31)
+
+An independent 3-reviewer audit found that the G0 commit `e45668b` smuggled
+three undisclosed changes alongside the baseline documentation. Each change is
+disclosed below and repaired via labeled forward-fixup commits. **History was
+NOT rewritten.**
+
+### Smuggled change 1 — `APP_JS_SHA256` re-pin (kept, disclosed)
+- **What:** `tests/test_ui_trip.py` pin changed from `6ace5d6c...` to
+  `2521e0bf...` (the true digest of `static/app.js`).
+- **Why it was necessary:** the main tip `c6e7a4e` baseline was **RED**, not
+  green: commit `c21ec1e` (the last main commit that modified `static/app.js`)
+  changed `static/app.js` without updating the frozen pin, so the pin
+  assertion inside `test_AJ13_legacy_canary` failed at `c6e7a4e`.
+- **Evidence:** at `c6e7a4e`, actual `static/app.js` digest `2521e0bf...` vs
+  pin `6ace5d6c...` -> `AssertionError: static/app.js was modified`
+  (reproduced in a detached worktree of `c6e7a4e` on 2026-08-31).
+- **Disposition:** the pin is kept (it is correct) and disclosed via commit
+  `fix(tests): repair stale app.js pin (main baseline was red)` with a
+  one-line audit note in `tests/test_ui_trip.py` tying the pin to `c21ec1e`.
+
+### Smuggled change 2 — legacy concierge UX strings (moved, disclosed)
+- **What:** `services/rescue_engine.py` concierge trip-summary replies were
+  changed from raw IATA codes to friendly city names, e.g.
+  "Your current planned destination is Bangkok (BKK)."
+- **Disposition:** moved out of the G0 commit via forward revert + re-apply:
+  `revert: undo undisclosed G0 concierge UX drift (pre-disclosure)` followed
+  by its own labeled commit
+  `fix(ux): friendly destination city names (owner-visible legacy drift, disclosed)`.
+- **Parity statement:** legacy byte-parity with the submitted state is
+  intentionally relaxed ONLY by this disclosed UX string; no other legacy
+  behavior, contract, or byte differs.
+
+### Smuggled change 3 — canary loosening (corrected, strictness restored)
+- **What:** `tests/e2e_full_journey.py` BKK-RGN rights-panel assertion was
+  loosened from strict `"Unable to verify rights"` to also accept
+  `"No mandatory"`.
+- **ACTUAL outcome (determined by running the flow, 2026-08-31):** with
+  `allow_sim=true` (the labeled explicit-demo-simulation flow the UI always
+  uses after `#btn-simulate`), `/api/claims/assess` returns **200** with
+  `best=null` and verdict "No mandatory air-passenger-rights regime detected
+  for BKK->RGN. Duty-of-care still applies under the airline's conditions of
+  carriage." The UI `#rights-sub` renders exactly that verdict. Without
+  `allow_sim`, the same route fails closed with **422** "Cannot determine true
+  flight route from status." (client route hints ignored).
+- **Disposition:** commit `fix(tests): restore strict fail-closed canary
+  assertions` splits the check into two explicit cases: (1) the allow_sim
+  BKK-RGN panel asserts the exact no-mandatory-regime verdict and an empty
+  regime badge; (2) a strict assertion for the 422 fail-closed provider-route
+  path (no `allow_sim`) is kept and reinforced.
+
+### Corrected baseline claim (was: "535 passed at c6e7a4e")
+- The G0 claim "Pytest baseline: 535 passed at c6e7a4e" is **incorrect**.
+- Honest statement: the `c6e7a4e` baseline was RED (one failure: the stale
+  `APP_JS_SHA256` pin, drifted at `c21ec1e`). **After the disclosed pin
+  repair**, the baseline is `535 passed` (`TZ=UTC .venv/bin/python -m pytest
+  -q` under `TRAVELCARE_BRAIN=legacy`).
+
+---
+
 ## Phase Completion Summary
 
 | Phase | Description | Commit | Status |
@@ -15,7 +75,7 @@
 | P2 | Conversation Layer Swap | `1328d99` | ✅ COMPLETE |
 | P3 | Skills Wave 1 (Flight, Visa, Rights, Safety, Concierge) | `ee4095a` | ✅ COMPLETE |
 | P4 | Skills Wave 2 (All Remaining 11 Skills + Engines) | `106efd8` | ✅ COMPLETE |
-| P5 | Integrity & Close | *(this commit)* | ✅ COMPLETE |
+| P5 | Integrity & Close | `51af892` | ✅ COMPLETE |
 
 ---
 
@@ -111,3 +171,14 @@ The migration implements a **strangler-fig pattern**: both `legacy` and `qwen_ag
 - ✅ `static/` byte-frozen (zero diff vs main)
 - ✅ No secrets committed, logged, or echoed
 - ✅ Ticketing still not activated — all Atlas interactions are Sandbox with `bookable: false`
+
+---
+
+## Audit Fix Round (2026-08-31) — finding -> fix -> evidence
+
+| # | Finding | Fix | Evidence |
+|---|---------|-----|----------|
+| C1a | G0 smuggled `APP_JS_SHA256` re-pin | Disclosed fixup `fix(tests): repair stale app.js pin (main baseline was red)` + inline audit note | pin test green; c6e7a4e red-baseline reproduction above |
+| C1b | G0 smuggled legacy concierge UX change | Forward revert + labeled re-apply `fix(ux): friendly destination city names (...)` | `git log` labels; legacy suite green under both commits |
+| C1c | G0 loosened BKK-RGN canary | `fix(tests): restore strict fail-closed canary assertions` (split cases, exact verdict, strict 422) | actual-outcome probe (200 no-mandatory verdict; 422 fail-closed) recorded above |
+| C2 | False "535 passed at c6e7a4e" claim | Corrected in V2_STATUS + V2_LEARNINGS | red-baseline reproduction + post-repair 535 passed |
