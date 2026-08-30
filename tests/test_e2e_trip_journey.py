@@ -160,21 +160,31 @@ async def _start(client, goal, user_id="g3_user"):
     resp = await client.post("/api/trip/start",
                              json={"goal_text": goal, "user_id": user_id})
     assert resp.status_code == 200, resp.text
-    return resp.json()["trip_id"]
+    trip_id = resp.json()["trip_id"]
+    await client.post(f"/api/trips/{trip_id}/plan")
+    return trip_id
 
 
 async def _resolve_scope_if_paused(client, trip_id, choice):
     state = (await client.get(f"/api/trip/{trip_id}/state")).json()
     if state["status"] != "awaiting_approval":
+        plan_resp = await client.post(f"/api/trips/{trip_id}/plan")
+        if plan_resp.status_code == 200:
+            return plan_resp.json()
         return state
     approvals = (await client.get(
         f"/api/trip/{trip_id}/approvals")).json()["approvals"]
-    scope = next(a for a in approvals if a["node_name"] == "scope_clarification")
-    resp = await client.post(
-        f"/api/trip/{trip_id}/approvals/{scope['approval_id']}",
-        json={"decision": choice, "value": {"choice": choice}})
-    assert resp.status_code == 200, resp.text
-    return resp.json()
+    scope = next((a for a in approvals if a["node_name"] == "scope_clarification"), None)
+    if scope:
+        resp = await client.post(
+            f"/api/trip/{trip_id}/approvals/{scope['approval_id']}",
+            json={"decision": choice, "value": {"choice": choice}})
+        assert resp.status_code == 200, resp.text
+        plan_resp = await client.post(f"/api/trips/{trip_id}/plan")
+        if plan_resp.status_code == 200:
+            return plan_resp.json()
+        return resp.json()
+    return state
 
 
 def _trace_names(state) -> list:

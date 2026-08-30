@@ -124,12 +124,18 @@
                     row.appendChild(info);
 
                     const flag = document.createElement('span');
+                    const rawStatus = (f.status || '').toUpperCase();
                     if (f.disrupted) {
                         flag.className = 'rf-flag';
                         flag.textContent = 'ALERT';
-                    } else {
+                    } else if (rawStatus === 'ON_TIME' || rawStatus === 'SCHEDULED' || rawStatus === 'ACTIVE') {
                         flag.className = 'rf-ok';
                         flag.textContent = 'On Time';
+                    } else {
+                        flag.className = 'rf-ok';
+                        flag.style.background = 'rgba(100, 116, 139, 0.15)';
+                        flag.style.color = 'var(--text-muted)';
+                        flag.textContent = f.status || 'MONITORING';
                     }
                     row.appendChild(flag);
                     fc.appendChild(row);
@@ -1127,10 +1133,15 @@
             container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
 
             try {
+                const tripId = (window.Trip && window.Trip.tripId) ? window.Trip.tripId : null;
+                const userId = (window.Trip && window.Trip.userId) || (window.USER_ID) || null;
+                const payload = { query: query };
+                if (tripId) payload.trip_id = tripId;
+                if (userId) payload.user_id = userId;
                 const res = await fetch('/api/chat/concierge', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: query })
+                    body: JSON.stringify(payload)
                 });
                 const data = await res.json();
                 const replyTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });

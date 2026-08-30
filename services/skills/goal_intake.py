@@ -174,7 +174,7 @@ def _extract_passengers_info(text: str) -> tuple[int, bool]:
         if re.search(rf"\b(?:for\s+)?{word}\s+(?:people|pax|passengers?|persons?|adults?|travelers?|travellers?)\b", text,
                      flags=re.IGNORECASE):
             return n, True
-    if re.search(r"\b(?:solo|just\s+me|for\s+myself|for\s+me|my\s+(?:complete\s+|whole\s+)?trip|my\s+flight|a\s+flight|a\s+trip|book\s+a)\b", text, flags=re.IGNORECASE):
+    if re.search(r"\b(?:solo|just\s+me|for\s+myself|for\s+me|my\s+(?:complete\s+|whole\s+)?trip|my\s+flight|a\s+flight|a\s+trip|book\s+a|i\s+need\s+to|i\s+want\s+to|i'm\s+traveling|i\s+am\s+traveling|i'm\s+going\s+to|i\s+am\s+going\s+to)\b", text, flags=re.IGNORECASE):
         return 1, True
     return 1, False
 
@@ -208,8 +208,13 @@ def _infer_services(text: str) -> Dict[str, str]:
         if "local transport" in low or "transport" in low:
             rs["local_transport"] = "requested"
         if "flights only" in low or "flight only" in low or "just the flight" in low:
-            rs.update({"flight_booking": rs["flight_booking"],
-                       "hotel": "not_requested", "activities": "not_requested",
+            booking = "not_requested" if rs["flight_booking"] == "unknown" else rs["flight_booking"]
+            visa = "requested" if booking == "requested" else "not_requested"
+            rs.update({"flight_search": "requested",
+                       "flight_booking": booking,
+                       "visa_check": visa,
+                       "hotel": "not_requested",
+                       "activities": "not_requested",
                        "local_transport": "not_requested"})
     return rs
 

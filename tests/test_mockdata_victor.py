@@ -258,6 +258,11 @@ def _browser_goal_to_options(profile_data: dict, goal_data: dict, store) -> None
         start_goal(page, goal_data.get("raw_text", "Fly Bangkok to Singapore Sep 29-30"))
 
         for _ in range(12):
+            search_btn = page.locator('[data-testid="aj-search-now-btn"]')
+            if search_btn.count() and search_btn.is_visible():
+                search_btn.click()
+                page.wait_for_timeout(800)
+                continue
             scope_btn = page.locator(
                 '[data-testid="scope-choice-complete_trip"]')
             if scope_btn.count() and scope_btn.is_visible():

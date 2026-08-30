@@ -2813,3 +2813,31 @@
         transition: none;
     }
 }
+
+.aj-search-now-wrap {
+    display: flex;
+    margin-top: 10px;
+    width: 100%;
+}
+.aj-search-now-btn {
+    min-height: 44px;
+    padding: 10px 22px;
+    border-radius: 999px;
+    border: none;
+    background: var(--aj-teal);
+    color: #fff;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(15, 118, 110, 0.25);
+    transition: background 0.15s ease, transform 0.1s ease;
+}
+.aj-search-now-btn:hover:not(:disabled) {
+    background: var(--aj-teal-ink);
+    transform: translateY(-1px);
+}
+.aj-search-now-btn:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}

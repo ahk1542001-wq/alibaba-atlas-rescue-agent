@@ -53,10 +53,10 @@ def assess_readiness(
         and rs.local_transport == "not_requested"
     )
 
-    # 3. Passenger count (must be explicitly provided or confirmed for booking/complete-trip)
+    # 3. Passenger count (must be explicitly provided or confirmed)
     if not goal.get("passengers"):
         missing_facts.append("passengers")
-    elif not is_flight_only and not goal.get("passengers_explicit"):
+    elif not goal.get("passengers_explicit") and not goal.get("passengers_confirmed"):
         missing_facts.append("passengers")
 
     # 4. Airport ambiguity (only blocking if city could not be resolved to a default IATA)
@@ -71,7 +71,8 @@ def assess_readiness(
     # 5. Passport requirements (omitted for flight-only, required for booking/complete-trip)
     passport_country = None
     if profile and profile.identity and profile.identity.passport_country:
-        passport_country = profile.identity.passport_country
+        val = profile.identity.passport_country
+        passport_country = val.value if hasattr(val, "value") else val
     if goal.get("passport_country"):
         passport_country = goal.get("passport_country")
 

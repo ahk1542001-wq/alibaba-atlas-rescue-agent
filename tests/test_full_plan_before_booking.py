@@ -190,7 +190,7 @@ def test_complete_trip_reaches_approval_with_all_reversible_outputs_and_no_order
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
     goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 — plan my whole trip from BKK."
-    trip_id = _run(orch.start(goal_text, "victor"))
+    trip_id = _run(orch.start(goal_text, "victor", search_confirmed=True))
     trip = orch.executor.get(trip_id)
 
     # Must pause at approve_booking
@@ -232,7 +232,7 @@ def test_ticketing_activation_required_preserves_complete_plan(tmp_path):
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
     goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 — plan my whole trip from BKK."
-    trip_id = _run(orch.start(goal_text, "victor"))
+    trip_id = _run(orch.start(goal_text, "victor", search_confirmed=True))
     trip = orch.executor.get(trip_id)
 
     approval = trip.pending_approvals[0]
@@ -284,7 +284,7 @@ def test_hermetic_successful_booking_promotes_flight_and_arms_monitor(tmp_path):
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
     goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 — plan my whole trip from BKK."
-    trip_id = _run(orch.start(goal_text, "victor"))
+    trip_id = _run(orch.start(goal_text, "victor", search_confirmed=True))
     trip = orch.executor.get(trip_id)
 
     approval = trip.pending_approvals[0]
@@ -334,12 +334,12 @@ def test_flight_only_skips_leisure_and_itinerary(tmp_path):
     atlas = MockAtlasClient()
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
-    goal_text = "Find flights from BKK to SIN Sep 29-30, no hotel or booking."
+    goal_text = "Find flights from BKK to SIN Sep 29-30, no hotel or booking for 1 passenger."
     trip_id = _run(orch.start(goal_text, "victor"))
     trip = orch.executor.get(trip_id)
 
     # If clarify or scope choice needed, resolve to flight_only
-    if trip.status == "awaiting_approval" and trip.pending_approvals[0].node_name == "scope_clarification":
+    if trip.status == "awaiting_approval" and trip.pending_approvals and trip.pending_approvals[0].node_name == "scope_clarification":
         _run(orch.resolve(trip_id, trip.pending_approvals[0].approval_id, "flight_only", {"choice": "flight_only"}))
 
     state = orch.state(trip_id)
@@ -388,7 +388,7 @@ def test_rejected_booking_approval_makes_no_create_order_call(tmp_path):
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
     goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 — plan my whole trip from BKK."
-    trip_id = _run(orch.start(goal_text, "victor"))
+    trip_id = _run(orch.start(goal_text, "victor", search_confirmed=True))
     trip = orch.executor.get(trip_id)
 
     approval = trip.pending_approvals[0]

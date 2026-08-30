@@ -1271,6 +1271,30 @@
             home.appendChild(homeEdit);
             box.appendChild(home);
         }
+        if (s && s.readiness && s.readiness.requires_search_confirmation && s.readiness.ready_for_search && Trip.tripId) {
+            any = true;
+            var searchWrap = el('div', 'aj-search-now-wrap');
+            var searchNowBtn = el('button', 'aj-search-now-btn', 'Search now \u2192');
+            searchNowBtn.type = 'button';
+            tid(searchNowBtn, 'aj-search-now-btn');
+            searchNowBtn.addEventListener('click', async function () {
+                searchNowBtn.disabled = true;
+                searchNowBtn.textContent = 'Searching Atlas Sandbox\u2026';
+                try {
+                    var ack = await api('/api/trips/' + Trip.tripId + '/plan', jsonOpts('POST', {}));
+                    if (ack && ack.state) {
+                        renderState(ack.state);
+                    }
+                    pollState();
+                } catch (err) {
+                    searchNowBtn.disabled = false;
+                    searchNowBtn.textContent = 'Search now \u2192';
+                    showError('Search failed: ' + plainError(err));
+                }
+            });
+            searchWrap.appendChild(searchNowBtn);
+            box.appendChild(searchWrap);
+        }
         box.hidden = !any;
     }
 
@@ -2341,7 +2365,7 @@
         clear(container);
         if (items.length === 0) {
             var itinEmpty = el('div', 'trip-empty',
-                'Nothing planned yet \u2014 complete-trip suggestions appear before booking approval.');
+                'No verified result is currently available \u2014 not booked');
             tid(itinEmpty, 'trip-itinerary-empty');
             container.appendChild(itinEmpty);
             return;

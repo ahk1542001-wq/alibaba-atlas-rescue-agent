@@ -146,14 +146,171 @@ def test_runtime_leisure_research_never_returns_researched_mock():
 
 
 def test_concierge_shares_active_trip_state():
-    """Concierge endpoint must read the active trip when one exists."""
+    """Concierge endpoint must read the active trip when one exists for that user."""
     from routers.v1.concierge import chat_concierge
     from models.schemas import ConciergeQuery
-    orch = TripOrchestrator()
+    orch = get_trip_orchestrator()
     trip_id = _run(orch.start("I need to fly from Bangkok to Singapore on 2026-09-29 for 1 person.", "victor"))
-    req = ConciergeQuery(query="What is my destination?", trip_id=trip_id)
+    req = ConciergeQuery(query="What is my destination?", trip_id=trip_id, user_id="victor")
     resp = _run(chat_concierge(req))
     import json
     data = json.loads(resp.body)
-    assert "Singapore" in data.get("response", "") or data.get("trip_id") == trip_id
+    assert "Singapore" in data.get("reply", "") or data.get("trip_id") == trip_id
+
+
+def test_concierge_without_trip_or_user_id_returns_no_active_session():
+    """Concierge without trip_id/user_id must return a calm no-active-trip response without exposing any trip context."""
+    from routers.v1.concierge import chat_concierge
+    from models.schemas import ConciergeQuery
+    orch = get_trip_orchestrator()
+    # Populate a trip belonging to someone else
+    _run(orch.start("I need to fly from Bangkok to Singapore on 2026-09-29 for 1 person.", "alice"))
+    
+    # Query with no trip_id or user_id
+    req = ConciergeQuery(query="What is my destination?")
+    resp = _run(chat_concierge(req))
+    import json
+    data = json.loads(resp.body)
+    assert data.get("action_taken") == "NO_ACTIVE_SESSION"
+    assert "Singapore" not in data.get("reply", "")
+    assert data.get("trip_id") is None
+
+
+def test_concierge_rejects_foreign_user_trip():
+    """A trip_id belonging to User A must not be accessible to User B in Concierge."""
+    from routers.v1.concierge import chat_concierge
+    from models.schemas import ConciergeQuery
+    orch = get_trip_orchestrator()
+    trip_id = _run(orch.start("Fly from Bangkok to Singapore on 2026-09-29 for 1 person.", "alice"))
+    
+    req = ConciergeQuery(query="What is my destination?", trip_id=trip_id, user_id="bob")
+    resp = _run(chat_concierge(req))
+    import json
+    data = json.loads(resp.body)
+    assert data.get("action_taken") == "NO_ACTIVE_SESSION"
+    assert "Singapore" not in data.get("reply", "")
+
+
+def test_rescue_engine_missing_pnr_never_claims_confirmed():
+    """Booking context without confirmed PNR must describe pending/unconfirmed status and never fabricate CONFIRMED."""
+    from services.rescue_engine import _build_concierge_prompt, RescueEngine
+    from services.atlas_client import AtlasClient
+
+    engine = RescueEngine(AtlasClient())
+    context_no_pnr = {
+        "flight_book": {
+            "booking": {"status": "PENDING"}
+        }
+    }
+    prompt = _build_concierge_prompt(context_no_pnr)
+    assert "Confirmed Sandbox Booking PNR: CONFIRMED" not in prompt
+    assert "no confirmed PNR" in prompt
+
+    rule_resp = _run(engine._rule_based_concierge("is my flight booked?", context=context_no_pnr))
+    assert "not confirmed" in rule_resp["reply"]
+    assert rule_resp["action_taken"] == "BOOKING_STATUS_UNCONFIRMED"
+
+
+def test_complete_facts_without_search_confirmation_makes_zero_provider_calls():
+    """A trip with all facts provided but without explicit search confirmation must not run search providers."""
+    orch = TripOrchestrator()
+    trip_id = _run(orch.start("Fly from Bangkok to Singapore on 2026-09-29 for 1 passenger, flights only.", "charlie"))
+    state = orch.state(trip_id)
+    
+    # Must be paused before search execution with search confirmation required
+    readiness = state.get("readiness") or {}
+    assert readiness.get("ready_for_search") is True
+    assert readiness.get("requires_search_confirmation") is True
+    
+    nodes = state.get("nodes") or []
+    executed = [n["name"] for n in nodes if n.get("status") in ("COMPLETED", "RUNNING")]
+    assert "flight_search" not in executed
+
+
+def test_trips_plan_endpoint_blocked_before_readiness_and_search_confirmation():
+    """POST /api/trips/{trip_id}/plan must not execute providers if facts are missing."""
+    from routers.v1.trip import trips_plan
+    orch = get_trip_orchestrator()
+    trip_id = _run(orch.start("I want to go to Tokyo.", "dave"))
+    
+    resp = _run(trips_plan(trip_id))
+    import json
+    data = json.loads(resp.body)
+    assert data["status"] in ("clarifying", "in_progress", "awaiting_approval")
+    
+    state = orch.state(trip_id)
+    nodes = state.get("nodes") or []
+    executed = [n["name"] for n in nodes if n.get("status") in ("COMPLETED", "RUNNING")]
+    assert "flight_search" not in executed
+
+
+def test_flight_only_missing_passengers_stays_in_clarification(tmp_path):
+    """Flight-only goal without passenger count must ask for passengers and not silently assume 1."""
+    store = ProfileStore(root=tmp_path)
+    skill = ClarifyLoopSkill(store)
+    rs = RequestedServices(
+        flight_search="requested",
+        flight_booking="not_requested",
+        visa_check="not_requested",
+        hotel="not_requested",
+        activities="not_requested",
+        local_transport="not_requested",
+    )
+    goal = {"origin_city": "BKK", "dest_city": "SIN", "date_window": {"start": "2026-09-29", "end": "2026-09-30"}}
+    out = _run(skill.run({"goal": goal, "user_id": "u_flight_nopax", "requested_services": rs.model_dump()}))
+    q_fields = [q["field"] for q in (out.get("questions") or [])]
+    assert "passengers" in q_fields
+
+
+def test_chat_passenger_change_proposal_updates_and_requires_new_search_confirmation():
+    """Chatting a passenger count change creates a structured proposal; confirming it invalidates previous search and requires new search confirmation."""
+    from routers.v1.concierge import chat_concierge
+    from models.schemas import ConciergeQuery
+    orch = get_trip_orchestrator()
+    trip_id = _run(orch.start("Fly from Bangkok to Singapore on 2026-09-29 for 1 passenger, flights only.", "eve"))
+    
+    # 1. Ask in concierge to change passenger count
+    req = ConciergeQuery(query="We are two passengers traveling together", trip_id=trip_id, user_id="eve")
+    resp = _run(chat_concierge(req))
+    import json
+    data = json.loads(resp.body)
+    assert data.get("action_taken") == "PASSENGER_COUNT_PROPOSAL"
+    proposal = data.get("proposal") or {}
+    assert proposal.get("proposed_value") == 2
+    chips = proposal.get("confirmation_chips") or []
+    pax_chip = next((c for c in chips if c.get("field") == "passengers"), None)
+    assert pax_chip is not None
+    
+    # 2. Confirm the passenger confirmation chip
+    chip_id = pax_chip["chip_id"]
+    conf_res = _run(orch.resolve_confirmation(trip_id, chip_id, "confirm"))
+    assert conf_res["status"] == "confirmed"
+    
+    # 3. Verify passenger count in goal is updated and search is reset
+    state = orch.state(trip_id)
+    goal = (orch._seeds.get(trip_id) or {}).get("goal") or {}
+    assert goal.get("passengers") == 2
+    assert goal.get("search_confirmed") is False
+    assert state["readiness"]["requires_search_confirmation"] is True
+
+
+def test_radar_status_badge_unknown_never_shows_on_time():
+    """Radar UI code in static/app.js must not pair UNKNOWN flight status with On Time badge."""
+    with open("static/app.js", "r", encoding="utf-8") as f:
+        content = f.read()
+    
+    # Ensure rawStatus check exists and non ON_TIME/SCHEDULED/ACTIVE statuses do not render 'On Time'
+    assert "ON_TIME" in content
+    assert "MONITORING" in content
+    # Flag logic must check for explicit on time / scheduled states
+    assert "rawStatus === 'ON_TIME' || rawStatus === 'SCHEDULED'" in content
+
+
+def test_frontend_concierge_sends_trip_id_and_user_id():
+    """static/app.js concierge fetch must pass trip_id and user_id."""
+    with open("static/app.js", "r", encoding="utf-8") as f:
+        content = f.read()
+    assert "payload.trip_id = tripId;" in content
+    assert "payload.user_id = userId;" in content
+
 

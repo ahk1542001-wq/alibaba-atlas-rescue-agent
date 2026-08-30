@@ -63,9 +63,14 @@ def _build_concierge_prompt(context: Optional[Dict[str, Any]]) -> str:
             + (f"${payout} under {basis}" if payout else f"{basis or 'refund/duty-of-care route'}")
         )
     fb = context.get("flight_book") or {}
-    if fb.get("booking"):
-        pnr = (fb["booking"].get("pnr") or "CONFIRMED")
+    booking = fb.get("booking") or {}
+    pnr = booking.get("pnr")
+    status = (booking.get("status") or fb.get("status") or "").upper()
+    if pnr and pnr != "CONFIRMED" and status == "CONFIRMED":
         parts.append(f"- Confirmed Sandbox Booking PNR: {pnr}")
+    elif booking:
+        status_desc = status if status else "pending/unconfirmed"
+        parts.append(f"- Planned flight selection (booking status: {status_desc}, no confirmed PNR)")
 
     parts.append(
         "Answer the passenger's question concisely (max 3 sentences), warm and specific. "
@@ -87,7 +92,9 @@ class RescueEngine:
 
     async def _qwen_concierge_reply(self, query: str, context: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Real Qwen reply grounded on live session state; None so rules take over."""
-        ctx = context or self.last_session_context
+        ctx = context
+        if not ctx:
+            return None
         reply = await llm.chat(
             messages=[
                 {"role": "system", "content": _build_concierge_prompt(ctx)},
@@ -447,7 +454,15 @@ class RescueEngine:
 
     async def answer_concierge(self, query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """AI Travel Concierge responses based on Atlas travel context and passenger needs."""
-        ctx = context or self.last_session_context
+        ctx = context
+        if not ctx:
+            return {
+                "reply": (
+                    "I do not have an active trip or disruption session right now. "
+                    "Tell me where you want to travel or simulate a disruption to get started."
+                ),
+                "action_taken": "NO_ACTIVE_SESSION",
+            }
         # Real Qwen-2.5 first (grounded); deterministic rules as fallback
         try:
             qwen_reply = await self._qwen_concierge_reply(query, ctx)
@@ -468,7 +483,7 @@ class RescueEngine:
 
     async def _rule_based_concierge(self, query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Deterministic, session-grounded reply when the LLM is unavailable."""
-        ctx = context or self.last_session_context
+        ctx = context
         if not ctx:
             return {
                 "reply": (
@@ -573,6 +588,27 @@ class RescueEngine:
                 ),
                 "action_taken": "SESSION_STATUS_SUMMARY",
             }
+
+        if "pnr" in q_lower or "booked" in q_lower or "booking status" in q_lower:
+            fb = ctx.get("flight_book") or {}
+            booking = fb.get("booking") or {}
+            pnr = booking.get("pnr")
+            status = (booking.get("status") or fb.get("status") or "").upper()
+            if pnr and pnr != "CONFIRMED" and status == "CONFIRMED":
+                return {
+                    "reply": f"Your flight booking is confirmed in Atlas Sandbox with PNR {pnr}.",
+                    "action_taken": "BOOKING_STATUS_CONFIRMED",
+                }
+            elif booking:
+                return {
+                    "reply": "Your flight option is planned but not confirmed. No booking or PNR was created.",
+                    "action_taken": "BOOKING_STATUS_UNCONFIRMED",
+                }
+            else:
+                return {
+                    "reply": "No booking has been requested yet. Review your flight options and approve to book.",
+                    "action_taken": "NO_BOOKING_REQUESTED",
+                }
 
         if dest and orig:
             return {

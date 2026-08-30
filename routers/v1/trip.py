@@ -111,7 +111,7 @@ _SCOPE_LABELS = {
 # clarify fields that belong to the TRIP GOAL (not the profile). Confirming
 # them persists into the paused/failed trip's goal and resumes it
 # (G4-DA-fix F4 — previously the chip confirm was a silent no-op).
-_TRIP_GOAL_FIELDS = ("origin_city", "dest_city", "date_window", "passengers")
+_TRIP_GOAL_FIELDS = ("origin_city", "dest_city", "date_window", "passengers", "search_now")
 _PROFILE_CLARIFY_FIELDS = ("passport_country", "home_city")
 _AIRPORT_CONFIRM_FIELDS = (
     "confirmed_origin_airport", "confirmed_destination_airport")
@@ -676,7 +676,7 @@ class TripOrchestrator:
                 f"skill '{skill_ref}' exceeds declared capabilities: "
                 f"{sorted(exceeding)}")
 
-    async def start(self, goal_text: str, user_id: str) -> str:
+    async def start(self, goal_text: str, user_id: str, search_confirmed: bool = False) -> str:
         try:
             profile = self.store.get_or_create(user_id)
         except ValidationError:
@@ -704,6 +704,9 @@ class TripOrchestrator:
             {"goal": goal_out["goal"], "user_id": user_id,
              "requested_services": goal_out["requested_services"]}, ctx)
         t2 = time.perf_counter()
+
+        if search_confirmed:
+            goal_out["goal"]["search_confirmed"] = True
 
         goal_out["goal"]["missing_fields"] = [
             q["field"] for q in (clarify_out.get("questions") or [])
@@ -749,7 +752,7 @@ class TripOrchestrator:
             requested_services=clarify_out["requested_services"],
             clarify_data=clarify_out,
         )
-        if not readiness.ready_for_search:
+        if not readiness.ready_for_search or readiness.requires_search_confirmation:
             trip.status = "clarifying" if (clarify_out.get("questions") or not clarify_out.get("complete")) else "in_progress"
             return trip_id
 
@@ -808,6 +811,7 @@ class TripOrchestrator:
                 trip.current = None
                 return
 
+            seed["goal"]["search_confirmed"] = True
             trip.status = "pending"
             trip.current = None
         if rest:
@@ -1379,7 +1383,8 @@ class TripOrchestrator:
         approval snapshot derived from them.  Rebuilding the reversible plan
         keeps the eventual booking gate tied to the confirmed facts.
         """
-        if field not in ("passport_country", *_AIRPORT_CONFIRM_FIELDS):
+        replan_fields = ("passport_country", "search_now", "passengers", "origin_city", "dest_city", "date_window", *_AIRPORT_CONFIRM_FIELDS)
+        if field not in replan_fields:
             return
         if trip.context.get("flight_book"):
             return
@@ -1389,6 +1394,16 @@ class TripOrchestrator:
         seed = self._seeds.get(trip.trip_id)
         if not seed:
             return
+
+        if field == "search_now":
+            seed["goal"]["search_confirmed"] = True
+            if "goal_intake" in trip.context and isinstance(trip.context["goal_intake"].get("goal"), dict):
+                trip.context["goal_intake"]["goal"]["search_confirmed"] = True
+        else:
+            seed["goal"]["search_confirmed"] = False
+            if "goal_intake" in trip.context and isinstance(trip.context["goal_intake"].get("goal"), dict):
+                trip.context["goal_intake"]["goal"]["search_confirmed"] = False
+
         clarify = trip.context.get("clarify_loop") or {}
         profile = self.store.get_or_create(str(trip.context.get("user_id") or ""))
         readiness = assess_readiness(
@@ -1397,12 +1412,7 @@ class TripOrchestrator:
             requested_services=seed["requested_services"],
             clarify_data=clarify,
         )
-        if not readiness.ready_for_search:
-            trip.status = "clarifying" if (clarify.get("questions") or not clarify.get("complete")) else "in_progress"
-            return
 
-        rs = RequestedServices(**seed["requested_services"])
-        rest = self._build_plan_rest(seed, rs)
         async with trip.lock:
             trip.pending_approvals = [
                 approval for approval in trip.pending_approvals
@@ -1412,12 +1422,22 @@ class TripOrchestrator:
                         "activities_research", "local_transport_research",
                         "itinerary"):
                 trip.context.pop(key, None)
+
+        self._record(trip, "confirmation_replan", "clarify_loop",
+                     "COMPLETED", 0.0, {"confirmed_field": field})
+
+        if not readiness.ready_for_search or readiness.requires_search_confirmation:
+            trip.status = "clarifying" if (clarify.get("questions") or not clarify.get("complete")) else "in_progress"
+            trip.current = None
+            return
+
+        rs = RequestedServices(**seed["requested_services"])
+        rest = self._build_plan_rest(seed, rs)
+        async with trip.lock:
             trip.nodes = rest
             trip.nodes_by_name = {node.name: node for node in rest}
             trip.status = "pending"
             trip.current = None
-        self._record(trip, "confirmation_replan", "clarify_loop",
-                     "COMPLETED", 0.0, {"confirmed_field": field})
         if rest:
             await self._run_guarded(trip.trip_id)
         else:
@@ -1564,8 +1584,10 @@ class TripOrchestrator:
 
         goal = seed["goal"]
         goal[field] = normalized
+        goal["search_confirmed"] = False
         if field == "passengers":
             goal["passengers_explicit"] = True
+            goal["passengers_confirmed"] = True
         gi = trip.context.get("goal_intake") or {}
         gi["goal"] = goal
         trip.context["goal_intake"] = gi
@@ -1594,6 +1616,7 @@ class TripOrchestrator:
 
         resumed = False
         if readiness.ready_for_search and not trip.pending_approvals:
+            seed["goal"]["search_confirmed"] = True
             rs = RequestedServices(**seed["requested_services"])
             async with trip.lock:
                 rest = self._build_plan_rest(seed, rs)
@@ -1606,7 +1629,7 @@ class TripOrchestrator:
                 await self._run_guarded(trip_id)
             else:
                 trip.status = "completed"
-        elif not readiness.ready_for_search:
+        else:
             trip.status = "clarifying" if (clarify.get("questions") or not clarify.get("complete")) else "in_progress"
 
         result = self.resume_result(trip_id)
@@ -1686,6 +1709,17 @@ class TripOrchestrator:
             outputs["safety_events"] = safety_events
         snapshot["outputs"] = outputs
         snapshot.update(self.confirmation_surface(trip_id))
+        seed = self._seeds.get(trip_id) or {}
+        goal = seed.get("goal") or (ctx.get("goal_intake") or {}).get("goal") or {}
+        clarify_data = ctx.get("clarify_loop") or seed.get("clarify") or {}
+        profile = self.store.get_or_create(str(ctx.get("user_id") or ""))
+        readiness = assess_readiness(
+            goal=goal,
+            profile=profile,
+            requested_services=seed.get("requested_services"),
+            clarify_data=clarify_data,
+        )
+        snapshot["readiness"] = readiness.model_dump(mode="json")
         turn = project_conversation_turn(snapshot, context=ctx)
         snapshot["conversation"] = turn.model_dump(mode="json")
         return snapshot
@@ -2344,15 +2378,43 @@ async def trips_plan(trip_id: str):
     if trip.status == "awaiting_approval":
         return JSONResponse(content=orch.state(trip_id))
 
-    # Build and run the plan if not yet started or if resume is needed
     seed = orch._seeds.get(trip_id)
-    if seed and not trip.nodes:
+    if seed:
         clarify = trip.context.get("clarify_loop") or {}
-        rs = RequestedServices(**clarify.get("requested_services",
-                                              {"flight_search": "requested"}))
+        profile = orch.store.get_or_create(str(trip.context.get("user_id") or ""))
+
+        # If calling /plan directly when scope clarification was pending, resolve unrequested items to not_requested
+        if clarify.get("scope_clarification"):
+            rs_dict = dict(seed.get("requested_services") or {})
+            for k in ("hotel", "activities", "local_transport", "visa_check"):
+                if rs_dict.get(k) == "unknown":
+                    rs_dict[k] = "not_requested"
+            seed["requested_services"] = rs_dict
+            trip.context["requested_services"] = rs_dict
+            if "clarify_loop" in trip.context and isinstance(trip.context["clarify_loop"], dict):
+                trip.context["clarify_loop"]["scope_clarification"] = None
+            clarify = trip.context.get("clarify_loop") or {}
+
+        readiness = assess_readiness(
+            goal=seed["goal"],
+            profile=profile,
+            requested_services=seed.get("requested_services", {}),
+            clarify_data=clarify,
+        )
+        if not readiness.ready_for_search:
+            # P0 bypass fix: Zero provider calls if not ready!
+            trip.status = "clarifying" if (clarify.get("questions") or not clarify.get("complete")) else "in_progress"
+            state = orch.state(trip_id)
+            return JSONResponse(content={"trip_id": trip_id, "status": trip.status, "state": state})
+
+        # Explicit search confirmation provided via /plan action
+        seed["goal"]["search_confirmed"] = True
+        rs = RequestedServices(**seed.get("requested_services", {"flight_search": "requested"}))
         rest = orch._build_plan_rest(seed, rs)
         trip.nodes = rest
         trip.nodes_by_name = {n.name: n for n in rest}
+        trip.status = "pending"
+        trip.current = None
 
     if trip.nodes:
         try:
@@ -2376,6 +2438,7 @@ async def trips_plan(trip_id: str):
                 "local_transport_research", "recovery"):
         if key in trip.context:
             result["outputs"][key] = trip.context[key]
+    result["nodes"] = state.get("nodes", [])
     result["state"] = state
     return JSONResponse(content=result)
 

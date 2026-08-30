@@ -147,7 +147,9 @@ def test_confirmed_passport_rebuilds_visa_and_booking_snapshot(harness):
                 json={"decision": "confirm"},
             )
             assert confirmed.status_code == 200, confirmed.text
-            state = confirmed.json()["state"]
+            plan_res = await client.post(f"/api/trips/{trip_id}/plan")
+            assert plan_res.status_code == 200, plan_res.text
+            state = plan_res.json()
             assert state["outputs"]["visa_check"]["passport_country"] == "MM"
             assert state["outputs"]["visa_check"]["passport_unknown"] is False
             approval = next(a for a in state["pending_approvals"]
@@ -181,6 +183,8 @@ def test_gap3_initial_booking_atomic_idempotency(harness):
             })
             assert start.status_code == 200, start.text
             trip_id = start.json()["trip_id"]
+            plan_res = await client.post(f"/api/trips/{trip_id}/plan")
+            assert plan_res.status_code == 200, plan_res.text
             approvals = (await client.get(
                 f"/api/trips/{trip_id}/approvals")).json()["approvals"]
             gate = next(a for a in approvals
@@ -246,6 +250,8 @@ def test_gap2_full_recovery_preserves_evidence_and_is_atomic(harness):
             })
             assert start.status_code == 200, start.text
             trip_id = start.json()["trip_id"]
+            plan_res = await client.post(f"/api/trips/{trip_id}/plan")
+            assert plan_res.status_code == 200, plan_res.text
             approvals = (await client.get(
                 f"/api/trips/{trip_id}/approvals")).json()["approvals"]
             initial = next(a for a in approvals
@@ -440,6 +446,8 @@ def test_gap6_forged_rejection_overwritten_by_server_decision(harness):
             })
             assert start.status_code == 200, start.text
             trip_id = start.json()["trip_id"]
+            plan_res = await client.post(f"/api/trips/{trip_id}/plan")
+            assert plan_res.status_code == 200, plan_res.text
 
             orch = get_trip_orchestrator()
             trip = orch._trip_or_404(trip_id)

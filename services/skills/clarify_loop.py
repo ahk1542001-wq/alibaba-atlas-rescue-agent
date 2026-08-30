@@ -72,8 +72,8 @@ class ClarifyLoopSkill(SkillBase):
             rs.local_transport == "not_requested"
         )
 
-        # Passenger count: ask when not explicitly supplied for booking or complete trip
-        if not is_flight_only and not goal.get("passengers_explicit"):
+        # Passenger count: ask when not explicitly supplied or confirmed
+        if not goal.get("passengers_explicit") and not goal.get("passengers_confirmed"):
             questions.append({"field": "passengers",
                               "question": "How many passengers are traveling?"})
 
