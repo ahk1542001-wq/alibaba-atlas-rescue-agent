@@ -35,7 +35,23 @@ QUESTION_REASONS = {
     "dates": "Needed to find available flights for your travel window.",
     "passengers": "Needed to confirm seat availability and calculate total fares.",
     "budget": "Optional, helps select accommodations and activities within your comfort range.",
+    "confirmed_origin_airport": "Needed so the flight search uses the departure airport you choose.",
+    "confirmed_destination_airport": "Needed so the flight search uses the arrival airport you choose.",
 }
+
+# Keep this priority aligned with the beginner-facing one-question flow in
+# static/trip.js.  Legacy aliases remain supported after the canonical fields.
+QUESTION_FIELD_ORDER = (
+    "origin_city",
+    "confirmed_origin_airport",
+    "dest_city",
+    "confirmed_destination_airport",
+    "date_window",
+    "passengers",
+    "passport_country",
+    "home_city",
+    "expiry",
+)
 
 
 def project_conversation_turn(
@@ -156,9 +172,46 @@ def project_conversation_turn(
         )
     ]
 
+    # Airport ambiguity is represented by a pending confirmation chip rather
+    # than a clarify-loop question. Merge those chips into the same ordered
+    # question surface so the assistant message and visible active card cannot
+    # disagree about what the traveler should answer next.
+    question_candidates = list(required_questions)
+    existing_fields = {q.get("field") for q in question_candidates}
+    for chip in state.get("confirmation_chips") or []:
+        field = chip.get("field")
+        if chip.get("state") != "pending" or not field \
+                or field in FORBIDDEN_PII_FIELDS or field in existing_fields:
+            continue
+        question_candidates.append({
+            "field": field,
+            "prompt": chip.get("message") or f"Please confirm your {field}.",
+            "choices": chip.get("options") or [],
+            "optional": False,
+            "reason": QUESTION_REASONS.get(field),
+            "_confirmation_chip": True,
+        })
+        existing_fields.add(field)
+
+    field_rank = {field: index for index, field in enumerate(QUESTION_FIELD_ORDER)}
+    field_rank.update({
+        "origin": field_rank["origin_city"],
+        "destination": field_rank["dest_city"],
+        "dates": field_rank["date_window"],
+    })
+    question_candidates = sorted(
+        enumerate(question_candidates),
+        key=lambda item: (field_rank.get(item[1].get("field"), len(field_rank)), item[0]),
+    )
+    question_candidates = [item[1] for item in question_candidates]
+
     # Ask the first unanswered required question before asking scope or booking approval
-    if required_questions and (not booking_approval or clarify.get("complete") is False):
-        q = required_questions[0]
+    if question_candidates and (
+        not booking_approval
+        or clarify.get("complete") is False
+        or any(q.get("_confirmation_chip") for q in question_candidates)
+    ):
+        q = question_candidates[0]
         field = q.get("field", "")
         prompt = q.get("prompt") or q.get("question") or f"Please provide your {field}."
         input_kind = "choice" if q.get("choices") else ("number" if field == "passengers" else "text")

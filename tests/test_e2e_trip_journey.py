@@ -39,10 +39,10 @@ from services.trip_graph import (SCOPE_CHOICES, GraphApprovalError,
 from services.web_intel_client import WebIntelClient
 
 HAPPY_GOAL = ("I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30 "
-              "— plan my whole trip from Bangkok.")
-AMBIGUOUS_GOAL = "I need to get to Singapore from Bangkok."
-BOOK_GOAL = "I need to book a flight from Bangkok to Singapore on 2026-09-29."
-BLOCKED_GOAL = "Book a flight from Yangon to Frankfurt on 2026-09-28."
+              "for 1 passenger — plan my whole trip from Bangkok.")
+AMBIGUOUS_GOAL = "I need to get to Singapore from Bangkok for 1 passenger."
+BOOK_GOAL = "I need to book a flight from Bangkok to Singapore on 2026-09-29 for 1 passenger."
+BLOCKED_GOAL = "Book a flight from Yangon to Frankfurt on 2026-09-28 for 1 passenger."
 
 def _run(coro):
     return asyncio.run(coro)
@@ -342,7 +342,7 @@ def test_flight_only_intent_skips_leisure_researchers(harness):
 
     async def flow():
         async with _client() as client:
-            trip_id = await _start(client, "I need to get to Singapore from Bangkok on 2026-09-29.", "flyonly_user")
+            trip_id = await _start(client, "I need to get to Singapore from Bangkok on 2026-09-29 for 1 passenger.", "flyonly_user")
             result = await _resolve_scope_if_paused(client, trip_id,
                                                     "flight_only")
             assert result["status"] == "completed"
@@ -360,10 +360,8 @@ def test_flight_only_intent_skips_leisure_researchers(harness):
     _run(flow())
 
 
-def test_visa_block_route_never_silently_books(harness):
-    """MM passport via FRA (BLOCKED_RISK): the block surfaces in state, the
-    reroute back to flight_search is visible, and booking is impossible —
-    no user override exists."""
+def test_direct_destination_is_not_false_blocked_as_a_transit(harness):
+    """A direct RGN→FRA route has no intermediate transit airport."""
     atlas = FakeAtlas()
     harness(atlas=atlas)
 
@@ -374,27 +372,18 @@ def test_visa_block_route_never_silently_books(harness):
             trip_id = await _start(client, BLOCKED_GOAL, "block_user")
             result = await _resolve_scope_if_paused(client, trip_id,
                                                     "flight_plus_booking")
-            assert result["status"] == "failed"
-            err = result["error"]
-            assert err["code"] == "visa_route_blocked"
-            assert err["recoverable"] is True
+            assert result["status"] == "awaiting_approval"
 
             state = (await client.get(f"/api/trip/{trip_id}/state")).json()
-            # (1) the block is surfaced in trip state
             visa = state["outputs"]["visa_check"]
-            assert visa["visa_blocked"] is True
-            assert any(r["risk_level"] == "block"
-                       for r in visa["requirements"])
-            # (2) the reroute is visible: flight_search ran again
+            assert visa["visa_blocked"] is False
+            assert not any(r["kind"] == "transit"
+                           for r in visa["requirements"])
             names = _trace_names(state)
-            assert names.count("flight_search") >= 2
-            # (3) booking never completes on the blocked route
+            assert names.count("flight_search") == 1
             assert "flight_book" not in names
-            assert "approve_booking" not in names
+            assert "approve_booking" in names
             assert "create" not in [c[0] for c in atlas.calls]
-            failed = [n for n in state["nodes"] if n["status"] == "FAILED"]
-            assert failed and failed[-1]["name"] == "visa_check"
-            assert failed[-1]["details"]["error_code"] == "visa_route_blocked"
 
     _run(flow())
 
@@ -541,7 +530,7 @@ def test_provider_failure_degrades_recoverably(harness):
 
     async def flow():
         async with _client() as client:
-            trip_id = await _start(client, "I need to get to Singapore from Bangkok on 2026-09-29.", "fail_user")
+            trip_id = await _start(client, "I need to get to Singapore from Bangkok on 2026-09-29 for 1 passenger.", "fail_user")
             result = await _resolve_scope_if_paused(client, trip_id,
                                                     "flight_only")
             assert result["status"] == "failed"
@@ -908,7 +897,7 @@ def test_stage1_skills_run_through_capability_enforcement(harness):
 
 # --- G4 Devil's Advocate + live-browser remediation regressions --------------------
 
-NO_ORIGIN_GOAL = "I need to get to Singapore on 2026-09-29."
+NO_ORIGIN_GOAL = "I need to get to Singapore on 2026-09-29 for 1 passenger."
 
 
 def test_date_window_is_forwarded_to_atlas_search(harness):
@@ -968,7 +957,7 @@ def test_date_window_substitution_is_labeled_not_silent(harness):
     async def flow():
         async with _client() as client:
             trip_id = await _start(
-                client, f"Book a flight from Bangkok to Singapore on {today}.",
+                client, f"Book a flight from Bangkok to Singapore on {today} for 1 passenger.",
                 "today_user")
             result = await _resolve_scope_if_paused(client, trip_id,
                                                     "flight_only")
@@ -1004,9 +993,13 @@ def test_clarify_answer_feeds_trip_goal_and_resumes(harness):
                 json={"field": "origin_city", "value": "Bangkok"})
             assert resp.status_code == 200, resp.text
             body = resp.json()
-            assert body["status"] == "completed"
+            assert body["status"] == "in_progress"
             assert body["clarify"]["field"] == "origin_city"
             assert body["clarify"]["value"] == "BKK"  # alias -> IATA
+
+            plan = await client.post(f"/api/trips/{trip_id}/plan")
+            assert plan.status_code == 200, plan.text
+            assert plan.json()["status"] == "completed"
 
             state = (await client.get(
                 f"/api/trip/{trip_id}/state")).json()
@@ -1062,6 +1055,10 @@ def test_clarify_waits_for_route_and_dates_before_resuming_search(harness):
                 json={"field": "date_window", "value": "Sep 29-30"},
             )
             assert dates.status_code == 200, dates.text
+            assert not [call for call in atlas.calls if call[0] == "search"]
+
+            plan = await client.post(f"/api/trips/{trip_id}/plan")
+            assert plan.status_code == 200, plan.text
             search = [call for call in atlas.calls if call[0] == "search"]
             assert len(search) == 1
             assert search[0][1:] == ("BKK", "SIN", "2026-09-29")

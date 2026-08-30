@@ -81,9 +81,10 @@ class VisaCheckSkill(SkillBase):
         requirements: List[Dict[str, Any]] = []
         risk_flags: List[str] = []
 
-        # transit posture for every hub after the origin (frozen visa_guard)
-        if passport in VISA_RULES and len(route) > 1:
-            for hub in route[1:]:
+        # Transit posture applies only to intermediate hubs. The final airport
+        # is the entry destination and must never be mislabeled as a layover.
+        if passport in VISA_RULES and len(route) > 2:
+            for hub in route[1:-1]:
                 verdict = assess_offer(passport, {"stops": 1, "via": [hub]})
                 status = verdict.get("visa_status", "UNKNOWN")
                 note = verdict.get("visa_note") or ""
@@ -111,6 +112,8 @@ class VisaCheckSkill(SkillBase):
             destination_country = AIRPORT_COUNTRY.get(route[-1], "")
         for rule in _load_kg_entry_rules(self._kg_path):
             if rule.get("passport") != passport:
+                continue
+            if destination_country and rule.get("destination") != destination_country:
                 continue
             requirements.append({
                 "country": rule.get("destination", ""),

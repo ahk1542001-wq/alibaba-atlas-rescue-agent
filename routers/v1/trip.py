@@ -801,23 +801,19 @@ class TripOrchestrator:
                 clarify_data=clarify_out,
             )
 
-            rest = self._build_plan_rest(seed, rs)
-            trip.nodes = rest
-            trip.nodes_by_name = {n.name: n for n in rest}
             trip.context["requested_services"] = rs.model_dump()
+            trip.nodes = []
+            trip.nodes_by_name = {}
 
             if not readiness.ready_for_search:
                 trip.status = "clarifying" if clarify_out.get("questions") else "in_progress"
                 trip.current = None
                 return
 
-            seed["goal"]["search_confirmed"] = True
-            trip.status = "pending"
+            seed["goal"]["search_confirmed"] = False
+            trip.status = "in_progress"
             trip.current = None
-        if rest:
-            await self._run_guarded(trip.trip_id)
-        else:
-            trip.status = "completed"
+            return
 
     async def resolve(self, trip_id: str, approval_id: str,
                       decision: str, value: Any,
@@ -1615,22 +1611,10 @@ class TripOrchestrator:
         )
 
         resumed = False
-        if readiness.ready_for_search and not trip.pending_approvals:
-            seed["goal"]["search_confirmed"] = True
-            rs = RequestedServices(**seed["requested_services"])
-            async with trip.lock:
-                rest = self._build_plan_rest(seed, rs)
-                trip.nodes = rest
-                trip.nodes_by_name = {n.name: n for n in rest}
-                trip.status = "pending"
-                trip.current = None
-            resumed = True
-            if rest:
-                await self._run_guarded(trip_id)
-            else:
-                trip.status = "completed"
-        else:
-            trip.status = "clarifying" if (clarify.get("questions") or not clarify.get("complete")) else "in_progress"
+        trip.status = "clarifying" if (
+            clarify.get("questions") or not clarify.get("complete")
+        ) else "in_progress"
+        trip.current = None
 
         result = self.resume_result(trip_id)
         result["clarify"] = {"field": field, "value": normalized,
@@ -2438,6 +2422,8 @@ async def trips_plan(trip_id: str):
                 "local_transport_research", "recovery"):
         if key in trip.context:
             result["outputs"][key] = trip.context[key]
+    if state.get("error"):
+        result["error"] = state["error"]
     result["nodes"] = state.get("nodes", [])
     result["state"] = state
     return JSONResponse(content=result)

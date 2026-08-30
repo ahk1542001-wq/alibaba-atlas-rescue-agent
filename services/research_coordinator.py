@@ -16,13 +16,35 @@ Invariants under test:
 """
 
 from datetime import date
+from html import unescape
 from typing import Any, Dict, List, Optional
 
 from models.schemas import RequestedServices
 from services.atlas_client import AtlasClient
 from services.skills.flight_search import normalize_offer
+from services.skills.location_resolve import KNOWN_CITY_AIRPORTS
 
 _LEISURE_DOMAINS = ("hotel", "activities", "local_transport")
+
+
+def _destination_label(value: Any) -> str:
+    raw = str(value or "").strip()
+    upper = raw.upper()
+    for city, airports in KNOWN_CITY_AIRPORTS.items():
+        if upper == city or any(upper == airport.get("code") for airport in airports):
+            return city.title()
+    return raw
+
+
+def _citation_relevant(domain: str, citation: Dict[str, Any]) -> bool:
+    text = " ".join(str(citation.get(key) or "") for key in (
+        "title", "snippet_max280", "url")).lower()
+    terms = {
+        "hotel": ("hotel", "accommodation", "places to stay", "resort", "hostel"),
+        "activities": ("things to do", "attraction", "tourism", "visit ", "activities"),
+        "local_transport": ("transport", "getting around", "public transit", "metro", "bus", "taxi"),
+    }
+    return any(term in text for term in terms[domain])
 
 
 class ResearchCoordinator:
@@ -87,14 +109,64 @@ class ResearchCoordinator:
                 "data": {"delegate": "services.skills.visa_check"},
             }
         if domain in _LEISURE_DOMAINS:
+            destination = _destination_label(params.get("destination"))
+            query_templates = {
+                "hotel": "hotels in {destination} official hotel websites",
+                "activities": "{destination} official tourism things to do",
+                "local_transport": "{destination} official public transport visitor guide",
+            }
+            intel = await self._web_intel.fetch(
+                query_templates[domain].format(
+                    destination=destination or "the destination")) \
+                if self._web_intel is not None else {
+                    "provider": "none", "degraded": True,
+                    "offline": True, "citations": [],
+                }
+            citations = [
+                citation for citation in (intel.get("citations") or [])
+                if isinstance(citation, dict)
+                and citation.get("url") and citation.get("title")
+                and citation.get("retrieved_date")
+                and _citation_relevant(domain, citation)
+            ]
+            limits = {"hotel": 1, "activities": 3, "local_transport": 1}
+            kind = "activity" if domain == "activities" else domain
+            items = []
+            for citation in citations[:limits[domain]]:
+                items.append({
+                    "name": unescape(str(citation["title"]))[:160],
+                    "kind": kind,
+                    "source": "web_research",
+                    "honesty_label": (
+                        "researched suggestion — verify before booking"),
+                    "price_range_sgd": None,
+                    "details": {
+                        "summary": unescape(str(
+                            citation.get("snippet_max280") or ""))[:280],
+                    },
+                    "provenance": {
+                        "source_url": citation["url"],
+                        "retrieved_date": citation["retrieved_date"],
+                        "researched_as_of": None,
+                        "degraded": False,
+                    },
+                    "booked": False,
+                })
+            degraded = bool(intel.get("degraded")) or not items
             return {
                 "domain": domain,
-                "provenance": "researched_mock",
-                "source_url": params.get("source_url"),
+                "provenance": intel.get("provider") or "web_intel",
+                "source_url": items[0]["provenance"]["source_url"]
+                if items else None,
                 "retrieved_date": today,
-                "freshness_state": "unknown",  # as-of dated; never claimed fresh
-                "degraded": self._web_intel is None,
-                "data": {"destination": params.get("destination")},
+                "freshness_state": "fresh" if not degraded else "unknown",
+                "degraded": degraded,
+                "data": {
+                    "destination": destination,
+                    "items": items,
+                    "note": None if items else (
+                        "No source-backed suggestions are currently available."),
+                },
             }
         return {
             "domain": domain,

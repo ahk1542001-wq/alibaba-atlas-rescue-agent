@@ -538,7 +538,8 @@ def _route_from_goal(ctx: Dict[str, Any]) -> List[str]:
 def _requested_leisure_domains(ctx: Dict[str, Any]) -> List[str]:
     requested = ctx.get("requested_services") or {}
     return [domain for domain in ("hotel", "activities", "local_transport")
-            if requested.get(domain) == "requested"]
+            if requested.get(domain) == "requested"
+            or f"{domain}_research" in ctx]
 
 
 def plan_trip(intent: TripIntent) -> Plan:

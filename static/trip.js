@@ -139,6 +139,12 @@
         safetyTried: false       // one-shot auto-fetch guard
     };
 
+    // Shared page-session bridge: the legacy Concierge view reads the same
+    // active trip identity as Atlas Journey. This object contains only the
+    // demo user id and in-memory trip id; no profile or passport data.
+    window.Trip = { tripId: null, userId: USER_ID };
+    window.USER_ID = USER_ID;
+
     // --- strict DOM helpers (never innerHTML with data) -------------------
 
     function el(tag, className, text) {
@@ -277,6 +283,7 @@
             }));
             invalidatePolls();          // any in-flight poll is for the old trip
             Trip.tripId = data.trip_id;
+            window.Trip.tripId = data.trip_id;
             window.__tripId = data.trip_id; // test/diagnostic hook
             Trip.goalText = text;
             Trip.pnrShown = false;

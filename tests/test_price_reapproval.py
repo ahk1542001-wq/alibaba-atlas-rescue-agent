@@ -270,8 +270,9 @@ def test_price_increase_in_orchestrator_creates_immutable_approval_and_zero_orde
     async def flow():
         # 1. Start trip
         start_res = await orch.start(
-            "Find and book a flight from BKK to SIN on 2026-09-28 for 1 person",
+            "Find and book a flight from BKK to SIN on 2026-09-28 for 1 person, flights only",
             user_id="user_price_test",
+            search_confirmed=True,
         )
         trip_id = start_res if isinstance(start_res, str) else start_res["trip_id"]
 

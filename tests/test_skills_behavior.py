@@ -549,7 +549,7 @@ def test_flight_book_domestic_route_needs_no_visa_gate():
 
 def test_s6_mm_fra_returns_schengen_atv_flag_with_citation():
     skill = VisaCheckSkill(web_intel=FakeWebIntel())
-    out = _run(skill.run({"passport_country": "MM", "route": ["BKK", "FRA"]}))
+    out = _run(skill.run({"passport_country": "MM", "route": ["BKK", "FRA", "SIN"]}))
     flags = " ".join(out["risk_flags"]).upper()
     assert "ATV" in flags or "SCHENGEN" in flags
     blocked = [r for r in out["requirements"] if r["risk_level"] == "block"]
@@ -1037,7 +1037,7 @@ def test_unknown_passport_with_fresh_citations_never_books():
 
 def test_visa_check_blocked_route_returns_blocking_state_with_provenance():
     skill = VisaCheckSkill(web_intel=FakeWebIntel())
-    out = _run(skill.run({"passport_country": "MM", "route": ["BKK", "FRA"]}))
+    out = _run(skill.run({"passport_country": "MM", "route": ["BKK", "FRA", "SIN"]}))
     assert out["visa_blocked"] is True
     assert out["block_reasons"]           # block visible with reasons
     assert out["citations"]               # provenance still attached
@@ -1057,8 +1057,8 @@ def test_blocked_route_never_books_even_with_fresh_citations():
     assert atlas.calls == []
 
 
-def test_blocked_route_journey_reroutes_and_never_completes_booking(tmp_path):
-    """§3.1 replan edge: VisaCheck ✗ -> back to FlightSearch; booking never fires."""
+def test_direct_destination_journey_is_not_false_blocked_as_transit(tmp_path):
+    """A two-airport route has no transit hub; destination entry is separate."""
     ex, atlas = _journey_executor(tmp_path)
     phrase = "Fly me from BKK to Frankfurt on September 28, 2026."
     intent = TripIntent(
@@ -1085,11 +1085,11 @@ def test_blocked_route_journey_reroutes_and_never_completes_booking(tmp_path):
     _run(ex.run("blocked-route"))
     trip = ex.get("blocked-route")
     trace_names = [n.name for n in trip.trace]
-    assert trace_names.count("flight_search") >= 2   # reroute back to search visible
-    assert "flight_book" not in trace_names           # booking node never executed
-    assert not trip.pending_approvals                 # no approval offered on block
-    assert trip.status == "failed"                    # block visible, not "completed"
-    assert trip.context.get("visa_check", {}).get("visa_blocked") is True
+    assert trace_names.count("flight_search") == 1
+    assert "flight_book" not in trace_names  # approval still protects booking
+    assert trip.pending_approvals
+    assert trip.status == "awaiting_approval"
+    assert trip.context.get("visa_check", {}).get("visa_blocked") is False
     assert "create" not in atlas.calls
 
 

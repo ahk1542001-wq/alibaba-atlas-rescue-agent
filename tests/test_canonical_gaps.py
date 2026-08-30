@@ -129,7 +129,7 @@ def test_confirmed_passport_rebuilds_visa_and_booking_snapshot(harness):
         async with _client() as client:
             start = await client.post("/api/trips", json={
                 "goal_text": (
-                    "Book a flight from BKK to SIN on 2026-09-29, flights only"
+                    "Book a flight from BKK to SIN on 2026-09-29 for 1 passenger, flights only"
                 ),
                 "user_id": "confirmation-refresh",
             })
@@ -177,7 +177,7 @@ def test_gap3_initial_booking_atomic_idempotency(harness):
             )
             start = await client.post("/api/trips", json={
                 "goal_text": (
-                    "Book a flight from BKK to SIN on 2026-09-29, flights only"
+                    "Book a flight from BKK to SIN on 2026-09-29 for 1 passenger, flights only"
                 ),
                 "user_id": user_id,
             })
@@ -244,7 +244,7 @@ def test_gap2_full_recovery_preserves_evidence_and_is_atomic(harness):
             )
             start = await client.post("/api/trips", json={
                 "goal_text": (
-                    "Plan my complete trip from BKK to SIN on 2026-09-29"
+                    "Plan my complete trip from BKK to SIN on 2026-09-29 for 1 passenger"
                 ),
                 "user_id": user_id,
             })
@@ -441,7 +441,7 @@ def test_gap6_forged_rejection_overwritten_by_server_decision(harness):
                 json={"value": "MM"},
             )
             start = await client.post("/api/trips", json={
-                "goal_text": "Plan my complete trip from BKK to SIN on 2026-09-29",
+                "goal_text": "Plan my complete trip from BKK to SIN on 2026-09-29 for 1 passenger",
                 "user_id": user_id,
             })
             assert start.status_code == 200, start.text

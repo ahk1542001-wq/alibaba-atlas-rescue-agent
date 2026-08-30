@@ -657,6 +657,9 @@ def test_scope_three_choice_flow_and_flight_only(tracked_page, install_orch):
 
     # flight-only: no hotel/activities surfaces anywhere
     page.click('[data-testid="scope-choice-flight_only"]')
+    expect(page.locator('[data-testid="aj-search-now-btn"]')) \
+        .to_be_visible(timeout=15000)
+    page.click('[data-testid="aj-search-now-btn"]')
     expect(page.locator('[data-testid="trip-status-pill"]')) \
         .to_have_text("completed", timeout=25000)
     open_step(page, 2)
@@ -949,6 +952,9 @@ def test_f1_polling_stops_on_terminal_and_view_exit(tracked_page, install_orch):
     # answer the one outstanding question (date) so the scope card surfaces
     answer_date_then_scope(page)
     page.click('[data-testid="scope-choice-flight_only"]')
+    expect(page.locator('[data-testid="aj-search-now-btn"]')) \
+        .to_be_visible(timeout=15000)
+    page.click('[data-testid="aj-search-now-btn"]')
     expect(page.locator('[data-testid="trip-status-pill"]')) \
         .to_have_text("completed", timeout=25000)
     # terminal status: polling stops (SSE closes alone is not enough)
@@ -991,8 +997,6 @@ def test_f2_stale_poll_cannot_resurrect_resolved_scope(tracked_page,
         .to_have_count(3, timeout=20000)
     answer_date_then_scope(page)
     page.click('[data-testid="scope-choice-flight_only"]')
-    expect(page.locator('[data-testid="trip-status-pill"]')) \
-        .to_have_text("completed", timeout=25000)
 
     # craft the held response into a stale pre-resolution snapshot
     page.evaluate("""() => {
@@ -1014,8 +1018,13 @@ def test_f2_stale_poll_cannot_resurrect_resolved_scope(tracked_page,
     time.sleep(1.0)
     # the stale snapshot must be dropped, never rendered
     expect(page.locator('[data-testid="trip-status-pill"]')) \
-        .to_have_text("completed")
+        .to_have_text("in_progress")
     expect(page.locator("#trip-scope-block")).to_be_hidden()
+    expect(page.locator('[data-testid="aj-search-now-btn"]')) \
+        .to_be_visible(timeout=15000)
+    page.click('[data-testid="aj-search-now-btn"]')
+    expect(page.locator('[data-testid="trip-status-pill"]')) \
+        .to_have_text("completed", timeout=25000)
 
 
 def test_f3_error_banner_clears_on_recovery(app_server, ui_browser,
@@ -1106,8 +1115,9 @@ def test_f4_origin_city_chip_persists_and_trip_resumes(tracked_page,
         answer_chip(page, "passport_country", "MM", "\u2713 saved to profile")
     if page.locator('[data-testid="scope-choice-flight_only"]').is_visible():
         page.click('[data-testid="scope-choice-flight_only"]')
-    if page.locator('[data-testid="aj-search-now-btn"]').is_visible():
-        page.click('[data-testid="aj-search-now-btn"]')
+    expect(page.locator('[data-testid="aj-search-now-btn"]')) \
+        .to_be_visible(timeout=15000)
+    page.click('[data-testid="aj-search-now-btn"]')
     expect(page.locator('[data-testid="trip-status-pill"]')) \
         .to_have_text("completed", timeout=25000)
     open_step(page, 2)
@@ -1362,6 +1372,23 @@ def test_AJ03_one_question_at_a_time(tracked_page, install_orch):
     # confirmed-facts compact summary updated
     expect(page.locator('[data-testid="aj-fact-date_window"]')) \
         .to_contain_text("2026-09-02 to 2026-09-02")
+
+
+def test_AJ03c_concierge_uses_the_active_trip_session(tracked_page, install_orch):
+    """Chat and Trip share one in-memory trip identity on the same page."""
+    install_orch()
+    page = tracked_page
+    goto_trip(page)
+    start_goal(page, AMBIGUOUS_GOAL)
+    page.wait_for_function("Boolean(window.Trip && window.Trip.tripId)")
+
+    page.click('[data-testid="nav-concierge"]')
+    page.fill('[data-testid="chat-input"]', "What is my destination?")
+    page.click('[data-testid="btn-send"]')
+
+    messages = page.locator('#chat-messages')
+    expect(messages).not_to_contain_text("do not have an active trip", timeout=15000)
+    expect(messages).to_contain_text("Singapore", timeout=15000)
 
 
 def test_AJ03b_ambiguous_airport_must_be_confirmed(tracked_page, install_orch):
@@ -2469,4 +2496,3 @@ def test_ui_production_mode_honest_leisure_state(tracked_page, tmp_path):
     expect(itin_block).to_contain_text("planned flight — not booked")
     # Verified no fake researched_mock hotel items injected
     expect(page.locator(".trip-itin-hotel")).to_have_count(0)
-

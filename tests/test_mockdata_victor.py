@@ -74,7 +74,10 @@ async def _seed_profile(client, user_id: str, profile_data: dict) -> None:
             assert r.status_code == 200, (field, r.text)
 
 
-_API_CLARIFY_FIELDS = ("origin_city", "dest_city", "date_window", "passport_country")
+_API_CLARIFY_FIELDS = (
+    "origin_city", "dest_city", "date_window", "passengers",
+    "passport_country",
+)
 
 
 async def _answer_clarify_loop(client, trip_id: str, goal_data: dict, profile_data: dict) -> None:
@@ -87,6 +90,7 @@ async def _answer_clarify_loop(client, trip_id: str, goal_data: dict, profile_da
         "dest_city": goal_data.get("dest_city") or "Singapore",
         "date_window": f"{window.get('start') or '2026-09-28'} - "
                        f"{window.get('end') or '2026-09-30'}",
+        "passengers": str(goal_data.get("passengers") or 1),
         "passport_country": "MM",
     }
     for _ in range(4):
@@ -132,6 +136,8 @@ async def _journey(profile_data: dict, goal_data: dict, tmp_path: Path) -> dict:
             trip_id = await _start(client, goal_text, user_id)
             await _resolve_scope_if_paused(client, trip_id, "complete_trip")
             await _answer_clarify_loop(client, trip_id, goal_data, profile_data)
+            plan = await client.post(f"/api/trips/{trip_id}/plan")
+            assert plan.status_code == 200, plan.text
 
             state = (await client.get(f"/api/trip/{trip_id}/state")).json()
             assert state["status"] == "awaiting_approval", state["status"]

@@ -189,7 +189,7 @@ def test_complete_trip_reaches_approval_with_all_reversible_outputs_and_no_order
     atlas = MockAtlasClient(ticketing_status="TICKETING_ACTIVATION_REQUIRED")
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
-    goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 — plan my whole trip from BKK."
+    goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 for 1 passenger — plan my whole trip from BKK."
     trip_id = _run(orch.start(goal_text, "victor", search_confirmed=True))
     trip = orch.executor.get(trip_id)
 
@@ -231,7 +231,7 @@ def test_ticketing_activation_required_preserves_complete_plan(tmp_path):
     atlas = MockAtlasClient(ticketing_status="TICKETING_ACTIVATION_REQUIRED")
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
-    goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 — plan my whole trip from BKK."
+    goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 for 1 passenger — plan my whole trip from BKK."
     trip_id = _run(orch.start(goal_text, "victor", search_confirmed=True))
     trip = orch.executor.get(trip_id)
 
@@ -283,7 +283,7 @@ def test_hermetic_successful_booking_promotes_flight_and_arms_monitor(tmp_path):
     atlas = MockAtlasClient(ticketing_status="CONFIRMED")
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
-    goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 — plan my whole trip from BKK."
+    goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 for 1 passenger — plan my whole trip from BKK."
     trip_id = _run(orch.start(goal_text, "victor", search_confirmed=True))
     trip = orch.executor.get(trip_id)
 
@@ -334,8 +334,8 @@ def test_flight_only_skips_leisure_and_itinerary(tmp_path):
     atlas = MockAtlasClient()
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
-    goal_text = "Find flights from BKK to SIN Sep 29-30, no hotel or booking for 1 passenger."
-    trip_id = _run(orch.start(goal_text, "victor"))
+    goal_text = "Find flights only from BKK to SIN Sep 29-30 for 1 passenger."
+    trip_id = _run(orch.start(goal_text, "victor", search_confirmed=True))
     trip = orch.executor.get(trip_id)
 
     # If clarify or scope choice needed, resolve to flight_only
@@ -387,7 +387,7 @@ def test_rejected_booking_approval_makes_no_create_order_call(tmp_path):
     atlas = MockAtlasClient()
     orch, _ = _setup_orch(tmp_path, atlas=atlas)
 
-    goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 — plan my whole trip from BKK."
+    goal_text = "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30, 2026 for 1 passenger — plan my whole trip from BKK."
     trip_id = _run(orch.start(goal_text, "victor", search_confirmed=True))
     trip = orch.executor.get(trip_id)
 

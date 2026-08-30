@@ -68,6 +68,43 @@ def test_controller_emits_exactly_one_question():
     assert turn.question.field == "origin"
 
 
+def test_controller_matches_pending_airport_confirmation_before_other_question():
+    state = {
+        "status": "in_progress",
+        "current_state": "clarify_loop",
+        "pending_approvals": [],
+        "confirmation_chips": [
+            {
+                "chip_id": "chip_airport",
+                "field": "confirmed_origin_airport",
+                "proposed_value": None,
+                "message": "Choose the origin airport: BKK, DMK",
+                "state": "pending",
+                "options": ["BKK", "DMK"],
+            }
+        ],
+        "outputs": {
+            "clarify": {
+                "questions": [
+                    {
+                        "field": "passengers",
+                        "prompt": "How many passengers are traveling?",
+                    }
+                ],
+                "complete": False,
+            }
+        },
+    }
+
+    turn = project_conversation_turn(state)
+
+    assert turn.phase == "clarification"
+    assert turn.question is not None
+    assert turn.question.field == "confirmed_origin_airport"
+    assert turn.assistant_message == "Choose the origin airport: BKK, DMK"
+    assert turn.question.choices == ["BKK", "DMK"]
+
+
 def test_controller_is_pure_and_deterministic():
     state = {
         "status": "in_progress",

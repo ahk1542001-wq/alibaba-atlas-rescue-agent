@@ -25,13 +25,17 @@ async def chat_concierge(req: ConciergeQuery):
                 trip = orch.executor._trips.get(req.trip_id)
                 if trip is not None:
                     trip_user = trip.context.get("user_id")
-                    if not (req.user_id and trip_user and trip_user != req.user_id):
-                        target_trip_id = req.trip_id
-                        trip_ctx = dict(trip.context)
-                        trip_ctx["trip_id"] = target_trip_id
-                        trip_ctx["status"] = trip.status
-                        trip_ctx["pending_approvals"] = [a.model_dump(mode="json") for a in trip.pending_approvals]
-                        trip_ctx["nodes"] = [n.model_dump(mode="json") for n in trip.trace]
+                    if trip_user and req.user_id != trip_user:
+                        raise HTTPException(
+                            status_code=403,
+                            detail="This trip does not belong to the current user.",
+                        )
+                    target_trip_id = req.trip_id
+                    trip_ctx = dict(trip.context)
+                    trip_ctx["trip_id"] = target_trip_id
+                    trip_ctx["status"] = trip.status
+                    trip_ctx["pending_approvals"] = [a.model_dump(mode="json") for a in trip.pending_approvals]
+                    trip_ctx["nodes"] = [n.model_dump(mode="json") for n in trip.trace]
             elif req.user_id:
                 # Find latest trip belonging to THIS user ONLY
                 target_trip = next(
@@ -71,6 +75,8 @@ async def chat_concierge(req: ConciergeQuery):
         if target_trip_id:
             res["trip_id"] = target_trip_id
         return JSONResponse(content=res)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning("concierge request failed: %s", type(exc).__name__)
         raise HTTPException(

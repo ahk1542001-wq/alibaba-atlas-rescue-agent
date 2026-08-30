@@ -297,6 +297,32 @@ class ItinerarySkill(SkillBase):
         def requested(entry: Dict[str, Any]) -> bool:
             return allowed_kinds is None or entry.get("type") in allowed_kinds
 
+        # Runtime leisure researchers run as explicit graph nodes before the
+        # itinerary. Consume only their source-backed normalized items here;
+        # never turn a placeholder research record into a fake suggestion.
+        researched_entries: List[Dict[str, Any]] = []
+        if context:
+            for domain in ("hotel", "activities", "local_transport"):
+                if allowed_kinds is not None:
+                    expected_kind = "activity" if domain == "activities" else domain
+                    if expected_kind not in allowed_kinds:
+                        continue
+                record = context.get(f"{domain}_research") or {}
+                if record.get("degraded"):
+                    continue
+                for item in ((record.get("data") or {}).get("items") or []):
+                    if (isinstance(item, dict) and item.get("name")
+                            and item.get("kind") and item.get("source")
+                            and (item.get("provenance") or {}).get("source_url")
+                            and (item.get("provenance") or {}).get("retrieved_date")):
+                        researched_entries.append(dict(item))
+        selected_research = self._select_plan_entries([
+            {**item, "type": item.get("kind")} for item in researched_entries
+        ])
+        if selected_research:
+            return [{k: v for k, v in item.items() if k != "type"}
+                    for item in selected_research]
+
         for name, provider in self._providers:
             if provider is None:
                 continue
