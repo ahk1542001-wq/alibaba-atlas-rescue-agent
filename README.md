@@ -91,7 +91,7 @@ Deterministic engines (rights engine, visa guard, radar) run the consequential d
 
 ## Demo
 
-<!-- OWNER: paste YouTube URL here before push -->
+🎬 **[Watch the 3-minute demo on YouTube](https://youtu.be/H-MC2JHWl7M)**
 
 The recorded demo is a genuine, continuous screen capture of the running application — every number shown is produced live by real tools, never mocked or scripted. The eight sections below are synced to the video markers.
 
