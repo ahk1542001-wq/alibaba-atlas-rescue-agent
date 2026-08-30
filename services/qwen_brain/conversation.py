@@ -38,14 +38,16 @@ async def run_qwen_goal_intake(
     Falls back cleanly to deterministic skill execution if tools return failed status.
     """
     intake_tool = GoalIntakeTool(skill=goal_intake_skill)
-    intake_res_str = intake_tool.call(json.dumps({"free_text": goal_text}), context=context)
+    # §13.3 contract: goal_intake takes `text` and returns
+    # {status, trip_goal, missing_fields}.
+    intake_res_str = intake_tool.call(json.dumps({"text": goal_text}), context=context)
     try:
         intake_data = json.loads(intake_res_str)
     except Exception:
         intake_data = {"status": "failed"}
 
     if intake_data.get("status") == "success":
-        goal = intake_data.get("goal", {})
+        goal = intake_data.get("trip_goal") or intake_data.get("goal", {})
         req_services = intake_data.get("requested_services", {})
         goal_out = {
             "goal": goal,
@@ -57,8 +59,11 @@ async def run_qwen_goal_intake(
         goal_out = await skill.run({"free_text": goal_text}, context)
 
     clarify_tool = ClarifyLoopTool(skill=clarify_loop_skill)
+    # §13.3 contract: params {trip_goal, profile}; the tool still accepts the
+    # user_id/requested_services aliases the deterministic skill needs.
     clarify_res_str = clarify_tool.call(json.dumps({
-        "goal": goal_out["goal"],
+        "trip_goal": goal_out["goal"],
+        "profile": (context or {}).get("profile") or {},
         "user_id": user_id,
         "requested_services": goal_out["requested_services"],
     }), context=context)

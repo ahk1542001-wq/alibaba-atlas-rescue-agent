@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 import json5
 from qwen_agent.tools.base import BaseTool, register_tool
 
+from services.conversation_controller import QUESTION_FIELD_ORDER
 from services.skills.goal_intake import GoalIntakeSkill
 from services.skills.clarify_loop import ClarifyLoopSkill
 
@@ -26,6 +27,37 @@ def _run_coro_sync(coro):
             return pool.submit(asyncio.run, coro).result()
 
 
+def _missing_goal_fields(goal: Dict[str, Any]) -> list:
+    """Goal-derived missing fields, ordered by QUESTION_FIELD_ORDER.
+
+    Profile-dependent fields (passport_country, home_city) are deliberately
+    NOT computed here — goal_intake does not read profiles; clarify_loop
+    owns those questions.
+    """
+    missing = []
+    if not goal.get("origin_city"):
+        missing.append("origin_city")
+    if not goal.get("dest_city"):
+        missing.append("dest_city")
+    if not goal.get("date_window"):
+        missing.append("date_window")
+    # the extractor defaults passengers to 1, so only an EXPLICIT or confirmed
+    # count satisfies the field (a bare value may be the default)
+    if not (goal.get("passengers_explicit") or goal.get("passengers_confirmed")):
+        missing.append("passengers")
+    return sorted(missing, key=lambda f: QUESTION_FIELD_ORDER.index(f))
+
+
+def _single_next_question(questions: list) -> list:
+    """§13.3/§8 contract: the qwen conversation path emits at most ONE next
+    question — the first missing field per QUESTION_FIELD_ORDER."""
+    order = {field: index for index, field in enumerate(QUESTION_FIELD_ORDER)}
+    ranked = [q for q in questions if q.get("field") in order]
+    if ranked:
+        return [min(ranked, key=lambda q: order[q["field"]])]
+    return list(questions)[:1]
+
+
 @register_tool("goal_intake")
 class GoalIntakeTool(BaseTool):
     description = (
@@ -34,10 +66,16 @@ class GoalIntakeTool(BaseTool):
     )
     parameters = [
         {
-            "name": "free_text",
+            "name": "text",
             "type": "string",
             "description": "The traveler's natural language travel request",
             "required": True,
+        },
+        {
+            "name": "free_text",
+            "type": "string",
+            "description": "Legacy alias of 'text' (deprecated)",
+            "required": False,
         },
     ]
 
@@ -54,12 +92,18 @@ class GoalIntakeTool(BaseTool):
                     "error": "Parameters must decode to a JSON object",
                     "tool": "goal_intake",
                 })
-            free_text = str(args.get("free_text", "")).strip()
+            # §13.3 contract: param name is `text`; `free_text` kept as alias.
+            free_text = str(args.get("text") or args.get("free_text") or "").strip()
             ctx = context or args.get("context")
             result = _run_coro_sync(self._skill.run({"free_text": free_text}, ctx))
+            trip_goal = result.get("goal", {})
             return json.dumps({
                 "status": "success",
-                "goal": result.get("goal", {}),
+                # §13.3 return shape: {status, trip_goal, missing_fields}
+                "trip_goal": trip_goal,
+                "missing_fields": _missing_goal_fields(trip_goal),
+                # legacy keys kept for existing internal callers
+                "goal": trip_goal,
                 "requested_services": result.get("requested_services", {}),
                 "degraded": result.get("degraded", False),
             })
@@ -79,10 +123,22 @@ class ClarifyLoopTool(BaseTool):
     )
     parameters = [
         {
-            "name": "goal",
+            "name": "trip_goal",
             "type": "object",
             "description": "Current structured travel goal dictionary",
             "required": True,
+        },
+        {
+            "name": "profile",
+            "type": "object",
+            "description": "User profile snapshot used to skip already-known facts",
+            "required": False,
+        },
+        {
+            "name": "goal",
+            "type": "object",
+            "description": "Legacy alias of 'trip_goal' (deprecated)",
+            "required": False,
         },
         {
             "name": "user_id",
@@ -117,7 +173,8 @@ class ClarifyLoopTool(BaseTool):
                     "error": "Parameters must decode to a JSON object",
                     "tool": "clarify_loop",
                 })
-            goal = args.get("goal") or {}
+            # §13.3 contract: params {trip_goal, profile}; `goal` kept as alias.
+            goal = args.get("trip_goal") or args.get("goal") or {}
             user_id = str(args.get("user_id") or "")
             requested_services = args.get("requested_services") or {}
             scope_choice = args.get("scope_choice")
@@ -131,7 +188,17 @@ class ClarifyLoopTool(BaseTool):
                 payload["scope_choice"] = scope_choice
 
             ctx = context or args.get("context")
-            result = _run_coro_sync(self._skill.run(payload, ctx))
+            # Contract note: the deterministic ClarifyLoopSkill resolves the
+            # authoritative profile from the profile store by user_id; the
+            # `profile` param is accepted per §13.3 and folded into the
+            # context so skill/side logic can see it.
+            skill_ctx = dict(ctx or {})
+            if args.get("profile") is not None:
+                skill_ctx.setdefault("profile", args.get("profile"))
+            result = _run_coro_sync(self._skill.run(payload, skill_ctx or None))
+            # §13.3/§8: the qwen path emits at most ONE next question.
+            result = dict(result)
+            result["questions"] = _single_next_question(result.get("questions") or [])
             return json.dumps({
                 "status": "success",
                 "clarify": result,

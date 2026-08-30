@@ -49,15 +49,16 @@ def test_goal_intake_tool_resilience_on_invalid_json():
 
 
 def test_clarify_loop_tool_generates_missing_questions():
+    # §13.3/§8 (audit finding #5): the qwen path emits at most ONE next
+    # question, chosen by QUESTION_FIELD_ORDER — dest_city precedes
+    # date_window, so exactly one question for dest_city is expected.
     tool = ClarifyLoopTool()
     goal = {"origin_city": "BKK", "dest_city": None, "date_window": None}
     res_str = tool.call(json.dumps({"goal": goal, "user_id": "test_user_1", "requested_services": {}}))
     data = json.loads(res_str)
     assert data["status"] == "success"
     questions = data["clarify"]["questions"]
-    fields = [q["field"] for q in questions]
-    assert "dest_city" in fields
-    assert "date_window" in fields
+    assert [q["field"] for q in questions] == ["dest_city"]
 
 
 def test_clarify_loop_tool_resilience_on_invalid_json():
