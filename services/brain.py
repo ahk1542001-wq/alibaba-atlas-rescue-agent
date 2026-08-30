@@ -1,6 +1,15 @@
 """Authoritative runtime selector for TravelCare brain architecture.
 
 Callers must check brain flags strictly through this module.
+
+Audit finding #14 — decision record: active_brain() deliberately RE-READS
+os.environ["TRAVELCARE_BRAIN"] on every call instead of relying solely on
+settings.travelcare_brain (which is captured once at process start). This
+is INTENTIONAL: the dual-brain test matrix and the parity gates flip the
+flag per-request via monkeypatch.setenv within a single server process,
+and a frozen settings value would silently pin every later test to the
+first flag value. Env wins when set; settings.travelcare_brain is the
+process-start fallback default (legacy).
 """
 
 import importlib.util
