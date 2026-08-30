@@ -1,5 +1,6 @@
 """Qwen-Agent Conversation projection and goal intake layer."""
 
+import asyncio
 import logging
 import json
 from typing import Any, Dict, List, Optional, Tuple
@@ -40,7 +41,10 @@ async def run_qwen_goal_intake(
     intake_tool = GoalIntakeTool(skill=goal_intake_skill)
     # §13.3 contract: goal_intake takes `text` and returns
     # {status, trip_goal, missing_fields}.
-    intake_res_str = intake_tool.call(json.dumps({"text": goal_text}), context=context)
+    # Audit #7: deterministic tool calls are sync — dispatch them off the loop.
+    intake_res_str = await asyncio.to_thread(
+        intake_tool.call, json.dumps({"text": goal_text}), context=context
+    )
     try:
         intake_data = json.loads(intake_res_str)
     except Exception:
@@ -61,12 +65,16 @@ async def run_qwen_goal_intake(
     clarify_tool = ClarifyLoopTool(skill=clarify_loop_skill)
     # §13.3 contract: params {trip_goal, profile}; the tool still accepts the
     # user_id/requested_services aliases the deterministic skill needs.
-    clarify_res_str = clarify_tool.call(json.dumps({
-        "trip_goal": goal_out["goal"],
-        "profile": (context or {}).get("profile") or {},
-        "user_id": user_id,
-        "requested_services": goal_out["requested_services"],
-    }), context=context)
+    clarify_res_str = await asyncio.to_thread(
+        clarify_tool.call,
+        json.dumps({
+            "trip_goal": goal_out["goal"],
+            "profile": (context or {}).get("profile") or {},
+            "user_id": user_id,
+            "requested_services": goal_out["requested_services"],
+        }),
+        context=context,
+    )
     try:
         clarify_data = json.loads(clarify_res_str)
     except Exception:

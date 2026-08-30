@@ -94,11 +94,13 @@ async def run_qwen_conversation(
 
     Returns the message history on success or an empty list on failure.
     """
-    bot = build_travelcare_agent(tools=tools, system_message=system_message)
-    if not bot:
-        return []
-
     def _sync_run():
+        # §audit #7: provider resolution + Assistant construction can touch the
+        # network and import heavy machinery — do it in the worker thread, never
+        # on the FastAPI event loop.
+        bot = build_travelcare_agent(tools=tools, system_message=system_message)
+        if not bot:
+            return []
         history = []
         try:
             for history in bot.run(messages=messages, stream=False):
