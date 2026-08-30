@@ -501,16 +501,24 @@ class RescueEngine:
         pax = goal.get("passengers")
 
         # 1. Trip goal inquiries (destination, origin, dates, passengers)
+        # DISCLOSED owner-visible legacy UX drift (audit fix round 2026-08-31):
+        # friendly city names in the two trip-summary replies below; see
+        # docs/V2_STATUS.md "G0 Baseline Honesty Repair", smuggled change 2.
+        _city_map = {"SIN": "Singapore", "BKK": "Bangkok", "DMK": "Bangkok (Don Mueang)", "RGN": "Yangon", "FRA": "Frankfurt"}
         if "destination" in q_lower or "where" in q_lower and ("going" in q_lower or "to" in q_lower):
             if dest:
+                friendly_dest = _city_map.get(dest.upper(), dest)
+                dest_str = f"{friendly_dest} ({dest})" if dest.upper() in _city_map and dest.upper() != friendly_dest.upper() else dest
                 return {
-                    "reply": f"Your current planned destination is {dest}.",
+                    "reply": f"Your current planned destination is {dest_str}.",
                     "action_taken": "TRIP_DESTINATION_SUMMARY",
                 }
         if "origin" in q_lower or "where" in q_lower and "start" in q_lower:
             if orig:
+                friendly_orig = _city_map.get(orig.upper(), orig)
+                orig_str = f"{friendly_orig} ({orig})" if orig.upper() in _city_map and orig.upper() != friendly_orig.upper() else orig
                 return {
-                    "reply": f"Your trip is scheduled to depart from {orig}.",
+                    "reply": f"Your trip is scheduled to depart from {orig_str}.",
                     "action_taken": "TRIP_ORIGIN_SUMMARY",
                 }
         if "passenger" in q_lower or "people" in q_lower or "who is" in q_lower:
