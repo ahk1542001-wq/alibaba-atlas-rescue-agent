@@ -56,7 +56,7 @@ XSS_GOAL = ('I need to get to <script>window.__xss=1</script>Singapore from '
 INVALID_DATE_GOAL = "Fly on February 30 2026"   # deterministic 422 trigger
 
 # G4.5 / R2 sanitized static/app.js pin: zero injection sinks.
-APP_JS_SHA256 = "6ace5d6c18e0f79246bf9bd890b852913d6c8c70a21f1947937c802764a5dd64"
+APP_JS_SHA256 = "2521e0bf7b10d6bd61466576b16ad56a3c4e2f91ee2c6b017979b4d26fbaaed6"
 
 
 # --- G3-pattern fakes ---------------------------------------------------------
