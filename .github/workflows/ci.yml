@@ -44,6 +44,15 @@ jobs:
       - name: Security & Audit Gate
         run: bash scripts/security_check.sh
 
+      - name: Install Playwright Chromium (browser canary in the non-UI suite)
+        # tests/test_mockdata_victor.py::test_mockdata_browser_run_path_demo_fixtures
+        # launches a real Chromium to prove the browser run-path with tracked
+        # fictional fixtures. The core job installs the playwright *package* via
+        # requirements.txt but NOT the browser binaries, so launch() died with
+        # 'Executable doesn't exist'. Install chromium (same as the ui job) so the
+        # canary genuinely RUNS in CI instead of erroring. Adds ~40s to the job.
+        run: python -m playwright install --with-deps chromium
+
       - name: Run Non-UI Test Suite
         # -rs surfaces every skip reason in the CI summary (no silent skips):
         # e.g. the conditional 'mockdata' marker reports why it skipped.
