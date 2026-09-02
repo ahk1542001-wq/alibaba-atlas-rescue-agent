@@ -105,6 +105,7 @@
   "view.trip.consent_label": "store locally",
   "view.trip.profile_loading": "Loading profile…",
 
+  "view.trip.safety_title": "Safety check",
   "view.trip.help_title": "How Atlas Journey works",
   "view.trip.help_sandbox_q": "What is the Atlas Sandbox?",
   "view.trip.help_sandbox_a": "Flight offers come from the official Atlas Sandbox, not a runtime mock fallback. Sandbox results are not production airline inventory, and provider booking limits are shown honestly.",

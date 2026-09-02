@@ -100,6 +100,7 @@
   "view.trip.profile_title": "您的档案",
   "view.trip.consent_label": "本地存储",
   "view.trip.profile_loading": "正在加载档案…",
+  "view.trip.safety_title": "安全检查",
   "view.trip.help_title": "Atlas Journey 工作原理",
   "view.trip.help_sandbox_q": "什么是 Atlas Sandbox？",
   "view.trip.help_sandbox_a": "航班报价来自官方 Atlas Sandbox，而非运行时模拟回退。Sandbox 结果不是生产环境航空公司库存，预订限制会如实显示。",
