@@ -48,25 +48,28 @@
 
 ## 2. What Remains (U1 → U2 → U3)
 
-Per §0.2 sequencing: **U1 (map) → U2 (timeline) → U3 (cards)**
+### U1 — Map Visualization ✅ (commit `1989c83`)
 
-### U1 — Map Visualization (NOT STARTED)
+| Deliverable | Status | Evidence |
+|---|---|---|
+| `static/vendor/leaflet/*` | Complete | `leaflet.js` (144KB) + `leaflet.css` (14KB) vendored locally (BSD-2-Clause) |
+| `static/map.js` | Complete | `TravelCareMap` module: coordinate registry, `resolve()` with BKK/DMK ambiguity support, solid vs estimated pin logic, tileerror fallback hook |
+| `static/index.html` updates | Complete | `#trip-map-block` with `#trip-map` & `#btn-trip-map-toggle`, `#rescue-map-block` with `#rescue-map` & `#btn-rescue-map-toggle`, OSM & Leaflet visible attribution |
+| `static/styles.css` additions | Complete | `.map-wrapper`, `.btn-map-toggle`, `.map-legend-bar`, `.solid-dot`, `.hollow-dot`, `.disrupted-dot`, `.rescue-dot`, `.map-badge-estimated` |
+| `static/trip.js` + `static/app.js` | Complete | `renderTripMap(s)` in Trip view, `renderRescueMap(data)` in Rescue view, zero innerHTML sinks |
+| `tests/test_v2_ux_map.py` | Complete | 11 hermetic tests covering vendoring, attribution words, coordinate honesty, ambiguity, and toggles |
 
-**What to build:**
-- Vendor Leaflet (BSD-2-Clause) under `static/vendor/leaflet/` — download `leaflet.css`, `leaflet.js`, and images from https://unpkg.com/leaflet@1.9.4/dist/
-- OSM tiles (`https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`) with VISIBLE attribution control ("© OpenStreetMap contributors") — never remove or obscure
-- Map containers in Trip view (collapsible) and Rescue view
-- Trip view: origin/destination/route line from trip state data
-- Rescue view: disrupted flight + ranked rescue alternatives as numbered pins
-- Coordinate sourcing rule (HONESTY-CRITICAL):
-  - Tool-sourced coords (airport data from product code) → solid pins
-  - LLM-suggested coords → hollow/ghost pins with visible "estimated" badge
-  - Never silently promote estimated → solid
-- `location_resolve` BKK/DMK ambiguity: render BOTH candidate airports with confirmation affordance; map never picks one silently
-- Tile failure → degrade to plain route summary (labeled), never block the view
-- File scope: `static/vendor/leaflet/*` (new), `static/index.html` (map containers), `static/trip.js` + `static/app.js` (render logic, feature-flagged), `static/styles.css`
-- Test: `tests/test_v2_ux_map.py` (hermetic — API payload shapes, coordinate-labeling rules server-side)
-- **Security check:** vendored Leaflet must NOT trip `scripts/security_check.sh` secret/dep checks
+**Gate evidence (U1):**
+- `TRAVELCARE_BRAIN=legacy`: 11/11 U1 tests pass; combined U4+U5+U1 47/47 tests pass
+- `TRAVELCARE_BRAIN=qwen_agent`: 11/11 U1 tests pass; combined U4+U5+U1 47/47 tests pass
+- `node --check` on all 4 JS files: clean
+- `scripts/security_check.sh`: ALL 6 SECTIONS PASS
+
+---
+
+## 2. What Remains (U2 → U3)
+
+Per §0.2 sequencing: **U2 (timeline) → U3 (cards)**
 
 ### U2 — Day-by-Day Timeline (NOT STARTED)
 
