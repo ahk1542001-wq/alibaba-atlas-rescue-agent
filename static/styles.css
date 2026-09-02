@@ -3218,5 +3218,135 @@ html[lang="zh-Hans"] h2, html[lang="zh-Hans"] h3 {
     margin-left: 6px;
 }
 
+/* ======================== §U3 SUGGESTION CARDS ======================== */
+.suggestion-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+    margin-top: 10px;
+    margin-bottom: 12px;
+}
+
+.suggestion-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-amber);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s var(--spring), box-shadow 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.suggestion-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--accent-teal);
+}
+
+.card-media-wrapper {
+    position: relative;
+    width: 100%;
+    height: 120px;
+    background: rgba(226, 217, 203, 0.25);
+    border-bottom: 1px solid var(--border-amber);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.card-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.suggestion-card:hover .card-photo {
+    transform: scale(1.03);
+}
+
+.card-photo-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.card-photo-placeholder span:first-child {
+    font-size: 20px;
+    opacity: 0.6;
+}
+
+.card-body {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-dark);
+    margin-bottom: 6px;
+    line-height: 1.3;
+}
+
+.card-description {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin-bottom: 10px;
+    flex-grow: 1;
+}
+
+.card-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.card-btn-action {
+    background: transparent;
+    border: 1px solid var(--border-amber);
+    color: var(--text-dark);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.card-btn-action:hover {
+    border-color: var(--accent-teal);
+    background: var(--accent-teal-light);
+    color: var(--accent-teal-dark);
+}
+
+.card-honesty-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(226, 217, 203, 0.6);
+    font-size: 10px;
+}
+
+.card-honesty-badge {
+    background: rgba(18, 121, 107, 0.08);
+    color: var(--accent-teal-dark);
+    border: 1px solid rgba(18, 121, 107, 0.2);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-weight: 500;
+}
+
+
 
 

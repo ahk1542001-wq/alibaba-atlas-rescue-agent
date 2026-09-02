@@ -1156,6 +1156,13 @@
                 timeDiv.className = 'msg-time';
                 timeDiv.textContent = replyTime;
                 content.appendChild(timeDiv);
+
+                // §U3 Suggestion Cards rendering
+                if (data.suggestions && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+                    renderSuggestionCards(content, data.suggestions);
+                } else if (data.cards && Array.isArray(data.cards) && data.cards.length > 0) {
+                    renderSuggestionCards(content, data.cards);
+                }
             } catch (err) {
                 bubble.textContent = 'Sorry, I could not process your request right now.';
                 console.error('Concierge failed:', err);
@@ -1325,6 +1332,141 @@
                 dashArray: '6, 6'
             });
         }
+
+        // ========================== §U3 SUGGESTION CARDS ==========================
+        function renderSuggestionCards(container, cardsData) {
+            if (!container) return;
+            container.textContent = '';
+            if (!cardsData || cardsData.length === 0) {
+                container.hidden = true;
+                return;
+            }
+            container.hidden = false;
+
+            const grid = document.createElement('div');
+            grid.className = 'suggestion-cards-grid';
+            grid.setAttribute('data-testid', 'suggestion-cards-grid');
+
+            cardsData.forEach(card => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'suggestion-card';
+                cardEl.setAttribute('data-testid', 'suggestion-card');
+
+                // Media / Placeholder
+                const mediaWrap = document.createElement('div');
+                mediaWrap.className = 'card-media-wrapper';
+
+                if (card.image_url && card.image_url.startsWith('/static/assets/')) {
+                    const img = document.createElement('img');
+                    img.src = card.image_url;
+                    img.className = 'card-photo';
+                    img.alt = window.t ? window.t('cards.photo_placeholder_alt') : 'illustrative placeholder';
+                    mediaWrap.appendChild(img);
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'card-photo-placeholder';
+                    const iconSpan = document.createElement('span');
+                    iconSpan.textContent = '📍';
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'card-placeholder-text';
+                    textSpan.setAttribute('data-i18n', 'cards.no_image');
+                    textSpan.textContent = window.t ? window.t('cards.no_image') : 'No image available';
+                    placeholder.appendChild(iconSpan);
+                    placeholder.appendChild(textSpan);
+                    mediaWrap.appendChild(placeholder);
+                }
+                cardEl.appendChild(mediaWrap);
+
+                // Body
+                const body = document.createElement('div');
+                body.className = 'card-body';
+
+                const title = document.createElement('div');
+                title.className = 'card-title';
+                title.textContent = card.title || card.name || 'Travel Suggestion';
+                body.appendChild(title);
+
+                if (card.description || card.fact) {
+                    const desc = document.createElement('p');
+                    desc.className = 'card-description';
+                    desc.textContent = card.description || card.fact;
+                    body.appendChild(desc);
+                }
+
+                // Actions (strictly suggestion-grade without booking/settlement affordances)
+                const actions = document.createElement('div');
+                actions.className = 'card-actions';
+
+                const btnFollowUp = document.createElement('button');
+                btnFollowUp.type = 'button';
+                btnFollowUp.className = 'card-btn-action';
+                btnFollowUp.setAttribute('data-i18n', 'cards.action_followup');
+                btnFollowUp.textContent = window.t ? window.t('cards.action_followup') : 'Ask follow-up';
+                btnFollowUp.addEventListener('click', () => {
+                    sendQuickChat('Tell me more about ' + (card.title || card.name));
+                });
+                actions.appendChild(btnFollowUp);
+
+                const btnAddPlan = document.createElement('button');
+                btnAddPlan.type = 'button';
+                btnAddPlan.className = 'card-btn-action';
+                btnAddPlan.setAttribute('data-i18n', 'cards.action_add_plan');
+                btnAddPlan.textContent = window.t ? window.t('cards.action_add_plan') : 'Add to trip plan';
+                btnAddPlan.addEventListener('click', () => {
+                    if (window.showToast) window.showToast('Added ' + (card.title || card.name) + ' to local plan (not a booking)');
+                });
+                actions.appendChild(btnAddPlan);
+
+                if (card.location || card.coordinates) {
+                    const btnMap = document.createElement('button');
+                    btnMap.type = 'button';
+                    btnMap.className = 'card-btn-action';
+                    btnMap.setAttribute('data-i18n', 'cards.action_view_map');
+                    btnMap.textContent = window.t ? window.t('cards.action_view_map') : 'View on map';
+                    btnMap.addEventListener('click', () => {
+                        const navTrip = document.querySelector('[data-view="trip"]');
+                        if (navTrip) switchView('trip', navTrip);
+                        const mapEl = document.getElementById('trip-map-block');
+                        if (mapEl) {
+                            mapEl.hidden = false;
+                            mapEl.scrollIntoView({ behavior: 'smooth' });
+                        }
+                    });
+                    actions.appendChild(btnMap);
+                }
+                body.appendChild(actions);
+
+                // Honesty Footer
+                const footer = document.createElement('div');
+                footer.className = 'card-honesty-footer';
+                footer.setAttribute('data-testid', 'card-honesty-footer');
+
+                const badge = document.createElement('span');
+                badge.className = 'card-honesty-badge';
+                if (card.source === 'atlas_sandbox') {
+                    badge.setAttribute('data-i18n', 'cards.data_footer_atlas');
+                    badge.textContent = window.t ? window.t('cards.data_footer_atlas') : 'Atlas Sandbox';
+                } else if (card.source === 'deterministic_engine') {
+                    badge.setAttribute('data-i18n', 'cards.data_footer_engine');
+                    badge.textContent = window.t ? window.t('cards.data_footer_engine') : 'deterministic engine';
+                } else if (card.is_estimated) {
+                    badge.setAttribute('data-i18n', 'cards.data_footer_estimated');
+                    badge.textContent = window.t ? window.t('cards.data_footer_estimated') : 'estimated';
+                } else {
+                    badge.setAttribute('data-i18n', 'cards.suggestion_footer');
+                    badge.textContent = window.t ? window.t('cards.suggestion_footer') : 'suggestion only';
+                }
+                footer.appendChild(badge);
+                body.appendChild(footer);
+
+                cardEl.appendChild(body);
+                grid.appendChild(cardEl);
+            });
+
+            container.appendChild(grid);
+        }
+
+        window.renderSuggestionCards = renderSuggestionCards;
 
         // INIT
         checkHealth();
