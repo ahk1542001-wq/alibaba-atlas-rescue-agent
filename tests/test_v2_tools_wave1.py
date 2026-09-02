@@ -150,7 +150,7 @@ import datetime
 from services import rights_engine, visa_guard
 from services.atlas_client import AtlasClient
 from services.safety.adapters import normalize_level_from_text
-from services.safety.policy import normalize_country
+from services.safety.policy import SafetyPolicyEngine, normalize_country
 from models.schemas import SafetyEvidence, SafetySourceReport
 from services.skills.safety_research import SafetyResearchSkill
 
@@ -161,6 +161,20 @@ def _run_sync(coro):
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+# The SafetyPolicyEngine freshness gate reads a real wall clock by default, but
+# the fixture evidence below carries a fixed retrieved_at (2026-08-31T00:00:00Z)
+# with a 24h advisory TTL. Without a matching clock the evidence goes "stale" as
+# the real date advances and the engine honestly downgrades the status to
+# unable_to_verify, breaking parity. The engine is clock-injectable by design
+# ("Pure, deterministic, clock-injectable (hermetic tests)"), so pin the clock to
+# 12h after retrieval -> always "fresh" -> deterministic regardless of run date.
+_FIXED_SAFETY_NOW = datetime.datetime(2026, 8, 31, 12, 0, 0,
+                                      tzinfo=datetime.timezone.utc)
+
+
+def _hermetic_safety_engine() -> SafetyPolicyEngine:
+    return SafetyPolicyEngine(clock=lambda: _FIXED_SAFETY_NOW)
 
 
 # --- flight_search: ≥5 scripted inputs, parity vs legacy AtlasClient --------
@@ -336,7 +350,8 @@ def _deterministic_assessment(assessment: dict) -> dict:
 
 @pytest.mark.parametrize("dest, level_text", SAFETY_INPUTS)
 def test_safety_check_parity_with_legacy_skill(dest, level_text):
-    skill = SafetyResearchSkill(adapters=[_FixedSafetyAdapter(level_text)])
+    skill = SafetyResearchSkill(adapters=[_FixedSafetyAdapter(level_text)],
+                                engine=_hermetic_safety_engine())
     # mirror the tool's deterministic input boundary (country normalization)
     norm = normalize_country(dest) or dest.upper()
     legacy = _run_sync(skill.run({"destination_country": norm}))
@@ -355,7 +370,8 @@ def test_safety_check_parity_with_legacy_skill(dest, level_text):
 
 def test_safety_do_not_travel_propagates_unmutated():
     skill = SafetyResearchSkill(
-        adapters=[_FixedSafetyAdapter("Level 4: Do not travel.")])
+        adapters=[_FixedSafetyAdapter("Level 4: Do not travel.")],
+        engine=_hermetic_safety_engine())
     data = json.loads(SafetyCheckTool(skill=skill).call(
         json.dumps({"destination": "XX"})))
     assert data["assessment"]["trip_policy_status"] == "do_not_travel"

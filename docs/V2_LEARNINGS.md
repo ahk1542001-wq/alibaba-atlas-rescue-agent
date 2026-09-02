@@ -194,3 +194,40 @@ OpenRouter; (2) qwen-agent's base layer retries transient HTTPStatusError
 once internally — first-attempt failures in logs are not turn failures;
 (3) live latencies 1.8–31.2s confirm why audit #7 moved agent construction
 and tool calls off the FastAPI event loop.
+
+---
+
+## CI repair (GitHub Actions "CI Test Suite", core job) — 2026-09-02
+
+The `core` job was red on `main` for three independent reasons, all fixed on
+branch `fix/ci-repair`:
+
+1. **Security gate 3/6 (pre-commit hook missing).** `scripts/security_check.sh`
+   section 3/6 asserts `.git/hooks/pre-commit` exists and is executable. A fresh
+   `actions/checkout` has no local git hooks, so the gate failed and aborted the
+   job *before* any test ran. Fix: the workflow now runs
+   `security_check.sh --install-hook` (installs the tracked `scripts/pre-commit`)
+   immediately before the gate. The gate is satisfied honestly — not skipped.
+
+2. **V2 import errors (missing dependency set).** CI installed only
+   `requirements.txt`, but every `tests/test_v2_*` module imports
+   `services.qwen_brain`, which imports `qwen_agent`. pytest aborted collection
+   with `ModuleNotFoundError`. Fix: the workflow installs
+   `-r requirements.txt -r requirements-v2.txt`. Additionally, qwen-agent 0.0.34
+   imports `numpy`, `soundfile`, `tqdm`, and `python-dateutil` at load time but
+   does not declare them; those pins were added to `requirements-v2.txt` so a
+   clean install can actually `import qwen_agent`.
+
+3. **Time-bomb safety parity tests.** `tests/test_v2_tools_wave1.py` fed the
+   `SafetyPolicyEngine` fixture evidence with a fixed `retrieved_at`
+   (2026-08-31T00:00:00Z) while the engine read the real wall clock. Once the
+   run date passed the 24h advisory TTL, the engine honestly downgraded the
+   status to `unable_to_verify` and 5 parity assertions failed. Fix: the tests
+   now inject a fixed clock (the engine is clock-injectable by design), so the
+   parity check is hermetic and deterministic regardless of run date. No gate was
+   weakened — the assertions still run.
+
+Verified locally on Python 3.13 in a clean venv reproducing the workflow steps
+(install both requirement sets → install hook → `security_check.sh` →
+`pytest tests/ --ignore=tests/test_ui_trip.py`): security gate ALL PASS and the
+non-UI suite fully green. The `ui` job was already passing and is unchanged.
