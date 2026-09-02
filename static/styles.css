@@ -3094,4 +3094,129 @@ html[lang="zh-Hans"] h2, html[lang="zh-Hans"] h3 {
     font-weight: 600;
 }
 
+/* ======================== §U2 DAY-BY-DAY TIMELINE ======================== */
+.timeline-legend {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(18, 121, 107, 0.04);
+    border: 1px solid var(--border-amber);
+    border-radius: var(--radius-sm);
+    margin-bottom: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.timeline-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.timeline-legend-line {
+    width: 16px;
+    height: 0;
+    display: inline-block;
+}
+
+.timeline-legend-line.solid {
+    border-top: 2px solid var(--accent-teal);
+}
+
+.timeline-legend-line.dashed {
+    border-top: 2px dashed #D97706;
+}
+
+.timeline-legend-line.disrupted {
+    border-top: 2px solid #DC2626;
+}
+
+.timeline-day-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-amber);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-sm);
+}
+
+.timeline-day-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid rgba(226, 217, 203, 0.6);
+}
+
+.timeline-day-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+
+.timeline-time-badge {
+    font-size: 10px;
+    background: rgba(18, 121, 107, 0.08);
+    color: var(--accent-teal);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.timeline-segment {
+    position: relative;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    transition: all 0.2s ease;
+}
+
+.timeline-segment-sandbox {
+    border: 1px solid var(--accent-teal);
+    background: rgba(18, 121, 107, 0.03);
+}
+
+.timeline-segment-suggestion {
+    border: 1px dashed var(--border-amber);
+    background: rgba(254, 243, 199, 0.2);
+}
+
+.timeline-segment-disrupted {
+    border: 1px solid #DC2626;
+    background: rgba(220, 38, 38, 0.04);
+}
+
+.timeline-original-cancelled {
+    text-decoration: line-through;
+    color: var(--text-muted);
+    opacity: 0.75;
+}
+
+.timeline-disruption-tag {
+    display: inline-block;
+    background: #FEE2E2;
+    color: #B91C1C;
+    border: 1px solid #FCA5A5;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+}
+
+.timeline-recovery-tag {
+    display: inline-block;
+    background: #CCFBF1;
+    color: #0F766E;
+    border: 1px solid #5EEAD4;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+}
+
+
 
