@@ -2958,3 +2958,140 @@ html[lang="zh-Hans"] h2, html[lang="zh-Hans"] h3 {
     border-style: dashed;
 }
 
+/* ======================== §U1 MAP VISUALIZATION ======================== */
+.map-wrapper {
+    position: relative;
+    background: var(--bg-card);
+    border: 1px solid var(--border-amber);
+    border-radius: var(--radius-sm);
+    padding: 8px;
+    margin-top: 8px;
+    margin-bottom: 12px;
+}
+
+.map-card-head,
+.trip-block-head .trip-map-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.map-card-head {
+    margin-top: 12px;
+    margin-bottom: 4px;
+}
+
+.map-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dark);
+}
+
+.btn-map-toggle {
+    background: transparent;
+    border: 1px solid var(--border-amber);
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-map-toggle:hover {
+    color: var(--text-dark);
+    border-color: var(--accent-teal);
+}
+
+.map-legend-bar {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 6px 4px 2px 4px;
+    border-top: 1px solid rgba(226, 217, 203, 0.4);
+    margin-top: 6px;
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.solid-dot {
+    background: var(--accent-teal);
+}
+
+.hollow-dot {
+    background: transparent;
+    border: 2px dashed #D97706;
+}
+
+.disrupted-dot {
+    background: #DC2626;
+}
+
+.rescue-dot {
+    background: var(--accent-teal);
+}
+
+.map-honesty-attribution {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: right;
+    padding-top: 2px;
+}
+
+.map-honesty-attribution a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.map-fallback-msg {
+    padding: 12px;
+    background: rgba(220, 38, 38, 0.05);
+    border: 1px dashed var(--border-amber);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    margin: 8px 0;
+}
+
+/* Custom Marker Styles for Leaflet */
+.map-pin-solid {
+    background: var(--accent-teal);
+    border: 2px solid #FFFFFF;
+    border-radius: 50%;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+
+.map-pin-estimated {
+    background: rgba(217, 119, 6, 0.2);
+    border: 2px dashed #D97706;
+    border-radius: 50%;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.map-badge-estimated {
+    display: inline-block;
+    background: rgba(217, 119, 6, 0.15);
+    color: #92400E;
+    border: 1px solid #F59E0B;
+    border-radius: 3px;
+    font-size: 10px;
+    padding: 1px 4px;
+    margin-left: 4px;
+    font-weight: 600;
+}
+
+

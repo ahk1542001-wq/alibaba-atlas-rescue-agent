@@ -611,6 +611,7 @@
         renderSafety(s);
         renderPnr(s);
         renderItinerary(s);
+        renderTripMap(s);
         renderRecovery(s);
         var step = Trip.forceStep || deriveStep(s);
         // the My trip destination always shows its own step expanded
@@ -1254,6 +1255,43 @@
                 }
             });
             box.appendChild(chipBtn);
+        });
+    }
+
+    // --- U1 Map Visualization (§U1) -------------------------------------------
+    var tripMapInstance = null;
+
+    function renderTripMap(s) {
+        var block = byId('trip-map-block');
+        if (!block) return;
+        if (!window.TravelCareMap || !window.TravelCareMap.ENABLED) {
+            block.hidden = true;
+            return;
+        }
+
+        var origin = (s && s.confirmed_facts && s.confirmed_facts.origin) || (s && s.facts && s.facts.origin);
+        var destination = (s && s.confirmed_facts && s.confirmed_facts.destination) || (s && s.facts && s.facts.destination);
+
+        if (!origin && !destination) {
+            block.hidden = true;
+            return;
+        }
+
+        block.hidden = false;
+        if (!tripMapInstance) {
+            tripMapInstance = window.TravelCareMap.createMap('trip-map', 'trip-map-fallback');
+            window.TravelCareMap.bindToggle('btn-trip-map-toggle', 'trip-map-container');
+        }
+        if (!tripMapInstance) return;
+
+        var originPts = origin ? window.TravelCareMap.resolve(origin) : [];
+        var destPts = destination ? window.TravelCareMap.resolve(destination) : [];
+        var allPts = originPts.concat(destPts);
+
+        window.TravelCareMap.renderPointsAndRoutes(tripMapInstance, allPts, {
+            color: '#12796B',
+            weight: 3,
+            dashArray: '5, 5'
         });
     }
 

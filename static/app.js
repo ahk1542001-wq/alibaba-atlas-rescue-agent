@@ -434,6 +434,7 @@
 
             // Rescue packages (show only first 2)
             renderPackages((data.rescue_packages || []).slice(0, 2));
+            renderRescueMap(data);
 
             // Compensation card
             const claim = data.compensation_claim || { eligible_payout_usd: 0, status: 'none', claim_id: '' };
@@ -1275,6 +1276,53 @@
             window.TravelCareI18n.onLocaleChange(() => {
                 if (isDisruptionActive) renderRescuePromptChips(true);
                 renderContextualConciergeChips();
+            });
+        }
+
+        // ========================== §U1 RESCUE MAP ==========================
+        let rescueMapInstance = null;
+
+        function renderRescueMap(data) {
+            const block = document.getElementById('rescue-map-block');
+            if (!block) return;
+            if (!window.TravelCareMap || !window.TravelCareMap.ENABLED) {
+                block.hidden = true;
+                return;
+            }
+
+            if (!data || !data.disruption) {
+                block.hidden = true;
+                return;
+            }
+
+            block.hidden = false;
+            if (!rescueMapInstance) {
+                rescueMapInstance = window.TravelCareMap.createMap('rescue-map', 'rescue-map-fallback');
+                window.TravelCareMap.bindToggle('btn-rescue-map-toggle', 'rescue-map-container');
+            }
+            if (!rescueMapInstance) return;
+
+            const origin = data.disruption.origin;
+            const dest = data.disruption.destination;
+            const originPts = window.TravelCareMap.resolve(origin);
+            const destPts = window.TravelCareMap.resolve(dest);
+
+            const points = [];
+            originPts.forEach(p => points.push({ ...p, isDisrupted: true }));
+            destPts.forEach(p => points.push({ ...p, isDisrupted: true }));
+
+            // Add rescue package destination/transfer points if any
+            if (data.rescue_packages && data.rescue_packages.length > 0) {
+                data.rescue_packages.slice(0, 2).forEach((pkg, idx) => {
+                    const pkgDestPts = window.TravelCareMap.resolve(pkg.destination || dest);
+                    pkgDestPts.forEach(p => points.push({ ...p, isRescue: true, name: (pkg.destination || dest) + ' (Rescue Option #' + (idx + 1) + ')' }));
+                });
+            }
+
+            window.TravelCareMap.renderPointsAndRoutes(rescueMapInstance, points, {
+                color: '#DC2626',
+                weight: 3,
+                dashArray: '6, 6'
             });
         }
 
