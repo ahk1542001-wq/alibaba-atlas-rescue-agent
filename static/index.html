@@ -16,19 +16,19 @@
 <body>
     <!-- SIDEBAR -->
     <div id="sidebar">
-        <div class="nav-icon" data-label="Rescue Hub" data-view="rescue" data-testid="nav-rescue" role="button" tabindex="0" onclick="switchView('rescue', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('rescue', this); }">
+        <div class="nav-icon" data-label="Rescue Hub" data-view="rescue" data-testid="nav-rescue" data-i18n-nav="nav.rescue" role="button" tabindex="0" onclick="switchView('rescue', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('rescue', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
         </div>
-        <div class="nav-icon" data-label="Search" data-view="search" data-testid="nav-search" role="button" tabindex="0" onclick="switchView('search', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('search', this); }">
+        <div class="nav-icon" data-label="Search" data-view="search" data-testid="nav-search" data-i18n-nav="nav.search" role="button" tabindex="0" onclick="switchView('search', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('search', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         </div>
-        <div class="nav-icon" data-label="Concierge" data-view="concierge" data-testid="nav-concierge" role="button" tabindex="0" onclick="switchView('concierge', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('concierge', this); }">
+        <div class="nav-icon" data-label="Concierge" data-view="concierge" data-testid="nav-concierge" data-i18n-nav="nav.concierge" role="button" tabindex="0" onclick="switchView('concierge', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('concierge', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
         </div>
-        <div class="nav-icon" data-label="Radar" data-view="radar" data-testid="nav-radar" role="button" tabindex="0" onclick="switchView('radar', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('radar', this); }">
+        <div class="nav-icon" data-label="Radar" data-view="radar" data-testid="nav-radar" data-i18n-nav="nav.radar" role="button" tabindex="0" onclick="switchView('radar', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('radar', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 19 5"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>
         </div>
-        <div class="nav-icon active" data-label="Trip Agent" data-view="trip" data-testid="nav-trip" role="button" tabindex="0" onclick="switchView('trip', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('trip', this); }">
+        <div class="nav-icon active" data-label="Trip Agent" data-view="trip" data-testid="nav-trip" data-i18n-nav="nav.trip" role="button" tabindex="0" onclick="switchView('trip', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('trip', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17h4l3-9h4l3 9h4"/><circle cx="7" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><path d="M12 2v3M9.5 3.5 11 5M14.5 3.5 13 5"/></svg>
         </div>
     </div>
@@ -40,15 +40,17 @@
             <div id="brand">
                 <div id="brand-dot"></div>
                 <span id="brand-name">TravelCare AI</span>
-                <span id="brand-sub">Autonomous Rescue Agent</span>
+                <span id="brand-sub" data-i18n="topbar.brand_sub">Autonomous Rescue Agent</span>
             </div>
             <div id="topbar-spacer"></div>
             <div id="qoder-badge" data-testid="ai-runtime-badge">AI runtime: checking…</div>
             <div id="currency-badge">USD</div>
             <div id="health-badge"><span id="health-dot"></span>System Healthy</div>
-            <button id="btn-aj-profile" class="btn-aj-profile" data-testid="aj-profile-open" aria-label="Your details" aria-haspopup="dialog"><span class="btn-aj-profile-label">Your details</span></button>
-            <button id="btn-add-flight" data-testid="btn-add-flight" onclick="openAddFlightModal()">+ Add Flight</button>
-            <button id="btn-simulate" data-testid="btn-simulate" onclick="simulateDisruption()">Simulate Disruption</button>
+            <button id="btn-locale-toggle" class="btn-locale-toggle" data-testid="locale-toggle" onclick="TravelCareI18n.toggleLocale()" aria-label="Language: EN"><span class="locale-toggle-label">EN</span></button>
+            <span id="i18n-machine-translated-note" class="i18n-machine-note" hidden>machine-translated</span>
+            <button id="btn-aj-profile" class="btn-aj-profile" data-testid="aj-profile-open" aria-label="Your details" aria-haspopup="dialog"><span class="btn-aj-profile-label" data-i18n="topbar.your_details">Your details</span></button>
+            <button id="btn-add-flight" data-testid="btn-add-flight" data-i18n="topbar.add_flight" onclick="openAddFlightModal()">+ Add Flight</button>
+            <button id="btn-simulate" data-testid="btn-simulate" data-i18n="topbar.simulate_disruption" onclick="simulateDisruption()">Simulate Disruption</button>
         </div>
 
         <!-- CONTENT -->
@@ -56,7 +58,7 @@
             <!-- RESCUE HUB VIEW -->
             <div id="view-rescue" class="view">
                 <div id="empty-state">
-                    <h2>No active disruption</h2>
+                    <h2 data-i18n="view.rescue.title">No active disruption</h2>
                     <p>Your flights are being monitored. The Autonomous Rescue Agent will activate instantly if any disruption is detected.</p>
                     <div class="monitored-flights" id="monitored-flights"></div>
                     <div class="hint" style="margin-top: 20px;">Click "+ Add Flight" to monitor a flight, or "Simulate Disruption" to see the agent in action.</div>
@@ -83,7 +85,7 @@
                 </div>
 
                 <div id="reasoning-trail">
-                    <div class="trail-title">AI Agent Reasoning Trail</div>
+                    <div class="trail-title" data-i18n="view.rescue.reasoning_trail">AI Agent Reasoning Trail</div>
                     <ul class="trail-list" id="trail-list"></ul>
                 </div>
 
@@ -92,7 +94,7 @@
                 <div id="compensation-card">
                     <div class="comp-header">
                         <div>
-                            <div class="comp-title">Auto-Filed Compensation</div>
+                            <div class="comp-title" data-i18n="view.rescue.compensation_title">Auto-Filed Compensation</div>
                             <div class="comp-claim-id" id="comp-claim-id"></div>
                         </div>
                         <button class="btn-payout" data-testid="btn-payout" onclick="filePayout()">Instant 1-Click Payout</button>
@@ -104,7 +106,7 @@
                 <div id="rights-panel">
                     <div class="rights-header">
                         <div>
-                            <div class="rights-title">Claims Autopilot</div>
+                            <div class="rights-title" data-i18n="view.rescue.claims_title">Claims Autopilot</div>
                             <div class="rights-sub" id="rights-sub">Checking your rights under global air-passenger regulations...</div>
                         </div>
                         <span class="rights-regime-badge" id="rights-regime-badge"></span>
@@ -147,7 +149,7 @@
                 </div>
 
                 <div id="impact-card">
-                    <div class="impact-title">Recovery Summary</div>
+                    <div class="impact-title" data-i18n="view.rescue.impact_title">Recovery Summary</div>
                     <div class="impact-grid">
                         <div class="impact-item"><div class="impact-label">Queue Time Saved</div><div class="impact-value" id="impact-time">190 min</div></div>
                         <div class="impact-item"><div class="impact-label">Call Center Cost Avoided</div><div class="impact-value" id="impact-cost">$18.50</div></div>
@@ -167,19 +169,19 @@
                 <div class="search-form">
                     <div class="form-row">
                         <div class="form-group">
-                            <label>Origin</label>
+                            <label data-i18n="view.search.origin">Origin</label>
                             <input type="text" id="search-origin" data-testid="search-origin" placeholder="e.g. BKK (Bangkok)">
                         </div>
                         <div class="form-group">
-                            <label>Destination</label>
+                            <label data-i18n="view.search.destination">Destination</label>
                             <input type="text" id="search-destination" data-testid="search-destination" placeholder="e.g. SIN (Singapore)">
                         </div>
                         <div class="form-group">
-                            <label>Date</label>
+                            <label data-i18n="view.search.date">Date</label>
                             <input type="date" id="search-date" data-testid="search-date" value="">
                         </div>
                         <div class="form-group">
-                            <label>Passengers</label>
+                            <label data-i18n="view.search.passengers">Passengers</label>
                             <select id="search-passengers" data-testid="search-passengers">
                                 <option value="1">1</option>
                                 <option value="2">2</option>
@@ -188,7 +190,7 @@
                             </select>
                         </div>
                         <div class="form-group" style="min-width: 80px;">
-                            <label>Currency</label>
+                            <label data-i18n="view.search.currency">Currency</label>
                             <select id="search-currency" data-testid="search-currency">
                                 <option value="USD">USD</option>
                                 <option value="THB">THB</option>
@@ -197,7 +199,7 @@
                                 <option value="EUR">EUR</option>
                             </select>
                         </div>
-                        <button class="btn-search" data-testid="btn-search" onclick="searchFlights()">Search Flights</button>
+                        <button class="btn-search" data-testid="btn-search" data-i18n="view.search.btn" onclick="searchFlights()">Search Flights</button>
                     </div>
                 </div>
                 <div class="search-results" id="search-results"></div>
@@ -206,15 +208,15 @@
             <!-- CONCIERGE VIEW -->
             <div id="view-concierge" class="view">
                 <div class="chat-chips">
-                    <button class="chip" data-testid="chip-vegetarian" onclick="sendQuickChat('Can I request a vegetarian meal?')">Vegetarian meal</button>
-                    <button class="chip" data-testid="chip-gate" onclick="sendQuickChat('Gate D4 directions?')">Gate D4 directions</button>
-                    <button class="chip" data-testid="chip-baggage" onclick="sendQuickChat('Where is my baggage?')">Baggage status</button>
-                    <button class="chip" data-testid="chip-claim" onclick="sendQuickChat('How do I claim compensation?')">Claim payout</button>
+                    <button class="chip" data-testid="chip-vegetarian" data-i18n="chips.concierge.vegetarian" onclick="sendQuickChat('Can I request a vegetarian meal?')">Vegetarian meal</button>
+                    <button class="chip" data-testid="chip-gate" data-i18n="chips.concierge.gate" onclick="sendQuickChat('Gate D4 directions?')">Gate D4 directions</button>
+                    <button class="chip" data-testid="chip-baggage" data-i18n="chips.concierge.baggage" onclick="sendQuickChat('Where is my baggage?')">Baggage status</button>
+                    <button class="chip" data-testid="chip-claim" data-i18n="chips.concierge.claim" onclick="sendQuickChat('How do I claim compensation?')">Claim payout</button>
                 </div>
                 <div class="chat-messages" id="chat-messages"></div>
                 <div class="chat-input-row">
-                    <input type="text" id="chat-input" data-testid="chat-input" placeholder="Ask your AI travel assistant..." onkeypress="if(event.key==='Enter') sendChat()">
-                    <button id="btn-send" data-testid="btn-send" onclick="sendChat()">Send</button>
+                    <input type="text" id="chat-input" data-testid="chat-input" data-i18n="view.concierge.placeholder" data-i18n-attr="placeholder" placeholder="Ask your AI travel assistant..." onkeypress="if(event.key==='Enter') sendChat()">
+                    <button id="btn-send" data-testid="btn-send" data-i18n="view.concierge.send" onclick="sendChat()">Send</button>
                 </div>
             </div>
 
@@ -222,18 +224,18 @@
             <div id="view-radar" class="view">
                 <div class="radar-header">
                     <div>
-                        <div class="radar-title">Autonomous Rescue Radar</div>
+                        <div class="radar-title" data-i18n="view.radar.title">Autonomous Rescue Radar</div>
                         <div class="radar-sub" id="radar-sub">Proactively monitoring your flights 24/7...</div>
                     </div>
-                    <button class="btn-radar-scan" id="btn-radar-scan" data-testid="btn-radar-scan" onclick="radarScanNow()">Scan Now</button>
+                    <button class="btn-radar-scan" id="btn-radar-scan" data-testid="btn-radar-scan" data-i18n="view.radar.scan_btn" onclick="radarScanNow()">Scan Now</button>
                 </div>
                 <div class="radar-grid">
                     <div class="radar-section">
-                        <div class="radar-section-title">Monitored Flights</div>
+                        <div class="radar-section-title" data-i18n="view.radar.flights_label">Monitored Flights</div>
                         <div class="radar-flights" id="radar-flights"></div>
                     </div>
                     <div class="radar-section">
-                        <div class="radar-section-title">Proactive Alerts</div>
+                        <div class="radar-section-title" data-i18n="view.radar.alerts_label">Proactive Alerts</div>
                         <div class="radar-alerts" id="radar-alerts"></div>
                     </div>
                 </div>
@@ -251,9 +253,9 @@
                             <h2 class="aj-greeting" id="aj-greeting" data-testid="aj-greeting">Welcome.</h2>
                         </div>
                         <nav class="aj-nav" aria-label="Trip destinations">
-                            <button type="button" class="aj-nav-btn is-active" id="aj-nav-plan" data-testid="aj-nav-plan" aria-current="page">Plan a trip</button>
-                            <button type="button" class="aj-nav-btn" id="aj-nav-mytrip" data-testid="aj-nav-mytrip">My trip</button>
-                            <button type="button" class="aj-nav-btn" id="aj-nav-help" data-testid="aj-nav-help">Help</button>
+                            <button type="button" class="aj-nav-btn is-active" id="aj-nav-plan" data-testid="aj-nav-plan" data-i18n="view.trip.nav_plan" aria-current="page">Plan a trip</button>
+                            <button type="button" class="aj-nav-btn" id="aj-nav-mytrip" data-testid="aj-nav-mytrip" data-i18n="view.trip.nav_mytrip">My trip</button>
+                            <button type="button" class="aj-nav-btn" id="aj-nav-help" data-testid="aj-nav-help" data-i18n="view.trip.nav_help">Help</button>
                         </nav>
                     </header>
                     <div class="aj-live" id="aj-live" data-testid="aj-live" role="status" aria-live="polite"></div>
@@ -289,7 +291,7 @@
                             <li class="aj-step is-current" id="aj-step-1" data-testid="aj-step-1">
                                 <div class="aj-step-head">
                                     <span class="aj-step-num" aria-hidden="true">1</span>
-                                    <h3 class="aj-step-title">Tell us what you need</h3>
+                                    <h3 class="aj-step-title" data-i18n="view.trip.step1_title">Tell us what you need</h3>
                                     <span class="aj-step-summary" id="aj-step-1-summary" data-testid="aj-step-1-summary"></span>
                                     <button type="button" class="aj-step-edit" id="aj-step-1-edit" data-testid="aj-step-1-edit" hidden>Edit</button>
                                 </div>
@@ -302,9 +304,9 @@
                                     <div class="aj-starters" role="group" aria-label="Quick starts">
                                         <span class="aj-starters-label">Or start with one tap:</span>
                                         <div class="aj-starters-row">
-                                            <button type="button" class="aj-starter" id="aj-starter-flight-only" data-testid="aj-starter-flight-only">Find a flight</button>
-                                            <button type="button" class="aj-starter" id="aj-starter-flight-booking" data-testid="aj-starter-flight-booking">Find and book a flight</button>
-                                            <button type="button" class="aj-starter" id="aj-starter-complete" data-testid="aj-starter-complete">Plan my complete trip</button>
+                                            <button type="button" class="aj-starter" id="aj-starter-flight-only" data-testid="aj-starter-flight-only" data-i18n="view.trip.starter_flight_only">Find a flight</button>
+                                            <button type="button" class="aj-starter" id="aj-starter-flight-booking" data-testid="aj-starter-flight-booking" data-i18n="view.trip.starter_flight_booking">Find and book a flight</button>
+                                            <button type="button" class="aj-starter" id="aj-starter-complete" data-testid="aj-starter-complete" data-i18n="view.trip.starter_complete">Plan my complete trip</button>
                                         </div>
                                     </div>
                                     <div class="aj-services" id="aj-requested-services" data-testid="aj-requested-services" hidden></div>
@@ -312,7 +314,7 @@
                                     <div class="aj-questions" id="aj-questions-slot"><!-- trip-clarify-chips + trip-scope-block transplanted here --></div>
                                     <div class="aj-disclosure-wrap">
                                         <button type="button" class="aj-disclosure" id="aj-disclosure-chat" data-testid="aj-disclosure-chat" aria-expanded="false" aria-controls="aj-chat-body">
-                                            <span class="aj-disclosure-label">Conversation so far</span><span class="aj-caret" aria-hidden="true"></span>
+                                            <span class="aj-disclosure-label" data-i18n="view.trip.disclosure_chat">Conversation so far</span><span class="aj-caret" aria-hidden="true"></span>
                                         </button>
                                         <div class="aj-disclosure-body" id="aj-chat-body" hidden><div class="aj-chat-slot" id="aj-chat-slot"><!-- trip-chat transplanted here --></div></div>
                                     </div>
@@ -321,7 +323,7 @@
                             <li class="aj-step is-future" id="aj-step-2" data-testid="aj-step-2" aria-disabled="true">
                                 <div class="aj-step-head">
                                     <span class="aj-step-num" aria-hidden="true">2</span>
-                                    <h3 class="aj-step-title">Choose your options</h3>
+                                    <h3 class="aj-step-title" data-i18n="view.trip.step2_title">Choose your options</h3>
                                     <span class="aj-step-summary" id="aj-step-2-summary" data-testid="aj-step-2-summary"></span>
                                     <button type="button" class="aj-step-edit" id="aj-step-2-edit" data-testid="aj-step-2-edit" hidden>Edit</button>
                                 </div>
@@ -330,7 +332,7 @@
                             <li class="aj-step is-future" id="aj-step-3" data-testid="aj-step-3" aria-disabled="true">
                                 <div class="aj-step-head">
                                     <span class="aj-step-num" aria-hidden="true">3</span>
-                                    <h3 class="aj-step-title">Review your plan</h3>
+                                    <h3 class="aj-step-title" data-i18n="view.trip.step3_title">Review your plan</h3>
                                     <span class="aj-step-summary" id="aj-step-3-summary" data-testid="aj-step-3-summary"></span>
                                     <button type="button" class="aj-step-edit" id="aj-step-3-edit" data-testid="aj-step-3-edit" hidden>Edit</button>
                                 </div>
@@ -342,7 +344,7 @@
                                     <div class="aj-review-total" id="aj-review-total" data-testid="aj-review-total"></div>
                                     <p class="aj-sandbox-note" id="aj-review-sandbox-note" data-testid="aj-review-sandbox-note">Offers come from the official Atlas Sandbox. Approval requests a Sandbox booking; if ticketing is unavailable, no PNR or ticket is created.</p>
                                     <button type="button" class="aj-disclosure" id="aj-disclosure-sources" data-testid="aj-disclosure-sources" aria-expanded="false" aria-controls="aj-sources-body">
-                                        <span class="aj-disclosure-label">Sources</span><span class="aj-caret" aria-hidden="true"></span>
+                                        <span class="aj-disclosure-label" data-i18n="view.trip.disclosure_sources">Sources</span><span class="aj-caret" aria-hidden="true"></span>
                                     </button>
                                     <div class="aj-disclosure-body" id="aj-sources-body" hidden></div>
                                 </div>
@@ -350,7 +352,7 @@
                             <li class="aj-step is-future" id="aj-step-4" data-testid="aj-step-4" aria-disabled="true">
                                 <div class="aj-step-head">
                                     <span class="aj-step-num" aria-hidden="true">4</span>
-                                    <h3 class="aj-step-title">Confirm booking</h3>
+                                    <h3 class="aj-step-title" data-i18n="view.trip.step4_title">Confirm booking</h3>
                                     <span class="aj-step-summary" id="aj-step-4-summary" data-testid="aj-step-4-summary"></span>
                                     <button type="button" class="aj-step-edit" id="aj-step-4-edit" data-testid="aj-step-4-edit" hidden>Edit</button>
                                 </div>
@@ -371,7 +373,7 @@
                         <div class="aj-step is-future" id="aj-step-5" data-testid="aj-step-5" aria-disabled="true">
                             <div class="aj-step-head">
                                 <span class="aj-step-num" aria-hidden="true">5</span>
-                                <h3 class="aj-step-title">Track your trip</h3>
+                                <h3 class="aj-step-title" data-i18n="view.trip.step5_title">Track your trip</h3>
                                 <span class="aj-step-summary" id="aj-step-5-summary" data-testid="aj-step-5-summary"></span>
                                 <button type="button" class="aj-step-edit" id="aj-step-5-edit" data-testid="aj-step-5-edit" hidden>Edit</button>
                             </div>
@@ -384,7 +386,7 @@
                                 <div id="aj-safety-slot-mytrip">
                                     <section class="aj-safety-card" id="aj-safety-card" data-testid="aj-safety-card" data-testid-aj="aj-safety-card" aria-labelledby="aj-safety-title" hidden>
                                         <div class="aj-safety-head">
-                                            <h3 class="aj-safety-title" id="aj-safety-title">Safety check</h3>
+                                            <h3 class="aj-safety-title" id="aj-safety-title" data-i18n="view.trip.help_disruption_q">Safety check</h3>
                                             <span class="aj-safety-checked" id="aj-safety-checked" data-testid="aj-safety-checked" data-testid-aj="aj-safety-checked"></span>
                                         </div>
                                         <div class="aj-safety-body" id="aj-safety-body" data-testid="aj-safety-body" data-testid-aj="aj-safety-body"></div>
@@ -400,7 +402,7 @@
 
                     <div class="aj-dest" id="aj-dest-help" hidden>
                         <div class="aj-help-card">
-                            <h3 class="aj-help-title">How Atlas Journey works</h3>
+                            <h3 class="aj-help-title" data-i18n="view.trip.help_title">How Atlas Journey works</h3>
                             <div class="aj-help-item">
                                 <h4>What is the Atlas Sandbox?</h4>
                                 <p>Flight offers come from the official Atlas Sandbox, not a runtime mock fallback. Sandbox results are not production airline inventory, and provider booking limits are shown honestly.</p>
@@ -430,7 +432,7 @@
 
                     <div class="aj-trace">
                         <button type="button" class="aj-disclosure" id="aj-disclosure-trace" data-testid="aj-disclosure-trace" aria-expanded="false" aria-controls="aj-trace-body">
-                            <span class="aj-disclosure-label">How this plan was made</span><span class="aj-caret" aria-hidden="true"></span>
+                            <span class="aj-disclosure-label" data-i18n="view.trip.disclosure_trace">How this plan was made</span><span class="aj-caret" aria-hidden="true"></span>
                         </button>
                         <div class="aj-disclosure-body aj-trace-body" id="aj-trace-body" hidden><!-- trip-status-strip + trip-dag transplanted here --></div>
                     </div>
@@ -463,8 +465,8 @@
 
                             <div class="trip-block" id="trip-options-block">
                                 <div class="trip-block-head">
-                                    <span class="trip-block-title">Flight options</span>
-                                    <span class="trip-honesty-chip trip-chip-sandbox" data-testid="sandbox-provenance">Atlas Sandbox data</span>
+                                    <span class="trip-block-title" data-i18n="view.trip.options_title">Flight options</span>
+                                    <span class="trip-honesty-chip trip-chip-sandbox" data-testid="sandbox-provenance" data-i18n="badge.sandbox_provenance">Atlas Sandbox data</span>
                                 </div>
                                 <div class="trip-options" id="trip-options" data-testid="trip-options">
                                     <div class="trip-empty" id="trip-options-empty" data-testid="trip-options-empty">No flight options yet — submit a travel goal to begin.</div>
@@ -475,7 +477,7 @@
 
                             <div class="trip-block" id="trip-itinerary-block">
                                 <div class="trip-block-head">
-                                    <span class="trip-block-title">Itinerary</span>
+                                    <span class="trip-block-title" data-i18n="view.trip.itinerary_title">Itinerary</span>
                                     <span class="trip-honesty-note">flight status, suggestions and sources are labeled separately</span>
                                 </div>
                                 <div class="trip-itinerary" id="trip-itinerary" data-testid="trip-itinerary">
@@ -486,10 +488,10 @@
                             <div class="trip-error" id="trip-error" data-testid="trip-error" hidden></div>
 
                             <form class="trip-goal-form" id="trip-goal-form" data-testid="trip-goal-form">
-                                <label class="trip-goal-label" for="trip-goal-input">Your travel goal</label>
+                                <label class="trip-goal-label" for="trip-goal-input" data-i18n="view.trip.goal_label">Your travel goal</label>
                                 <div class="trip-goal-row">
                                     <textarea id="trip-goal-input" data-testid="trip-goal-input" rows="2" placeholder='e.g. "I need to get to WiT Singapore, Marina Bay Sands, Sep 29-30 — plan my whole trip from Bangkok."'></textarea>
-                                    <button type="submit" class="btn-trip-go" id="trip-goal-submit" data-testid="trip-goal-submit">Plan my trip</button>
+                                    <button type="submit" class="btn-trip-go" id="trip-goal-submit" data-testid="trip-goal-submit" data-i18n="view.trip.goal_submit">Plan my trip</button>
                                 </div>
                                 <div class="trip-goal-loading" id="trip-goal-loading" data-testid="trip-goal-loading" hidden>Agent is parsing your goal…</div>
                             </form>
@@ -499,7 +501,7 @@
                     <aside class="trip-rail">
                         <section class="trip-dag" id="trip-dag" data-testid="trip-dag-panel">
                             <div class="trip-block-head">
-                                <span class="trip-block-title">Live execution</span>
+                                <span class="trip-block-title" data-i18n="view.trip.dag_title">Live execution</span>
                                 <span class="trip-dag-live" id="trip-dag-live" data-testid="trip-dag-live">standing by</span>
                             </div>
                             <ol class="trip-dag-list" id="trip-dag-list" data-testid="trip-dag-list">
@@ -509,7 +511,7 @@
 
                         <section class="trip-profile" id="trip-profile" data-testid="trip-profile-editor">
                             <div class="trip-block-head">
-                                <span class="trip-block-title">Your profile</span>
+                                <span class="trip-block-title" data-i18n="view.trip.profile_title">Your profile</span>
                                 <label class="trip-consent">
                                     <input type="checkbox" id="trip-consent" data-testid="profile-consent">
                                     <span>store locally</span>
@@ -528,8 +530,8 @@
     <!-- AJ PROFILE DRAWER (GLOBAL) -->
     <aside class="aj-drawer" id="aj-profile-drawer" data-testid="aj-profile-drawer" data-aj role="dialog" aria-modal="true" aria-labelledby="aj-drawer-title" hidden>
         <div class="aj-drawer-head">
-            <h3 class="aj-drawer-title" id="aj-drawer-title">Your details</h3>
-            <button type="button" class="aj-drawer-close" id="aj-profile-close" data-testid="aj-profile-close">Close</button>
+            <h3 class="aj-drawer-title" id="aj-drawer-title" data-i18n="drawer.title">Your details</h3>
+            <button type="button" class="aj-drawer-close" id="aj-profile-close" data-testid="aj-profile-close" data-i18n="drawer.close">Close</button>
         </div>
         <p class="aj-consent-note" id="aj-profile-consent-note" data-testid="aj-profile-consent-note">Only save details I give you. You can delete anything at any time.</p>
         <div class="aj-consent-row" id="aj-consent-slot"><!-- trip-consent label transplanted here --></div>
@@ -662,28 +664,29 @@
 
     <!-- MOBILE BOTTOM NAV -->
     <div id="bottom-nav">
-        <div class="bottom-nav-item" data-label="Rescue" data-view="rescue" data-testid="mnav-rescue" role="button" tabindex="0" onclick="switchView('rescue', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('rescue', this); }">
+        <div class="bottom-nav-item" data-label="Rescue" data-view="rescue" data-testid="mnav-rescue" data-i18n-nav="nav_mobile.rescue" role="button" tabindex="0" onclick="switchView('rescue', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('rescue', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             <span>Rescue</span>
         </div>
-        <div class="bottom-nav-item" data-label="Search" data-view="search" data-testid="mnav-search" role="button" tabindex="0" onclick="switchView('search', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('search', this); }">
+        <div class="bottom-nav-item" data-label="Search" data-view="search" data-testid="mnav-search" data-i18n-nav="nav_mobile.search" role="button" tabindex="0" onclick="switchView('search', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('search', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <span>Search</span>
         </div>
-        <div class="bottom-nav-item" data-label="Concierge" data-view="concierge" data-testid="mnav-concierge" role="button" tabindex="0" onclick="switchView('concierge', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('concierge', this); }">
+        <div class="bottom-nav-item" data-label="Concierge" data-view="concierge" data-testid="mnav-concierge" data-i18n-nav="nav_mobile.concierge" role="button" tabindex="0" onclick="switchView('concierge', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('concierge', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
             <span>Chat</span>
         </div>
-        <div class="bottom-nav-item" data-label="Radar" data-view="radar" data-testid="mnav-radar" role="button" tabindex="0" onclick="switchView('radar', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('radar', this); }">
+        <div class="bottom-nav-item" data-label="Radar" data-view="radar" data-testid="mnav-radar" data-i18n-nav="nav_mobile.radar" role="button" tabindex="0" onclick="switchView('radar', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('radar', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 19 5"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>
             <span>Radar</span>
         </div>
-        <div class="bottom-nav-item active" data-label="Trip Agent" data-view="trip" data-testid="mnav-trip" role="button" tabindex="0" onclick="switchView('trip', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('trip', this); }">
+        <div class="bottom-nav-item active" data-label="Trip Agent" data-view="trip" data-testid="mnav-trip" data-i18n-nav="nav_mobile.trip" role="button" tabindex="0" onclick="switchView('trip', this)" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); switchView('trip', this); }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17h4l3-9h4l3 9h4"/><circle cx="7" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/></svg>
             <span>Trip</span>
         </div>
     </div>
 
+    <script src="/static/i18n.js?v=r1"></script>
     <script src="/static/app.js?v=r7"></script>
     <script src="/static/trip.js?v=r7"></script>
 </body>

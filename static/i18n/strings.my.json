@@ -1,0 +1,8 @@
+{
+  "_meta": {
+    "locale": "my",
+    "review_status": "reserved_not_populated",
+    "description": "Myanmar (Burmese) — RESERVED slot, not populated in first release. Missing keys fall back to en silently.",
+    "note": "This locale is NOT user-selectable in the first release. It is reserved for a future release with a Myanmar-script-capable font (e.g. Noto Sans Myanmar)."
+  }
+}

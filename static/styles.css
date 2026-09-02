@@ -2841,3 +2841,64 @@
     opacity: 0.7;
     cursor: wait;
 }
+
+/* ============================================================
+   U4 — i18n Locale Toggle + CJK Font Support
+   ============================================================ */
+
+.btn-locale-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border: 1.5px solid var(--border-amber);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    color: var(--accent-teal-dark);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.btn-locale-toggle:hover {
+    border-color: var(--accent-teal);
+    box-shadow: var(--shadow-teal);
+}
+.btn-locale-toggle:focus-visible {
+    outline: 2px solid var(--accent-teal);
+    outline-offset: 2px;
+}
+.locale-toggle-label {
+    text-transform: uppercase;
+}
+
+.i18n-machine-note {
+    font-size: 10px;
+    color: var(--status-warning);
+    font-family: var(--font-mono);
+    letter-spacing: 0.3px;
+    padding: 2px 6px;
+    background: rgba(206, 127, 43, 0.08);
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+/* CJK font stack — system CJK + Noto Sans SC fallback */
+html[lang="zh-Hans"] body,
+html[lang="zh-Hans"] .btn-locale-toggle,
+html[lang="zh-Hans"] #topbar,
+html[lang="zh-Hans"] #sidebar,
+html[lang="zh-Hans"] .view {
+    font-family: var(--font-display), "PingFang SC", "Hiragino Sans GB",
+                 "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+/* Slightly larger line-height for CJK readability */
+html[lang="zh-Hans"] .aj-step-title,
+html[lang="zh-Hans"] .trip-block-title,
+html[lang="zh-Hans"] .radar-title,
+html[lang="zh-Hans"] h2, html[lang="zh-Hans"] h3 {
+    line-height: 1.5;
+}
