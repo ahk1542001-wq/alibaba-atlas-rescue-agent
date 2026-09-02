@@ -88,18 +88,7 @@ Deterministic engines (rights engine, visa guard, radar) run the consequential d
 
 🎬 **[Watch the 3-minute demo on YouTube](https://youtu.be/H-MC2JHWl7M)**
 
-The recorded demo is a genuine, continuous screen capture of the running application — every number shown is produced live by real tools, never mocked or scripted. The eight sections below are synced to the video markers.
-
-| # | Time | Section | What you see |
-|---|---|---|---|
-| 1 | 0:00 | **Hook** | TravelCare AI overview — plan, watch, rescue. One brain, five views: Trip, Search, Concierge, Radar, Rescue |
-| 2 | 0:26 | **Trip intake & Qwen parsing** | One natural-language goal → Qwen3-235B parses intent and asks exactly one clarifying question at a time (dates, passengers, passport) while the capability-governed trip graph orchestrates the 13 guardrailed skills |
-| 3 | 0:53 | **Atlas Sandbox options + safety card** | Flight options stream from the Atlas Sandbox via the official `atlas-flight` CLI, each with provenance and reference-price chips; the completed plan adds entry requirements and a fail-closed safety card (UK FCDO, US State, SmartTraveller, WHO, GDACS) |
-| 4 | 1:19 | **Approval gate & privacy** | Nothing books without explicit approval; the gate shows the sandbox truth — ticketing is not activated, so the flight stays *planned*, not booked. Profile drawer masks every document; consent preferences govern storage |
-| 5 | 1:39 | **Search + Radar** | The Search view drives the same Atlas Sandbox live (never cached), while Radar scans monitored flights, raises early alerts, and hands off to rescue in one click |
-| 6 | 1:58 | **Concierge** | Qwen3-235B free-text chat grounded in the live trip context, with quick-action chips for rights, visa, and rebooking questions |
-| 7 | 2:15 | **Rescue Hub** *(explicitly labeled demo simulation)* | Add a flight, trigger the clearly labeled explicit demo simulation → observable reasoning trail, visa-safe rescue packages ranked across 14 passports, fare-lock countdown, one-click rebook, Telegram Guardian push in demo mode |
-| 8 | 2:36 | **Claims Autopilot + close** | EU261 regime detected, disruption cause classified by Qwen, fixed cash entitlement computed, evidence pack + claim letter + appeal drafted automatically |
+The recording is a genuine, continuous screen capture of the running application — from a single natural-language goal, through live Atlas Sandbox search and the approval gate, into the labeled disruption simulation, visa-safe rescue packages, and Claims Autopilot. Every number on screen is produced live by real tools; nothing is mocked or scripted.
 
 ![Approval gate — sandbox truth](screenshots/aj_probe_06_approval_modal_desktop.png)
 ![Radar view](e2e_screenshots/06_radar_view.png)
