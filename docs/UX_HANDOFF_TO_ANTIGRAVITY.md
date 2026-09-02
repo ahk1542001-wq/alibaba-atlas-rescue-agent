@@ -67,25 +67,26 @@
 
 ---
 
-## 2. What Remains (U2 → U3)
+### U2 — Day-by-Day Timeline ✅ (commit `b8a0307`)
 
-Per §0.2 sequencing: **U2 (timeline) → U3 (cards)**
+| Deliverable | Status | Evidence |
+|---|---|---|
+| `static/index.html` updates | Complete | `data-i18n="timeline.empty"` on `#trip-itinerary-empty`, canary selectors preserved |
+| `static/styles.css` additions | Complete | `.timeline-legend`, `.timeline-day-card`, `.timeline-segment-sandbox` (solid), `.timeline-segment-suggestion` (dashed), `.timeline-segment-disrupted` (red border), `.timeline-original-cancelled` (strike-through), `.timeline-disruption-tag` |
+| `static/trip.js` updates | Complete | `buildItinerary()` renders vertical day cards (`.timeline-day-card`) with localized titles and time estimate badges, `#timeline-legend` with provenance indicators, `itineraryRow()` applies sandbox vs suggestion vs disruption classes |
+| `tests/test_v2_ux_timeline.py` | Complete | 8 hermetic tests covering string table completeness, provenance classes, legend existence, disruption markers, empty state honesty, and canary testid stability |
 
-### U2 — Day-by-Day Timeline (NOT STARTED)
+**Gate evidence (U2):**
+- `TRAVELCARE_BRAIN=legacy`: 8/8 U2 tests pass; combined U4+U5+U1+U2 55/55 tests pass
+- `TRAVELCARE_BRAIN=qwen_agent`: 8/8 U2 tests pass; combined U4+U5+U1+U2 55/55 tests pass
+- `node --check` on all 4 JS files: clean
+- `scripts/security_check.sh`: ALL 6 SECTIONS PASS
 
-**What to build:**
-- Render from EXISTING `itinerary` skill payload (`sections` + per-section provenance)
-- Vertical day-grouped timeline: one column per day, time-anchored segments
-- Clock times via deterministic heuristic, labeled "estimates" (i18n key: `timeline.time_estimate`)
-- Provenance coding MANDATORY and visual:
-  - Atlas Sandbox segments (flights, real data) → solid treatment
-  - "Suggestion only" segments → dashed border + label
-  - Legend always visible
-- Disruption/recovery events insert marked timeline interruptions — original segment stays visible, struck through, labeled `timeline.original_strikethrough`
-- Localized day/time labels through §U4 string table (`timeline.day`, `timeline.disruption`, `timeline.recovery`)
-- Empty state: honest "no itinerary yet" (`timeline.empty` key already exists)
-- File scope: `static/index.html` (timeline container in trip-itinerary-block area), `static/trip.js`, `static/styles.css`
-- Test: `tests/test_v2_ux_timeline.py` (hermetic — provenance coding, disruption rendering, localization hook presence)
+---
+
+## 2. What Remains (U3)
+
+Per §0.2 sequencing: **U3 (cards)**
 
 ### U3 — Suggestion Cards (NOT STARTED)
 
