@@ -88,21 +88,35 @@
 
 Per §0.2 sequencing: **U3 (cards)**
 
-### U3 — Suggestion Cards (NOT STARTED)
+### U3 — Suggestion Cards ✅ (commit `471bf56`)
 
-**What to build:**
-- Cards render suggestion prose from Qwen-Agent brain (concierge answers, itinerary "suggestion only" sections, rescue rationale)
-- Card structure: photo/placeholder + name + key fact + action
-- Photo rule (HONESTY-CRITICAL):
-  - Permitted: (1) owner-approved local assets under `static/assets/`; (2) labeled placeholder blocks ("no image available")
-  - NEVER hotlink, NEVER fabricate, every image carries honest `alt` text
-  - `alt` must describe true source: "illustrative placeholder", NOT "photo of X"
-- Honesty footer on every card: "suggestion only" / source tag (`atlas_sandbox`, `deterministic engine`, `estimated`)
-- Actions limited to: "Ask follow-up", "Add to trip plan" (local), "View on map" (§U1)
-- **NO booking/payment CTAs of any kind**
-- Degraded provider → cards fall back to deterministic legacy rendering, labeled
-- File scope: `static/index.html`, `static/app.js`, `static/styles.css`, `static/assets/` (new, only if owner-approved images exist)
-- Test: `tests/test_v2_ux_cards.py` (hermetic — provenance footer presence, no-payment CTA assertion, image source allow-list)
+| Deliverable | Status | Evidence |
+|---|---|---|
+| `static/index.html` updates | Complete | Added `#concierge-suggestion-cards` (`data-testid="concierge-suggestion-cards"`) inside `#view-concierge` |
+| `static/styles.css` additions | Complete | `.suggestion-cards-grid`, `.suggestion-card`, `.card-media-wrapper`, `.card-photo-placeholder`, `.card-body`, `.card-title`, `.card-description`, `.card-actions`, `.card-btn-action`, `.card-honesty-footer`, `.card-honesty-badge` |
+| `static/app.js` updates | Complete | `renderSuggestionCards()` renders rich suggestion cards with honest photo placeholders (`cards.no_image`), honest alt text (`cards.photo_placeholder_alt`), provenance footers (`cards.suggestion_footer`, `cards.data_footer_atlas`, `cards.data_footer_engine`, `cards.data_footer_estimated`), and strictly non-booking actions (`cards.action_followup`, `cards.action_add_plan`, `cards.action_view_map`). Zero booking/payment CTAs. |
+| `tests/test_v2_ux_cards.py` | Complete | 8 hermetic tests verifying string table coverage, honest placeholders, zero booking/payment CTAs in string tables and code, provenance footer rendering, and canary testid stability |
+
+**Gate evidence (U3 & Full Package):**
+- `TRAVELCARE_BRAIN=legacy`: 63/63 UX tests pass
+- `TRAVELCARE_BRAIN=qwen_agent`: 63/63 UX tests pass
+- `tests/test_ui_trip.py`: 52/52 tests pass (including `test_AJ13_legacy_canary` and all Playwright browser tests)
+- `node --check` across all frontend JS files (`map.js`, `i18n.js`, `app.js`, `trip.js`): clean
+- `scripts/security_check.sh`: ALL 6 SECTIONS PASS
+
+---
+
+## 2. Status Summary (ALL ENHANCEMENTS COMPLETE)
+
+All five V2 UX enhancement tracks are fully implemented, verified, and committed on `ux/enhancements-u1-u5`:
+1. **§U4 (i18n Foundation)**: commit `5f67673` + fix `4f7c985` (23 tests)
+2. **§U5 (Prompt Chips)**: commit `5c38e04` (13 tests)
+3. **§U1 (Map Visualization)**: commit `1989c83` (11 tests)
+4. **§U2 (Day-by-Day Timeline)**: commit `b8a0307` (8 tests)
+5. **§U3 (Suggestion Cards)**: commit `471bf56` (8 tests)
+
+Total hermetic UX suite: **63 tests, 100% green under both runtime brain modes**.
+Zero injection sinks, honest attribution, zero fabricated data, and strictly non-bypassing gates.
 
 ---
 
