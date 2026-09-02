@@ -28,25 +28,27 @@
 - `node --check` on all 3 JS files: clean
 - All existing `data-testid` values byte-stable (canary selectors untouched)
 
+### U5 — Prompt Chips ✅ (commit `5c38e04`)
+
+| Deliverable | Status | Evidence |
+|---|---|---|
+| `static/index.html` updates | Complete | `#trip-prompt-chips` (`data-testid="trip-prompt-chips"`), `#rescue-prompt-chips` (`data-testid="rescue-prompt-chips"`), `#concierge-context-chips` (`data-testid="concierge-context-chips"`), existing canary chip testids preserved |
+| `static/styles.css` additions | Complete | `.prompt-chip`, `.trip-prompt-chips`, `.rescue-prompt-chips`, `.concierge-context-chips`, focus-visible & active states |
+| `static/trip.js` updates | Complete | `renderContextualTripChips(s)` renders contextual chips based on trip state (empty vs active trip), wires clicks to `submitGoal()`, subscribes to `TravelCareI18n.onLocaleChange()` |
+| `static/app.js` updates | Complete | `renderRescuePromptChips()` renders suggestion-grade disruption recovery chips, `renderContextualConciergeChips()` provides contextual chat starters, both wire clicks through `sendQuickChat()` without gate bypass, subscribe to `onLocaleChange()` |
+| `tests/test_v2_ux_chips.py` | Complete | 13 hermetic tests covering string table integrity, contextual derivation, suggestion-grade wording, gate-bypass prevention, canary testid immutability, and locale change subscription |
+
+**Gate evidence (U5):**
+- `TRAVELCARE_BRAIN=legacy`: 13/13 U5 tests pass; combined U4+U5 36/36 tests pass
+- `TRAVELCARE_BRAIN=qwen_agent`: 13/13 U5 tests pass; combined U4+U5 36/36 tests pass
+- `node --check` on all 3 JS files (`static/i18n.js`, `static/app.js`, `static/trip.js`): clean
+- `scripts/security_check.sh`: ALL 6 SECTIONS PASS
+
 ---
 
-## 2. What Remains (U5 → U1 → U2 → U3)
+## 2. What Remains (U1 → U2 → U3)
 
-Per §0.2 sequencing: **U5 (chips) → U1 (map) → U2 (timeline) → U3 (cards)**
-
-### U5 — Prompt Chips (NOT STARTED)
-
-**What to build:**
-- Contextual deterministic chip sets above Trip intake input + Concierge chat input
-- Chip sets derived from current trip state (visa, rights, tomorrow flights, hotel, safety)
-- Chips render through `t(key)` in active locale (keys already exist in both en/zh tables: `chips.trip.*`, `chips.rescue.*`)
-- Clicking a chip inserts/sends through EXISTING input pipeline (`sendQuickChat()` for concierge, goal submit for trip)
-- Chips must NOT bypass gates — no approval skip, no extra tool calls
-- Disruption-active chips must use suggestion-grade wording
-- File scope: `static/index.html` (chip containers), `static/app.js` (concierge chips already exist — extend with contextual sets), `static/trip.js` (trip chips), `static/styles.css`
-- Test: `tests/test_v2_ux_chips.py` (hermetic — contextual sets per state, locale coverage, no-gate-bypass)
-
-**Note:** The existing concierge chips (`chip-vegetarian`, `chip-gate`, etc.) already have `data-i18n` attributes from U4. U5 adds CONTEXTUAL chips that change based on trip state (not the static ones).
+Per §0.2 sequencing: **U1 (map) → U2 (timeline) → U3 (cards)**
 
 ### U1 — Map Visualization (NOT STARTED)
 
