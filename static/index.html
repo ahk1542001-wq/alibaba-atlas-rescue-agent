@@ -68,6 +68,7 @@
                     <div class="banner-title" id="banner-title"></div>
                     <div class="banner-sub" id="banner-sub"></div>
                 </div>
+                <div class="rescue-prompt-chips" id="rescue-prompt-chips" data-testid="rescue-prompt-chips" role="group" aria-label="Rescue action suggestions" hidden></div>
 
                 <div id="route-visual">
                     <div class="route-row route-cancelled">
@@ -213,6 +214,7 @@
                     <button class="chip" data-testid="chip-baggage" data-i18n="chips.concierge.baggage" onclick="sendQuickChat('Where is my baggage?')">Baggage status</button>
                     <button class="chip" data-testid="chip-claim" data-i18n="chips.concierge.claim" onclick="sendQuickChat('How do I claim compensation?')">Claim payout</button>
                 </div>
+                <div class="concierge-context-chips" id="concierge-context-chips" data-testid="concierge-context-chips" role="group" aria-label="Contextual concierge suggestions"></div>
                 <div class="chat-messages" id="chat-messages"></div>
                 <div class="chat-input-row">
                     <input type="text" id="chat-input" data-testid="chat-input" data-i18n="view.concierge.placeholder" data-i18n-attr="placeholder" placeholder="Ask your AI travel assistant..." onkeypress="if(event.key==='Enter') sendChat()">
@@ -308,6 +310,7 @@
                                             <button type="button" class="aj-starter" id="aj-starter-flight-booking" data-testid="aj-starter-flight-booking" data-i18n="view.trip.starter_flight_booking">Find and book a flight</button>
                                             <button type="button" class="aj-starter" id="aj-starter-complete" data-testid="aj-starter-complete" data-i18n="view.trip.starter_complete">Plan my complete trip</button>
                                         </div>
+                                        <div class="trip-prompt-chips" id="trip-prompt-chips" data-testid="trip-prompt-chips" role="group" aria-label="Contextual prompt suggestions"></div>
                                     </div>
                                     <div class="aj-services" id="aj-requested-services" data-testid="aj-requested-services" hidden></div>
                                     <div class="aj-facts" id="aj-facts-summary" data-testid="aj-facts-summary"></div>

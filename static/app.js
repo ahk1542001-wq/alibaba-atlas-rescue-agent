@@ -346,6 +346,7 @@
             document.getElementById('banner-title').textContent = flightNum + ' DEMO CANCELLATION \u2014 Simulation Active';
             document.getElementById('banner-sub').textContent = 'Running an explicit demo with fictional disruption data. No booking will be created.';
             banner.classList.add('visible');
+            renderRescuePromptChips(true);
 
             // Show reasoning trail with sequential steps
             const trail = document.getElementById('reasoning-trail');
@@ -429,6 +430,7 @@
             document.getElementById('route-rescue-codes').textContent = firstPkg.origin;
             document.getElementById('route-rescue-dest').textContent = firstPkg.destination;
             route.classList.add('visible');
+            renderRescuePromptChips(true);
 
             // Rescue packages (show only first 2)
             renderPackages((data.rescue_packages || []).slice(0, 2));
@@ -1190,5 +1192,92 @@
             }
         }
 
+        // ========================== §U5 PROMPT CHIPS ==========================
+        let isDisruptionActive = false;
+
+        function renderRescuePromptChips(active) {
+            isDisruptionActive = !!active;
+            const container = document.getElementById('rescue-prompt-chips');
+            if (!container) return;
+            container.textContent = '';
+            if (!active) {
+                container.hidden = true;
+                return;
+            }
+            container.hidden = false;
+
+            const chipDefs = [
+                {
+                    key: 'chips.rescue.options',
+                    action: () => {
+                        const pkgEl = document.getElementById('rescue-packages');
+                        if (pkgEl) pkgEl.scrollIntoView({ behavior: 'smooth' });
+                    }
+                },
+                {
+                    key: 'chips.rescue.compensation',
+                    action: () => {
+                        const text = window.t ? window.t('chips.rescue.compensation') : 'What compensation can I claim?';
+                        const navConcierge = document.querySelector('[data-view="concierge"]');
+                        if (navConcierge) switchView('concierge', navConcierge);
+                        sendQuickChat(text);
+                    }
+                },
+                {
+                    key: 'chips.rescue.alternatives',
+                    action: () => {
+                        const text = window.t ? window.t('chips.rescue.alternatives') : 'Find alternative flights';
+                        const navConcierge = document.querySelector('[data-view="concierge"]');
+                        if (navConcierge) switchView('concierge', navConcierge);
+                        sendQuickChat(text);
+                    }
+                }
+            ];
+
+            chipDefs.forEach(def => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'prompt-chip is-suggestion';
+                btn.setAttribute('data-i18n', def.key);
+                btn.setAttribute('data-testid', 'chip-' + def.key.replace(/\./g, '-'));
+                btn.textContent = window.t ? window.t(def.key) : def.key;
+                btn.addEventListener('click', def.action);
+                container.appendChild(btn);
+            });
+            renderContextualConciergeChips();
+        }
+
+        function renderContextualConciergeChips() {
+            const container = document.getElementById('concierge-context-chips');
+            if (!container) return;
+            container.textContent = '';
+
+            const chipKeys = isDisruptionActive
+                ? ['chips.rescue.compensation', 'chips.rescue.alternatives', 'chips.trip.rights']
+                : ['chips.trip.safety', 'chips.trip.hotel', 'chips.trip.visa'];
+
+            chipKeys.forEach(key => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'prompt-chip is-suggestion';
+                btn.setAttribute('data-i18n', key);
+                btn.setAttribute('data-testid', 'chip-ctx-' + key.replace(/\./g, '-'));
+                btn.textContent = window.t ? window.t(key) : key;
+                btn.addEventListener('click', () => {
+                    const query = window.t ? window.t(key) : key;
+                    sendQuickChat(query);
+                });
+                container.appendChild(btn);
+            });
+        }
+
+        if (window.TravelCareI18n && window.TravelCareI18n.onLocaleChange) {
+            window.TravelCareI18n.onLocaleChange(() => {
+                if (isDisruptionActive) renderRescuePromptChips(true);
+                renderContextualConciergeChips();
+            });
+        }
+
         // INIT
         checkHealth();
+        renderContextualConciergeChips();

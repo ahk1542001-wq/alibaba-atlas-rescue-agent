@@ -2902,3 +2902,59 @@ html[lang="zh-Hans"] .radar-title,
 html[lang="zh-Hans"] h2, html[lang="zh-Hans"] h3 {
     line-height: 1.5;
 }
+
+/* ======================== §U5 PROMPT CHIPS ======================== */
+.trip-prompt-chips,
+.rescue-prompt-chips,
+.concierge-context-chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    margin-bottom: 8px;
+}
+
+.rescue-prompt-chips {
+    margin: 12px 0 16px 0;
+    padding: 10px 14px;
+    background: rgba(18, 121, 107, 0.05);
+    border: 1px dashed var(--border-amber);
+    border-radius: var(--radius-sm);
+}
+
+.prompt-chip {
+    background: var(--bg-card);
+    border: 1px solid var(--border-amber);
+    color: var(--text-dark);
+    padding: 6px 13px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: border-color 0.2s var(--ease), color 0.2s var(--ease), transform 0.15s var(--spring), background 0.2s var(--ease);
+}
+
+.prompt-chip:hover {
+    border-color: var(--accent-teal);
+    color: var(--accent-teal-dark);
+    background: var(--accent-teal-light);
+}
+
+.prompt-chip:active {
+    transform: scale(0.96);
+}
+
+.prompt-chip:focus-visible {
+    outline: 2px solid var(--accent-teal);
+    outline-offset: 1px;
+}
+
+.prompt-chip.is-suggestion {
+    border-style: dashed;
+}
+

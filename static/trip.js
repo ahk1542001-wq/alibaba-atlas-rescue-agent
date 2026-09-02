@@ -597,6 +597,7 @@
         renderConversationTurn(s);
         renderDag(s);
         renderServices(s);
+        renderContextualTripChips(s);
         renderQuestionCards(s);
         renderScopeChoices(s);
         renderFacts(s);
@@ -1222,6 +1223,37 @@
             });
             chipRow.appendChild(rm);
             box.appendChild(chipRow);
+        });
+    }
+
+    // --- U5 Contextual Prompt Chips (spec §U5) ---------------------------------
+
+    function renderContextualTripChips(s) {
+        var box = byId('trip-prompt-chips');
+        if (!box) return;
+        clear(box);
+
+        var hasActiveTrip = !!(s && (s.trip_id || (s.active_trip && s.active_trip.trip_id)));
+        var chipKeys = hasActiveTrip
+            ? ['chips.trip.visa', 'chips.trip.safety', 'chips.trip.hotel', 'chips.trip.rights']
+            : ['chips.trip.tomorrow', 'chips.trip.visa', 'chips.trip.safety', 'chips.trip.hotel'];
+
+        chipKeys.forEach(function (key) {
+            var label = window.t ? window.t(key) : key;
+            var chipBtn = el('button', 'prompt-chip is-suggestion', label);
+            chipBtn.type = 'button';
+            chipBtn.setAttribute('data-i18n', key);
+            tid(chipBtn, 'chip-' + key.replace(/\./g, '-'));
+            chipBtn.addEventListener('click', function () {
+                var input = byId('trip-goal-input');
+                if (input) {
+                    var promptText = window.t ? window.t(key) : key;
+                    input.value = promptText;
+                    input.focus();
+                    submitGoal(null);
+                }
+            });
+            box.appendChild(chipBtn);
         });
     }
 
@@ -3159,6 +3191,12 @@
         observeTripView(); // G4-DA-fix F1: stop polling when the view is left
         window.__tripRender = renderState; // diagnostic/test hook
         byId('aj-step-2-summary').textContent = 'No flight options yet';
+        renderContextualTripChips(null);
+        if (window.TravelCareI18n && window.TravelCareI18n.onLocaleChange) {
+            window.TravelCareI18n.onLocaleChange(function () {
+                renderContextualTripChips(Trip.lastState);
+            });
+        }
         refreshProfile();
     }
 
