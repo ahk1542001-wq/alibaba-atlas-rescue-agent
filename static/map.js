@@ -152,7 +152,17 @@
          * Renders points and connecting lines onto an active Leaflet map.
          */
         renderPointsAndRoutes: function (map, points, routeOpts) {
-            if (!map || !window.L || !points || points.length === 0) return;
+            if (!map || !window.L) return;
+
+            var dataLayer = map._travelCareDataLayer;
+            if (!dataLayer) {
+                dataLayer = window.L.layerGroup().addTo(map);
+                map._travelCareDataLayer = dataLayer;
+            } else {
+                dataLayer.clearLayers();
+            }
+
+            if (!points || points.length === 0) return;
             var latLngs = [];
 
             points.forEach(function (pt) {
@@ -183,12 +193,12 @@
                 }
 
                 marker.bindPopup(popupNode);
-                marker.addTo(map);
+                marker.addTo(dataLayer);
             });
 
             if (latLngs.length >= 2) {
                 var lineOpts = routeOpts || { color: '#12796B', weight: 3, dashArray: '5, 5' };
-                window.L.polyline(latLngs, lineOpts).addTo(map);
+                window.L.polyline(latLngs, lineOpts).addTo(dataLayer);
                 map.fitBounds(window.L.latLngBounds(latLngs), { padding: [30, 30] });
             } else if (latLngs.length === 1) {
                 map.setView(latLngs[0], 6);

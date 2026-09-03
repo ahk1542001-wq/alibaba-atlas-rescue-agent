@@ -43,9 +43,9 @@
             }
         }
         if (value === null || value === undefined) {
-            // absolute fallback: return en key value or descriptive placeholder
+            // Absolute fallback: keep internal key names out of visible UI.
             console.warn('[i18n] Key "' + key + '" not found in any locale table.');
-            value = key;
+            value = 'Translation unavailable';
         }
         // interpolation
         if (params && typeof params === 'object') {

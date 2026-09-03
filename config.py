@@ -10,7 +10,7 @@ class Settings(BaseModel):
     # Real Qwen LLM (OpenAI-compatible endpoints: ModelScope / Model Studio / OpenRouter)
     model_api_key: str = os.getenv("ALIBABA_MODEL_API_KEY", "")
     llm_base_url: str = os.getenv("LLM_BASE_URL", "")
-    default_model: str = os.getenv("DEFAULT_MODEL", "Qwen/Qwen2.5-72B-Instruct")
+    default_model: str = os.getenv("DEFAULT_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
     # Autonomous radar scan interval (seconds)
     radar_interval_seconds: int = int(os.getenv("RADAR_INTERVAL_SECONDS", "15"))
     # Proactive Telegram guardian (optional; simulated when unset)
@@ -39,4 +39,3 @@ class Settings(BaseModel):
             self.travelcare_brain = "legacy"
 
 settings = Settings()
-
