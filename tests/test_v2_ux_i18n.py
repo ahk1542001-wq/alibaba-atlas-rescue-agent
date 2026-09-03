@@ -203,6 +203,22 @@ class TestI18nModule:
         assert "DEFAULT_LOCALE" in js
         assert "tables[DEFAULT_LOCALE]" in js or "tables[currentLocale]" in js
 
+    def test_setlocale_lazyloads_target_table(self):
+        """Regression guard: a runtime en->zh toggle must lazy-load the zh table.
+
+        init() only loads the string table for the locale already stored at page
+        load, so setLocale() must fetch the target table on first switch. Without
+        this the toggle label shows ZH (and html lang flips to zh-Hans) while t()
+        silently falls back to en until the user manually reloads — the UI never
+        actually translates. Guards the fix for that defect.
+        """
+        js = (STATIC_DIR / "i18n.js").read_text(encoding="utf-8")
+        body = js.split("function setLocale(", 1)[1].split("\n    }", 1)[0]
+        assert "tables[locale]" in body, (
+            "setLocale must check whether the target locale table is loaded")
+        assert "loadTable(locale)" in body, (
+            "setLocale must lazy-load the target locale table on first switch")
+
     def test_i18n_js_loaded_before_app_js(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         i18n_pos = html.find("i18n.js")

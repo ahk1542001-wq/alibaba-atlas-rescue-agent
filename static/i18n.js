@@ -138,7 +138,19 @@
         try {
             localStorage.setItem(STORAGE_KEY, locale);
         } catch (e) { /* storage unavailable */ }
-        applyLocale();
+        // Lazy-load the target locale's string table on first switch so the
+        // runtime toggle actually re-renders translated text. init() only loads
+        // the table for the locale already stored at page load, so without this
+        // a first en->zh toggle left tables[zh] undefined and t() silently fell
+        // back to en (toggle label showed ZH but text stayed English) until a
+        // manual reload. en is always preloaded, so this only fetches on demand.
+        if (loaded && !tables[locale]) {
+            loadTable(locale).then(function () {
+                applyLocale();
+            });
+        } else {
+            applyLocale();
+        }
     }
 
     /**
