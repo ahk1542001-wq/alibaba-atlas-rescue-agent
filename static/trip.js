@@ -3064,10 +3064,12 @@
         // editable confirmed fact (renderFacts), never leaked into prose.
         var homeCity = profile.identity.home_city;
         Trip.homeCityProfile = homeCity || '';
-        byId('trip-greeting').textContent = homeCity
-            ? 'Welcome back.' : 'Tell me where you need to be \u2014 I\u2019ll plan the rest.';
+        var greetReturn = window.t ? window.t('view.trip.greeting_returning') : 'Welcome back.';
+        var greetHeadline = window.t ? window.t('trip_headline') : 'Tell me where you need to be \u2014 I\u2019ll plan the rest.';
+        var greetWelcome = window.t ? window.t('view.trip.greeting') : 'Welcome.';
+        byId('trip-greeting').textContent = homeCity ? greetReturn : greetHeadline;
         var ajGreeting = byId('aj-greeting');
-        ajGreeting.textContent = homeCity ? 'Welcome back.' : 'Welcome.';
+        ajGreeting.textContent = homeCity ? greetReturn : greetWelcome;
         if (!Trip.tripId) renderFacts(null);
 
         PROFILE_ROWS.forEach(function (spec) {
@@ -3278,6 +3280,15 @@
         if (window.TravelCareI18n && window.TravelCareI18n.onLocaleChange) {
             window.TravelCareI18n.onLocaleChange(function () {
                 renderContextualTripChips(Trip.lastState);
+                // Re-apply dynamic greeting on locale switch
+                var hc = Trip.homeCityProfile;
+                var gr = window.t ? window.t('view.trip.greeting_returning') : 'Welcome back.';
+                var gh = window.t ? window.t('trip_headline') : 'Tell me where you need to be \u2014 I\u2019ll plan the rest.';
+                var gw = window.t ? window.t('view.trip.greeting') : 'Welcome.';
+                var tg = byId('trip-greeting');
+                if (tg) tg.textContent = hc ? gr : gh;
+                var ag = byId('aj-greeting');
+                if (ag) ag.textContent = hc ? gr : gw;
             });
         }
         refreshProfile();

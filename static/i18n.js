@@ -1,7 +1,7 @@
 /* ============================================================
    TravelCare AI — i18n Locale System (U4)
    Static string-table approach: no framework, no build step.
-   Locales: en (source of truth), zh (machine_draft).
+   Locales: en (source of truth), zh (qwen_reviewed; human review pending).
    Reserved: my (not populated, not selectable in first release).
    Persistence: localStorage key "travelcare.locale".
    Toggle: data-testid="locale-toggle" cycles en ↔ zh.
