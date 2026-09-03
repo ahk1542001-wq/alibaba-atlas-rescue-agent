@@ -26,14 +26,37 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # The V2 (qwen-agent brain) tests import services.qwen_brain at
+          # collection time, so the v2 dependency set MUST be installed or
+          # pytest aborts with ModuleNotFoundError before a single test runs.
+          # requirements-v2.txt also pins qwen-agent's undeclared runtime
+          # imports (numpy/soundfile/tqdm/python-dateutil) needed to import it.
+          pip install -r requirements.txt -r requirements-v2.txt
           pip install pip-audit
+
+      - name: Install pre-commit hook (security gate 3/6)
+        # security_check.sh section 3/6 asserts the local pre-commit hook is
+        # installed and executable. A fresh CI checkout has no .git/hooks, so
+        # install it from the tracked scripts/pre-commit (the same banned-
+        # pattern scan the hook runs). This keeps gate 3/6 honest, not skipped.
+        run: bash scripts/security_check.sh --install-hook
 
       - name: Security & Audit Gate
         run: bash scripts/security_check.sh
 
+      - name: Install Playwright Chromium (browser canary in the non-UI suite)
+        # tests/test_mockdata_victor.py::test_mockdata_browser_run_path_demo_fixtures
+        # launches a real Chromium to prove the browser run-path with tracked
+        # fictional fixtures. The core job installs the playwright *package* via
+        # requirements.txt but NOT the browser binaries, so launch() died with
+        # 'Executable doesn't exist'. Install chromium (same as the ui job) so the
+        # canary genuinely RUNS in CI instead of erroring. Adds ~40s to the job.
+        run: python -m playwright install --with-deps chromium
+
       - name: Run Non-UI Test Suite
-        run: TZ=UTC python -m pytest tests/ -q --ignore=tests/test_ui_trip.py
+        # -rs surfaces every skip reason in the CI summary (no silent skips):
+        # e.g. the conditional 'mockdata' marker reports why it skipped.
+        run: TZ=UTC python -m pytest tests/ -q --ignore=tests/test_ui_trip.py -rs
 
   ui:
     runs-on: ubuntu-latest

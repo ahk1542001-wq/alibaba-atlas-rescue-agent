@@ -15,3 +15,15 @@ tiktoken==0.14.0
 dashscope==1.27.2
 eval_type_backport==0.4.0
 pillow==12.3.0
+
+# qwen-agent 0.0.34 imports these at package load time but does NOT declare
+# them as install dependencies (upstream packaging gap). Without them a fresh
+# `pip install -r requirements-v2.txt` cannot even `import qwen_agent`, which
+# aborts pytest collection for every tests/test_v2_* module in CI. Pinned here
+# so the v2 suite is genuinely importable (and runnable) from a clean install.
+# Discovered by chasing the ModuleNotFoundError chain: numpy -> soundfile ->
+# tqdm -> python-dateutil. All are pure wheel installs (no native build needed).
+numpy==2.5.2
+soundfile==0.14.0
+tqdm==4.70.0
+python-dateutil==2.9.0.post0
