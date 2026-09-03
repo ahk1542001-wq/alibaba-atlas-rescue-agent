@@ -55,12 +55,9 @@ XSS_GOAL = ('I need to get to <script>window.__xss=1</script>Singapore from '
             'Bangkok <img src=x onerror="window.__xss2=1"> on 2026-09-29.')
 INVALID_DATE_GOAL = "Fly on February 30 2026"   # deterministic 422 trigger
 
-# G4.5 / R2 sanitized static/app.js pin: zero injection sinks.
-# AUDIT NOTE (2026-08-31 baseline repair, disclosed): this pin was re-set to the
-# current static/app.js digest because the main tip c6e7a4e baseline was RED --
-# c21ec1e modified static/app.js without updating this pin. See
-# docs/V2_STATUS.md "G0 Baseline Honesty Repair".
-APP_JS_SHA256 = "2521e0bf7b10d6bd61466576b16ad56a3c4e2f91ee2c6b017979b4d26fbaaed6"
+# G4.5 / R2 / V2-UX sanitized static/app.js pin: zero injection sinks.
+# AUDIT NOTE: pin updated for V2 UX enhancements (U5 prompt chips, U1 rescue map, U3 suggestion cards).
+APP_JS_SHA256 = "a3c16a72716afaf87b4a20a0a650ac3f0db084c61d46a72b644a8f9cc60214ce"
 
 
 # --- G3-pattern fakes ---------------------------------------------------------

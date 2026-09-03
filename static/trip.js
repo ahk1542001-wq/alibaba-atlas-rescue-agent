@@ -597,6 +597,7 @@
         renderConversationTurn(s);
         renderDag(s);
         renderServices(s);
+        renderContextualTripChips(s);
         renderQuestionCards(s);
         renderScopeChoices(s);
         renderFacts(s);
@@ -610,6 +611,7 @@
         renderSafety(s);
         renderPnr(s);
         renderItinerary(s);
+        renderTripMap(s);
         renderRecovery(s);
         var step = Trip.forceStep || deriveStep(s);
         // the My trip destination always shows its own step expanded
@@ -1222,6 +1224,74 @@
             });
             chipRow.appendChild(rm);
             box.appendChild(chipRow);
+        });
+    }
+
+    // --- U5 Contextual Prompt Chips (spec §U5) ---------------------------------
+
+    function renderContextualTripChips(s) {
+        var box = byId('trip-prompt-chips');
+        if (!box) return;
+        clear(box);
+
+        var hasActiveTrip = !!(s && (s.trip_id || (s.active_trip && s.active_trip.trip_id)));
+        var chipKeys = hasActiveTrip
+            ? ['chips.trip.visa', 'chips.trip.safety', 'chips.trip.hotel', 'chips.trip.rights']
+            : ['chips.trip.tomorrow', 'chips.trip.visa', 'chips.trip.safety', 'chips.trip.hotel'];
+
+        chipKeys.forEach(function (key) {
+            var label = window.t ? window.t(key) : key;
+            var chipBtn = el('button', 'prompt-chip is-suggestion', label);
+            chipBtn.type = 'button';
+            chipBtn.setAttribute('data-i18n', key);
+            tid(chipBtn, 'chip-' + key.replace(/\./g, '-'));
+            chipBtn.addEventListener('click', function () {
+                var input = byId('trip-goal-input');
+                if (input) {
+                    var promptText = window.t ? window.t(key) : key;
+                    input.value = promptText;
+                    input.focus();
+                    submitGoal(null);
+                }
+            });
+            box.appendChild(chipBtn);
+        });
+    }
+
+    // --- U1 Map Visualization (§U1) -------------------------------------------
+    var tripMapInstance = null;
+
+    function renderTripMap(s) {
+        var block = byId('trip-map-block');
+        if (!block) return;
+        if (!window.TravelCareMap || !window.TravelCareMap.ENABLED) {
+            block.hidden = true;
+            return;
+        }
+
+        var origin = (s && s.confirmed_facts && s.confirmed_facts.origin) || (s && s.facts && s.facts.origin);
+        var destination = (s && s.confirmed_facts && s.confirmed_facts.destination) || (s && s.facts && s.facts.destination);
+
+        if (!origin && !destination) {
+            block.hidden = true;
+            return;
+        }
+
+        block.hidden = false;
+        if (!tripMapInstance) {
+            tripMapInstance = window.TravelCareMap.createMap('trip-map', 'trip-map-fallback');
+            window.TravelCareMap.bindToggle('btn-trip-map-toggle', 'trip-map-container');
+        }
+        if (!tripMapInstance) return;
+
+        var originPts = origin ? window.TravelCareMap.resolve(origin) : [];
+        var destPts = destination ? window.TravelCareMap.resolve(destination) : [];
+        var allPts = originPts.concat(destPts);
+
+        window.TravelCareMap.renderPointsAndRoutes(tripMapInstance, allPts, {
+            color: '#12796B',
+            weight: 3,
+            dashArray: '5, 5'
         });
     }
 
@@ -2371,8 +2441,10 @@
         if (!preserveCap) Trip.shownItin = 6;
         clear(container);
         if (items.length === 0) {
-            var itinEmpty = el('div', 'trip-empty',
-                'No verified result is currently available \u2014 not booked');
+            var emptyMsg = (window.t && window.t('timeline.empty')) ||
+                'No itinerary yet \u2014 plan a trip to see your day-by-day timeline.';
+            var itinEmpty = el('div', 'trip-empty', emptyMsg);
+            itinEmpty.setAttribute('data-i18n', 'timeline.empty');
             tid(itinEmpty, 'trip-itinerary-empty');
             container.appendChild(itinEmpty);
             return;
@@ -2407,7 +2479,24 @@
             issueCount ? 'warn' : 'good'));
         container.appendChild(summary);
 
-        // Group by verified category without inventing calendar placement.
+        // U2 Timeline Legend Bar (§U2)
+        var legend = el('div', 'timeline-legend');
+        tid(legend, 'timeline-legend');
+        var leg1 = el('span', 'timeline-legend-item');
+        leg1.appendChild(el('span', 'timeline-legend-line solid'));
+        leg1.appendChild(el('span', '', 'Atlas Sandbox (live tooling)'));
+        var leg2 = el('span', 'timeline-legend-item');
+        leg2.appendChild(el('span', 'timeline-legend-line dashed'));
+        leg2.appendChild(el('span', '', 'Suggestion only'));
+        var leg3 = el('span', 'timeline-legend-item');
+        leg3.appendChild(el('span', 'timeline-legend-line disrupted'));
+        leg3.appendChild(el('span', '', (window.t ? window.t('timeline.disruption') : 'Disruption')));
+        legend.appendChild(leg1);
+        legend.appendChild(leg2);
+        legend.appendChild(leg3);
+        container.appendChild(legend);
+
+        // Group by verified category into vertical timeline day cards.
         var flightItems = items.filter(function (i) { return i.kind === 'flight'; });
         var hotelItems = items.filter(function (i) { return i.kind === 'hotel'; });
         var activityItems = items.filter(function (i) { return i.kind === 'activity'; });
@@ -2420,13 +2509,24 @@
         function group(label, list) {
             if (!list.length) return;
             groupIdx += 1;
-            var head = el('div', 'aj-itin-day');
+            var dayCard = el('div', 'timeline-day-card');
+            tid(dayCard, 'timeline-day-card');
+
+            var head = el('div', 'timeline-day-head aj-itin-day');
             tid(head, 'aj-itinerary-day-' + groupIdx);
-            head.appendChild(el('span', 'aj-itin-day-label', label));
-            container.appendChild(head);
+
+            var dayPrefix = window.t ? window.t('timeline.day', { n: groupIdx }) : ('Day ' + groupIdx);
+            var titleSpan = el('span', 'timeline-day-title aj-itin-day-label', dayPrefix + ' \u2014 ' + label);
+            head.appendChild(titleSpan);
+
+            var timeBadge = el('span', 'timeline-time-badge', window.t ? window.t('timeline.time_estimate') : 'time estimates');
+            head.appendChild(timeBadge);
+            dayCard.appendChild(head);
+
             for (var i = 0; i < list.length && shown < cap; i++, shown++) {
-                container.appendChild(itineraryRow(list[i], s));
+                dayCard.appendChild(itineraryRow(list[i], s));
             }
+            container.appendChild(dayCard);
         }
         group('Travel day', flightItems);
         group('Stay', hotelItems);
@@ -2453,11 +2553,26 @@
     }
 
     function itineraryRow(item, s) {
-        var row = el('div', 'trip-itin-item trip-itin-' + (item.kind || 'item'));
+        var isAtlas = (item.source === 'atlas_real');
+        var isDisrupted = !!(item.disrupted || item.status === 'CANCELLED');
+        var segClass = isDisrupted ? 'timeline-segment timeline-segment-disrupted' :
+                       (isAtlas ? 'timeline-segment timeline-segment-sandbox' : 'timeline-segment timeline-segment-suggestion');
+
+        var kindClass = item.kind === 'flight' ? 'trip-itin-flight' : ('trip-itin-' + (item.kind || 'item'));
+        var row = el('div', 'trip-itin-item ' + kindClass + ' ' + segClass);
         tid(row, 'trip-itin-item');
         var left = el('div', 'trip-itin-left');
         left.appendChild(el('span', 'trip-itin-kind', item.kind || ''));
-        left.appendChild(el('span', 'trip-itin-name', item.name || ''));
+
+        if (isDisrupted) {
+            var nameSpan = el('span', 'trip-itin-name timeline-original-cancelled', item.name || '');
+            var disTag = el('span', 'timeline-disruption-tag',
+                window.t ? window.t('timeline.original_strikethrough') : 'original (cancelled)');
+            left.appendChild(nameSpan);
+            left.appendChild(disTag);
+        } else {
+            left.appendChild(el('span', 'trip-itin-name', item.name || ''));
+        }
         row.appendChild(left);
         var right = el('div', 'trip-itin-right');
         if (item.source === 'atlas_real') {
@@ -3159,6 +3274,12 @@
         observeTripView(); // G4-DA-fix F1: stop polling when the view is left
         window.__tripRender = renderState; // diagnostic/test hook
         byId('aj-step-2-summary').textContent = 'No flight options yet';
+        renderContextualTripChips(null);
+        if (window.TravelCareI18n && window.TravelCareI18n.onLocaleChange) {
+            window.TravelCareI18n.onLocaleChange(function () {
+                renderContextualTripChips(Trip.lastState);
+            });
+        }
         refreshProfile();
     }
 

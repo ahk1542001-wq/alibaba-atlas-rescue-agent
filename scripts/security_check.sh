@@ -97,7 +97,7 @@ fi
 # ---------------------------------------------------------------- 4/6
 section "4/6 XSS sink audit — strict across ALL frontend JS (zero sinks allowed)"
 SINKS='\.innerHTML[[:space:]]*=|\.outerHTML[[:space:]]*=|insertAdjacentHTML[[:space:]]*\(|document\.write[[:space:]]*\(|[^A-Za-z_.]eval[[:space:]]*\('
-for js_file in static/trip.js static/app.js; do
+for js_file in static/*.js; do  # owned frontend JS (excludes static/vendor/*)
     hits="$(grep -nE "$SINKS" "$js_file" || true)"
     if [ -z "$hits" ]; then
         ok "$js_file: zero injection sinks (createElement/textContent only)"
