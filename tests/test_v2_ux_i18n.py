@@ -7,7 +7,7 @@ Gate criteria (§U4):
 - Reserved `my` slot falls back to en without errors
 - data-testid values are locale-independent and never translated
 - Locale preference persists via localStorage key
-- zh table is flagged review_status: machine_draft
+- zh table is flagged review_status: qwen_reviewed (upgraded from machine_draft)
 - Key coverage: every en key exists in zh (no gaps)
 """
 
@@ -65,11 +65,11 @@ class TestStringTableStructure:
         assert meta.get("locale") == "en"
         assert meta.get("review_status") == "source_of_truth"
 
-    def test_zh_meta_is_machine_draft(self, zh_table):
+    def test_zh_meta_is_qwen_reviewed(self, zh_table):
         meta = zh_table.get("_meta", {})
         assert meta.get("locale") == "zh"
-        assert meta.get("review_status") == "machine_draft", (
-            "zh table MUST be flagged review_status: machine_draft per §U4 governance")
+        assert meta.get("review_status") == "qwen_reviewed", (
+            "zh table MUST be flagged review_status: qwen_reviewed after Qwen3-235B second-pass review")
 
     def test_my_meta_is_reserved(self, my_table):
         meta = my_table.get("_meta", {})
@@ -237,6 +237,85 @@ class TestI18nModule:
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         assert 'id="i18n-machine-translated-note"' in html
         assert "hidden" in html.split('id="i18n-machine-translated-note"')[1][:100]
+
+
+# --- zh-completion: new keys and surface wiring ---
+
+class TestZhCompletionKeys:
+    """Validate keys added in ux/zh-completion branch: stepper labels, greeting_returning."""
+
+    NEW_KEYS = [
+        "view.trip.greeting_returning",
+        "view.trip.stepper_1",
+        "view.trip.stepper_2",
+        "view.trip.stepper_3",
+        "view.trip.stepper_4",
+        "view.trip.stepper_5",
+    ]
+
+    def test_new_keys_present_in_en(self, en_table):
+        for key in self.NEW_KEYS:
+            assert key in en_table, f"New key '{key}' missing from en table"
+            assert en_table[key].strip(), f"New key '{key}' empty in en table"
+
+    def test_new_keys_present_in_zh(self, zh_table):
+        for key in self.NEW_KEYS:
+            assert key in zh_table, f"New key '{key}' missing from zh table"
+            assert zh_table[key].strip(), f"New key '{key}' empty in zh table"
+
+    def test_stepper_labels_wired_in_html(self):
+        """Stepper <li> elements must have data-i18n attributes."""
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        for i in range(1, 6):
+            key = f"view.trip.stepper_{i}"
+            assert f'data-i18n="{key}"' in html, (
+                f"Stepper label data-i18n='{key}' missing from index.html")
+
+    def test_hero_title_wired_in_html(self):
+        """Hero title and sub must have data-i18n attributes."""
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        assert 'data-i18n="view.trip.hero_title"' in html, (
+            "Hero title missing data-i18n wiring")
+        assert 'data-i18n="view.trip.hero_sub"' in html, (
+            "Hero sub missing data-i18n wiring")
+
+    def test_greeting_uses_window_t(self):
+        """trip.js greeting must use window.t() for i18n, not hardcoded strings."""
+        js = (STATIC_DIR / "trip.js").read_text(encoding="utf-8")
+        assert "window.t('view.trip.greeting_returning')" in js or \
+               'window.t("view.trip.greeting_returning")' in js, (
+            "trip.js must use window.t('view.trip.greeting_returning') for dynamic greeting")
+        assert "window.t('trip_headline')" in js or \
+               'window.t("trip_headline")' in js, (
+            "trip.js must use window.t('trip_headline') for headline greeting")
+
+    def test_locale_change_handler_reapplies_greeting(self):
+        """onLocaleChange callback must re-apply dynamic greeting text."""
+        js = (STATIC_DIR / "trip.js").read_text(encoding="utf-8")
+        # The handler section should mention greeting_returning
+        handler_section = js.split("onLocaleChange(function")[1][:500] if "onLocaleChange(function" in js else ""
+        assert "greeting_returning" in handler_section, (
+            "onLocaleChange handler must re-apply greeting on locale switch")
+
+    def test_no_raw_keys_in_dom_surfaces(self):
+        """data-i18n key names must never appear as visible text in index.html."""
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        # Check that no data-i18n key value is the literal key name
+        import re
+        for m in re.finditer(r'data-i18n="([^"]+)">([^<]+)<', html):
+            key, text = m.group(1), m.group(2)
+            assert text != key, (
+                f"Element with data-i18n='{key}' shows raw key as text — must show en fallback")
+
+    def test_testid_attributes_byte_stable(self):
+        """data-testid values on greeting/stepper elements must remain unchanged."""
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        # These critical testids must exist with exact values
+        assert 'data-testid="aj-greeting"' in html
+        assert 'data-testid="trip-greeting"' in html
+        assert 'data-testid="aj-step-1"' in html
+        assert 'data-testid="aj-step-2"' in html
+
 
 
 # --- Fallback behavior (my locale) ---
